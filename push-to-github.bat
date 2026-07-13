@@ -21,7 +21,20 @@ git remote add origin %REPO%
 echo.
 echo  Pushing... a browser window may open asking you to sign in to GitHub - do it.
 git push -u origin main
-if errorlevel 1 (echo  Push failed - screenshot this window for Claude & pause & exit /b 1)
+if errorlevel 1 (
+  echo.
+  echo  The repository on GitHub has content ^(e.g. an auto-created README^).
+  echo  Overwriting it with YOUR app code is the right move on first push.
+  set /p OW=  Overwrite GitHub with local code? [Y/N]: 
+  if /i "%OW%"=="Y" (
+    git push -u origin main --force
+    if errorlevel 1 (echo  Still failed - screenshot for Claude & pause & exit /b 1)
+  ) else (
+    echo  Cancelled.
+    pause
+    exit /b 1
+  )
+)
 echo.
 echo  DONE! Your code is on GitHub. Next: Render (see PRODUCTION-LAUNCH.md STEP 3)
 pause
