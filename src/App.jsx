@@ -186,6 +186,8 @@ function DocUpload({ docs = [], onChange, label, hint }) {
 
 /* ── Document viewer (admin review) ───────────────────────── */
 function DocViewer({ docs, title, close }) {
+  const { session } = useStore();
+  const canDownload = session?.role === "admin" ? session.isSuper === true : true;
   return (
     <Sheet title={title} close={close}>
       {(!docs || docs.length === 0) && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>No documents uploaded.</div>}
@@ -193,8 +195,11 @@ function DocViewer({ docs, title, close }) {
         <div key={i} style={{ marginBottom: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 6 }}>{doc.name}</div>
           {doc.type?.startsWith("image/")
-            ? <img src={doc.data} alt={doc.name} style={{ width: "100%", borderRadius: 14, boxShadow: "0 2px 10px rgba(20,28,58,.1)" }} />
-            : <a href={doc.data} download={doc.name} style={{ display: "block", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, borderRadius: 13, padding: "12px 14px", textDecoration: "none", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Download {doc.name}</a>}
+            ? <img src={doc.data} alt={doc.name} onContextMenu={(e) => { if (!canDownload) e.preventDefault(); }} draggable={canDownload}
+                style={{ width: "100%", borderRadius: 14, boxShadow: "0 2px 10px rgba(20,28,58,.1)", pointerEvents: canDownload ? "auto" : "none" }} />
+            : canDownload
+              ? <a href={doc.data} download={doc.name} style={{ display: "block", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, borderRadius: 13, padding: "12px 14px", textDecoration: "none", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Download {doc.name}</a>
+              : <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, background: C.bg, borderRadius: 13, padding: "12px 14px" }}>📄 {doc.name} — view only (CEO can download)</div>}
         </div>
       ))}
     </Sheet>
@@ -486,49 +491,57 @@ function AddressPicker({ value, onChange }) {
       they receive on WhatsApp/SMS is entered. Appears ONLY when the
       Twilio keys are configured on the server. ── */
 function PhoneVerifyGate() {
-  const { session, verifyConfig, verifyStart, verifyCheck, logout, isLive } = useStore();
+  const { session, verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck, logout, isLive } = useStore();
   const [enabled, setEnabled] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  React.useEffect(() => { if (isLive) verifyConfig().then((c) => setEnabled(!!c.enabled)); }, [isLive]);
-  const needs = enabled && session && ["customer", "employee"].includes(session.role) && session.phone && !session.phoneVerified;
-  if (!needs) return null;
+  React.useEffect(() => { if (isLive) verifyConfig().then((c) => { setEnabled(!!c.enabled); setEmailEnabled(!!c.emailEnabled); }); }, [isLive]);
+  const needsEmail = emailEnabled && session && ["customer", "employee", "company"].includes(session.role) && !session.emailVerified;
+  const needsPhone = enabled && session && ["customer", "employee"].includes(session.role) && session.phone && !session.phoneVerified;
+  const mode = needsEmail ? "email" : needsPhone ? "phone" : null;
+  if (!mode) return null;
   const send = async (channel) => {
     setBusy(true); setErr("");
-    const r = await verifyStart(channel);
+    const r = mode === "email" ? await emailVerifyStart() : await verifyStart(channel);
     setBusy(false);
     if (r?.error) setErr(r.error); else setSent(true);
   };
   const check = async () => {
     setBusy(true); setErr("");
-    const r = await verifyCheck(code);
+    const r = mode === "email" ? await emailVerifyCheck(code) : await verifyCheck(code);
     setBusy(false);
     if (!r?.verified) setErr(r?.error || L("Wrong code — try again", "Hibás kód — próbáld újra"));
+    else { setSent(false); setCode(""); }
   };
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 95, background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center" }}>
-      <div style={{ fontSize: 52 }}>📱</div>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, marginTop: 14 }}>{L("Verify your number", "Erősítsd meg a számodat")}</div>
+      <div style={{ fontSize: 52 }}>{mode === "email" ? "✉️" : "📱"}</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, marginTop: 14 }}>{mode === "email" ? L("Verify your email", "Erősítsd meg az e-mail címed") : L("Verify your number", "Erősítsd meg a számodat")}</div>
       <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 8, lineHeight: 1.6, maxWidth: 320 }}>
         {sent
-          ? L(`Enter the code we sent to ${session.phone}`, `Írd be a(z) ${session.phone} számra küldött kódot`)
-          : L(`We'll send a confirmation code to ${session.phone}`, `Megerősítő kódot küldünk a(z) ${session.phone} számra`)}
+          ? L(`Enter the code we sent to ${mode === "email" ? session.email : session.phone}`, `Írd be a(z) ${mode === "email" ? session.email : session.phone} címre küldött kódot`)
+          : L(`We'll send a confirmation code to ${mode === "email" ? session.email : session.phone}`, `Megerősítő kódot küldünk: ${mode === "email" ? session.email : session.phone}`)}
       </div>
       {err && <div style={{ fontFamily: B, fontSize: 12.5, color: C.coralText, marginTop: 12 }}>{err}</div>}
       <div style={{ width: "100%", maxWidth: 300, marginTop: 22, display: "flex", flexDirection: "column", gap: 10 }}>
         {!sent ? (
+          mode === "email" ? (
+            <Btn full disabled={busy} onClick={() => send()}>✉️ {L("Send code to my email", "Kód küldése e-mailben")}</Btn>
+          ) : (
           <>
             <Btn full disabled={busy} onClick={() => send("whatsapp")}>💬 {L("Send code via WhatsApp", "Kód küldése WhatsAppon")}</Btn>
             <Btn ghost full disabled={busy} onClick={() => send("sms")}>{L("Send as SMS instead", "Inkább SMS-ben")}</Btn>
           </>
+          )
         ) : (
           <>
             <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))} inputMode="numeric" placeholder="• • • • • •"
               style={{ textAlign: "center", letterSpacing: 8, fontSize: 22, fontFamily: F, fontWeight: 700, padding: "14px 10px", borderRadius: 15, border: `1.5px solid ${C.line}`, background: C.card, color: C.ink, outline: "none" }} />
             <Btn full disabled={busy || code.length < 4} onClick={check}>{busy ? "..." : L("Verify", "Megerősítés")}</Btn>
-            <Btn ghost full disabled={busy} onClick={() => send("sms")}>{L("Resend as SMS", "Újraküldés SMS-ben")}</Btn>
+            <Btn ghost full disabled={busy} onClick={() => send(mode === "email" ? undefined : "sms")}>{mode === "email" ? L("Resend code", "Kód újraküldése") : L("Resend as SMS", "Újraküldés SMS-ben")}</Btn>
           </>
         )}
         <button onClick={logout} style={{ background: "none", border: "none", fontFamily: B, fontSize: 12, fontWeight: 700, color: C.inkFaint, cursor: "pointer", marginTop: 6 }}>{L("Log out", "Kijelentkezés")}</button>
@@ -560,7 +573,7 @@ function PaymentWait({ url, check, onPaid, onLater }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 20 }}>
           <Btn full onClick={() => window.open(url, "_blank")}>{L("Reopen payment page", "Fizetési oldal újranyitása")}</Btn>
-          <Btn ghost full onClick={onLater}>{L("Pay on completion instead", "Inkább a szolgáltatás után fizetek")}</Btn>
+          <Btn ghost full onClick={onLater}>{L("Pay later from My bookings", "Fizetés később a Foglalásaimból")}</Btn>
         </div>
       </div>
     </div>
@@ -623,7 +636,7 @@ function ProfileSheet({ close }) {
           <div style={{ marginBottom: 13 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.paymentMethod")}</div>
             <div style={{ display: "flex", gap: 10 }}>
-              {[{ id: "cash", label: t("profile.cash"), sub: t("profile.cashSub") }, { id: "card", label: t("profile.card"), sub: t("profile.cardSub") }].map((o) => (
+              {(isLive ? [{ id: "card", label: t("profile.card"), sub: t("profile.cardSub") }] : [{ id: "cash", label: t("profile.cash"), sub: t("profile.cashSub") }, { id: "card", label: t("profile.card"), sub: t("profile.cardSub") }]).map((o) => (
                 <button key={o.id} onClick={() => setF({ ...f, paymentMethod: o.id })} style={{ flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: 14, cursor: "pointer", border: f.paymentMethod === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: f.paymentMethod === o.id ? C.card : C.bg, boxShadow: f.paymentMethod === o.id ? "0 2px 10px rgba(27,42,107,.12)" : "none" }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{o.label}</div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>{o.sub}</div>
@@ -1215,7 +1228,7 @@ function BookingFlow({ company, close, onBooked }) {
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "16px 0 10px" }}>{L("Time", "Időpont")}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
                 {SLOTS.map((s) => (
-                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.mint : C.card, color: C.navyDeep, boxShadow: slot === s ? "0 4px 14px rgba(94,230,168,.45)" : "0 1px 5px rgba(20,28,58,.06)" }}>{s}</button>
+                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.mint : C.card, color: slot === s ? "#10194A" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(94,230,168,.45)" : "0 1px 5px rgba(20,28,58,.06)" }}>{s}</button>
                 ))}
               </div>
 
@@ -1256,8 +1269,8 @@ function BookingFlow({ company, close, onBooked }) {
                 </div>
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 7, lineHeight: 1.6 }}>
                   {isSub
-                    ? <>🔁 {cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day?.iso)}<br />📍 {addr} · {session.paymentMethod === "card" ? L("💳 Card per visit (on site)", "💳 Kártya alkalmanként (helyszínen)") : L("💵 Cash each visit", "💵 Készpénz minden alkalommal")} · {L("renews after each visit", "minden alkalom után megújul")}</>
-                    : <>📅 {day?.label || dayLabel(day?.iso)} · {slot}<br />📍 {addr} · {session.paymentMethod === "card" ? L("💳 Card", "💳 Kártya") : L("💵 Cash on completion", "💵 Készpénz a szolgáltatás után")}</>}
+                    ? <>🔁 {cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day?.iso)}<br />📍 {addr} · {isLive ? L("💳 Card per visit", "💳 Kártya alkalmanként") : L("💵 Cash each visit (demo)", "💵 Készpénz minden alkalommal (demo)")} · {L("renews after each visit", "minden alkalom után megújul")}</>
+                    : <>📅 {day?.label || dayLabel(day?.iso)} · {slot}<br />📍 {addr} · {isLive ? L("💳 Card payment", "💳 Kártyás fizetés") : L("💵 Cash (demo)", "💵 Készpénz (demo)")}</>}
                 </div>
               </div>
               {svc.tasks?.length > 0 && (
@@ -1291,7 +1304,7 @@ function BookingFlow({ company, close, onBooked }) {
             setBusy(false);
             if (!row) { toast(L("Booking failed — try again", "A foglalás nem sikerült — próbáld újra"), "error"); return; }
             // Card + live backend + one-off booking → Barion checkout in the browser
-            if (isLive && session.paymentMethod === "card" && !isSub) {
+            if (isLive && !isSub) { // live = card only (no cash handling on the platform)
               const pay = await startPayment(row.id);
               if (pay?.gatewayUrl) {
                 window.open(pay.gatewayUrl, "_blank");
@@ -1311,7 +1324,7 @@ function BookingFlow({ company, close, onBooked }) {
 }
 
 function CustomerBookings({ openBooking }) {
-  const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint } = useStore();
+  const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment } = useStore();
   const toast = useToast();
   const mine = bookings.filter((b) => b.customer_id === session.userId || b.customer_name === session.name);
   const [reviewing, setReviewing] = useState(null);
@@ -1406,6 +1419,13 @@ function CustomerBookings({ openBooking }) {
               {b.status >= 1 && b.status !== 9 && (
                 <Btn small ghost style={{ flex: 1 }} onClick={() => setComplaining(b)}>🛟 {L("Report", "Bejelentés")}</Btn>
               )}
+              {isLive && b.payment_status !== "paid" && b.status !== 9 && b.status !== 8 && (
+                <Btn small mint style={{ flex: 1 }} onClick={async () => {
+                  const pay = await startPayment(b.id);
+                  if (pay?.gatewayUrl) { window.open(pay.gatewayUrl, "_blank"); toast(L("Finish the payment in the opened window, then pull to refresh", "Fejezd be a fizetést a megnyílt ablakban, majd frissíts")); }
+                  else toast(pay?.error || L("Payment unavailable right now", "A fizetés most nem elérhető"), "error");
+                }}>💳 {L("Pay now", "Fizetés most")}</Btn>
+              )}
             </div>
           </div>
         );
@@ -1472,7 +1492,7 @@ function CustomerBookings({ openBooking }) {
    EMPLOYEE
 ════════════════════════════════════════════════════════════ */
 
-function EmployeeJobs() {
+function EmployeeJobs({ openProfile }) {
   const { session, bookings, toggleTask, setStatus, companies, reviews } = useStore();
   const toast = useToast();
   const my = bookings.filter((b) => b.assigned_to === session.userId && b.status !== 9 && b.status !== 8);
@@ -1487,7 +1507,9 @@ function EmployeeJobs() {
       <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "24px 20px 40px", position: "relative", overflow: "hidden" }}>
         <Sparkle size={16} style={{ position: "absolute", top: 22, right: 22 }} cls="cl-twinkle" />
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Avatar name={session.name} color="#fff" size={44} />
+          <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="Profile">
+            <Avatar name={session.name} color="#fff" size={44} />
+          </button>
           <div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{session.name}</div>
             <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2 }}>{co ? `${co.emoji} ${co.name}` : "Cleaner"}</div>
@@ -1594,7 +1616,7 @@ function EmployeeJobs() {
 }
 
 function EmployeeNotices() {
-  const { session, notices, markNoticeRead, companies } = useStore();
+  const { session, notices, markNoticeRead, deleteNotice, companies } = useStore();
   const toast = useToast();
   const mine = notices.filter((n) => n.to_employee === session.userId);
   const unread = mine.filter((n) => !n.is_read).length;
@@ -1613,7 +1635,12 @@ function EmployeeNotices() {
               <CompanyLogo co={co} size={32} radius={10} />
               <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{co?.name || "Company"}</span>
             </div>
-            <span style={{ fontFamily: B, fontSize: 10, color: C.inkFaint }}>{typeof n.created_at === "string" && n.created_at.length < 25 ? n.created_at : new Date(n.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontFamily: B, fontSize: 10, color: C.inkFaint }}>{typeof n.created_at === "string" && n.created_at.length < 25 ? n.created_at : new Date(n.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+              <button onClick={(e) => { e.stopPropagation(); deleteNotice(n.id); toast(L("Notice cleared", "Értesítés törölve")); }}
+                title={L("Clear from my list", "Törlés a listámról")}
+                style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: 9, cursor: "pointer", fontSize: 12 }}>✕</button>
+            </div>
           </div>
           <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, lineHeight: 1.65, marginTop: 10 }}>{n.body}</div>
           {!n.is_read && <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green, marginTop: 8 }}>Tap to mark as read ✓</div>}
@@ -1627,7 +1654,7 @@ function EmployeeNotices() {
    COMPANY
 ════════════════════════════════════════════════════════════ */
 
-function CompanyJobs() {
+function CompanyJobs({ openProfile }) {
   const { session, bookings, employees, assignBooking, declineBooking, companies } = useStore();
   const toast = useToast();
   const [declining, setDeclining] = useState(null); // booking being declined
@@ -1663,7 +1690,9 @@ function CompanyJobs() {
             Admin · {new Date().toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "short" })}
           </div>
         </div>
-        <CompanyLogo co={co} size={42} radius={14} />
+        <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="Profile">
+          <CompanyLogo co={co} size={42} radius={14} />
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "16px 0" }}>
@@ -2007,7 +2036,7 @@ function CompanyServices() {
 }
 
 function CompanyTeam() {
-  const { employees, invites, bookings, createInvite, deleteInvite, sendNotice } = useStore();
+  const { employees, invites, bookings, createInvite, deleteInvite, sendNotice, notices, session, deleteNotice } = useStore();
   const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [showMsg, setShowMsg] = useState(null);
@@ -2098,6 +2127,33 @@ function CompanyTeam() {
           )}
         </Sheet>
       )}
+
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "22px 0 12px" }}>Sent notices</div>
+      {notices.filter((n) => n.company_id === session.companyId).length === 0 && (
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, background: C.card, borderRadius: 14, padding: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+          No notices sent yet — use the 💬 button on a team member.
+        </div>
+      )}
+      {notices.filter((n) => n.company_id === session.companyId).map((n) => {
+        const emp = employees.find((e) => e.id === n.to_employee);
+        return (
+          <div key={n.id} style={{ background: C.card, borderRadius: 15, padding: "13px 15px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <Avatar name={n.employee_name || emp?.full_name || "?"} size={30} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.employee_name || emp?.full_name || "Employee"}</div>
+                <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.body}</div>
+              </div>
+              {n.is_read
+                ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Seen"}</Pill>
+                : <Pill bg={C.amberSoft} color={C.amber}>✓ Not seen yet</Pill>}
+              <button onClick={() => { deleteNotice(n.id); }}
+                title="Clear from my list"
+                style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: 9, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
+            </div>
+          </div>
+        );
+      })}
 
       {showMsg && (
         <Sheet title={`Notice to ${showMsg.full_name.split(" ")[0]}`} close={() => setShowMsg(null)}>
@@ -2590,14 +2646,17 @@ function AdminBookings() {
 }
 
 function AdminPanel() {
-  const { logout } = useStore();
-  const [tab, setTab] = useState("dashboard");
-  const tabs = [
+  const { logout, session } = useStore();
+  const isCeo = session.isSuper === true;
+  const [tab, setTab] = useState(isCeo ? "dashboard" : "companies");
+  const tabs = isCeo ? [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "companies", label: "Companies", icon: "🏢" },
     { id: "users", label: "Users", icon: "👤" },
     { id: "bookings", label: "Bookings", icon: "📅" },
     { id: "complaints", label: "Complaints", icon: "🛟" },
+  ] : [
+    { id: "companies", label: "Company approvals", icon: "🏢" },
   ];
   return (
     <div className="cl-fade" style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -2606,7 +2665,7 @@ function AdminPanel() {
           <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>Admin panel</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>Cleanly platform · Magyarország</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? "CEO admin · Cleanly Magyarország" : "Company review team"}</div>
           </div>
           <button onClick={logout} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 99, padding: "7px 14px", fontFamily: B, fontWeight: 700, fontSize: 11, color: "#C9D2F5", cursor: "pointer" }}>
             🚪 Log out
@@ -2707,7 +2766,7 @@ function Shell() {
     <div style={{ minHeight: "100vh", background: C.shell, display: "flex", justifyContent: "center", fontFamily: B }}>
       <style>{css}</style>
       <div style={{ width: "100%", maxWidth: 430, background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", boxShadow: "0 0 50px rgba(20,28,58,.14)", position: "relative" }}>
-        {(role === "customer" || role === "admin") && demoSwitchRole && (
+        {demoSwitchRole && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 16px", background: C.navyDeep }}>
             <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.mint, letterSpacing: .8 }}>🧪 DEMO</span>
             <select value={role} onChange={(e) => { demoSwitchRole(e.target.value); setTab("home"); }}
@@ -2720,33 +2779,6 @@ function Shell() {
             </select>
           </div>
         )}
-        {role !== "customer" && role !== "admin" && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 16px", background: C.navyDeep }}>
-          <button onClick={() => setShowProfile(true)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, padding: 0 }}>
-            <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.navySoft + "44", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, fontWeight: 700, fontSize: 10, color: "#C9D2F5" }}>
-              {session.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-            </div>
-            <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: "#9FB0E8", letterSpacing: .5 }}>
-              {role === "customer" ? t("role.customer") : role === "employee" ? "CLEANER" : role === "admin" ? "PLATFORM ADMIN" : "COMPANY ADMIN"}{!isLive && " · DEMO"}
-            </span>
-          </button>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {demoSwitchRole && (
-              <select value={role} onChange={(e) => { demoSwitchRole(e.target.value); setTab("home"); }}
-                title="Demo — switch role"
-                style={{ background: "rgba(94,230,168,.14)", color: C.mint, border: `1px solid ${C.mint}55`, borderRadius: 9, fontFamily: B, fontSize: 10.5, fontWeight: 700, padding: "4px 6px", cursor: "pointer", outline: "none" }}>
-                <option value="customer" style={{ color: "#111" }}>⇄ Customer</option>
-                <option value="employee" style={{ color: "#111" }}>⇄ Cleaner</option>
-                <option value="company" style={{ color: "#111" }}>⇄ Company</option>
-                <option value="admin" style={{ color: "#111" }}>⇄ Admin</option>
-              </select>
-            )}
-            <button onClick={() => { logout(); setTab("home"); }} style={{ background: "none", border: "none", fontFamily: B, fontSize: 10.5, fontWeight: 700, color: "#C9D2F5", cursor: "pointer", padding: 0 }}>
-              {t("common.logout")}
-            </button>
-          </div>
-        </div>
-        )}
 
         {error && (
           <div style={{ background: C.coralSoft, padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2757,14 +2789,14 @@ function Shell() {
 
         <div style={{ flex: 1, overflowY: "auto", paddingBottom: "calc(112px + env(safe-area-inset-bottom))" }}>
           {role === "customer" && (tab === "home" ? <CustomerHome openBooking={setBookingCo} openProfile={() => setShowProfile(true)} /> : <CustomerBookings openBooking={(co) => { setTab("home"); setBookingCo(co); }} />)}
-          {role === "employee" && (tab === "notices" ? <EmployeeNotices /> : <EmployeeJobs />)}
+          {role === "employee" && (tab === "notices" ? <EmployeeNotices /> : <EmployeeJobs openProfile={() => setShowProfile(true)} />)}
           {role === "company" && (
             tab === "schedule" ? <CompanySchedule /> :
             tab === "clients" ? <CompanyClients /> :
             tab === "services" ? <CompanyServices /> :
             tab === "team" ? <CompanyTeam /> :
             tab === "settings" ? <CompanySettings /> :
-            <CompanyJobs />
+            <CompanyJobs openProfile={() => setShowProfile(true)} />
           )}
           {role === "admin" && <AdminPanel />}
         </div>

@@ -36,7 +36,7 @@ router.post("/register", async (req, res) => {
       if (!huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42 — check the digits." });
       if (regNumber?.trim() && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid company registration number (cégjegyzékszám). Format: 09-09-123456." });
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, phone) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+        "INSERT INTO users (email, password_hash, role, full_name, phone, approval_status) VALUES ($1,$2,$3,$4,$5,'pending') RETURNING id",
         [email.toLowerCase(), hash, "company", fullName, contactPhone || null]
       );
       const userId = userRes.rows[0].id;
@@ -47,9 +47,8 @@ router.post("/register", async (req, res) => {
       );
       await query("UPDATE users SET company_id = $1 WHERE id = $2", [coRes.rows[0].id, userId]);
 
-      const user = (await query("SELECT * FROM users WHERE id = $1", [userId])).rows[0];
-      const token = signToken({ id: userId, role: "company", companyId: coRes.rows[0].id });
-      return res.status(201).json({ token, user });
+      // Companies wait for document review before they can log in.
+      return res.status(201).json({ pendingApproval: true });
     }
 
     if (role === "employee") {
@@ -111,11 +110,13 @@ router.post("/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Invalid email or password" });
     if (user.approval_status === "pending")
-      return res.status(403).json({ error: "Your student account is waiting for approval — we'll email you as soon as it's ready." });
+      return res.status(403).json({ error: user.role === "company"
+        ? "Your company is being reviewed — we'll email you the moment it's approved."
+        : "Your student account is waiting for approval — we'll email you as soon as it's ready." });
     if (user.approval_status === "rejected")
       return res.status(403).json({ error: "Your student verification was declined. Register as a resident, or contact support." });
 
-    const token = signToken({ id: user.id, role: user.role, companyId: user.company_id });
+    const token = signToken({ id: user.id, role: user.role, companyId: user.company_id, isSuper: user.is_super === true });
     res.json({ token, user });
   } catch (err) {
     console.error("login error:", err);

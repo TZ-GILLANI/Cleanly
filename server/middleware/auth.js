@@ -35,3 +35,9 @@ export function requireRole(...roles) {
     next();
   };
 }
+
+export function requireSuper(req, res, next) {
+  if (!req.user || req.user.role !== "admin" || req.user.isSuper !== true)
+    return res.status(403).json({ error: "CEO admin only" });
+  next();
+}

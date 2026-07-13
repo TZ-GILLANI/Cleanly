@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { sendEmail, mailerConfigured } from "../lib/mailer.js";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -12,7 +14,7 @@ const router = Router();
 const configured = () => !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SID);
 const auth = () => "Basic " + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
 
-router.get("/config", (req, res) => res.json({ enabled: configured() }));
+router.get("/config", (req, res) => res.json({ enabled: configured(), emailEnabled: mailerConfigured() }));
 
 router.post("/start", requireAuth, async (req, res) => {
   if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
@@ -51,6 +53,40 @@ router.post("/check", requireAuth, async (req, res) => {
       return res.json({ verified: true });
     }
     res.status(400).json({ error: "Wrong or expired code" });
+  } catch (err) {
+    res.status(500).json({ error: "Verification check failed" });
+  }
+});
+
+/* ── Email verification codes (dormant until Resend is configured) ── */
+router.post("/email/start", requireAuth, async (req, res) => {
+  if (!mailerConfigured()) return res.status(503).json({ error: "email_not_configured" });
+  try {
+    const code = String(crypto.randomInt(100000, 999999));
+    await query("UPDATE users SET email_code = $1, email_code_expires = NOW() + INTERVAL '15 minutes' WHERE id = $2", [code, req.user.id]);
+    const me = await query("SELECT email, full_name FROM users WHERE id = $1", [req.user.id]);
+    await sendEmail(me.rows[0].email, `${code} — your Cleanly verification code`,
+      `<div style="font-family:sans-serif;max-width:480px"><p>Hi ${me.rows[0].full_name},</p>
+       <p>Your Cleanly verification code:</p>
+       <p style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#1B2A6B">${code}</p>
+       <p style="color:#69718F;font-size:13px">Valid for 15 minutes. If you didn't request this, ignore this email.</p></div>`);
+    res.json({ sent: true });
+  } catch (err) {
+    console.error("email verify start:", err);
+    res.status(500).json({ error: "Could not send code" });
+  }
+});
+
+router.post("/email/check", requireAuth, async (req, res) => {
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ error: "Code required" });
+  try {
+    const r = await query(
+      "UPDATE users SET email_verified = true, email_code = NULL WHERE id = $1 AND email_code = $2 AND email_code_expires > NOW() RETURNING id",
+      [req.user.id, String(code).trim()]
+    );
+    if (!r.rows.length) return res.status(400).json({ error: "Wrong or expired code" });
+    res.json({ verified: true });
   } catch (err) {
     res.status(500).json({ error: "Verification check failed" });
   }

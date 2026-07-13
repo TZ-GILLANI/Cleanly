@@ -27,7 +27,7 @@ router.post("/", requireAuth, async (req, res) => {
 /* GET /api/complaints — admin sees all, users see their own */
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const r = req.user.role === "admin"
+    const r = (req.user.role === "admin" && req.user.isSuper === true)
       ? await query("SELECT c.*, u.full_name AS user_name, u.email AS user_email FROM complaints c JOIN users u ON u.id = c.user_id ORDER BY CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END, c.created_at DESC")
       : await query("SELECT * FROM complaints WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
     res.json({ complaints: r.rows });
@@ -38,6 +38,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 /* PUT /api/complaints/:id — admin only */
 router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  if (req.user.isSuper !== true) return res.status(403).json({ error: "CEO admin only" });
   const { status, resolution } = req.body || {};
   if (!["open", "in_progress", "resolved"].includes(status)) return res.status(400).json({ error: "Invalid status" });
   try {

@@ -225,3 +225,14 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_account_id TEXT;
 
 -- ── Customer-facing service fee (added on top of company price) ────
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS service_fee_huf INT NOT NULL DEFAULT 0;
+
+-- ── Admin tiers + email verification ───────────────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code_expires TIMESTAMPTZ;
+
+-- ── Notices: read receipts + per-side clearing ─────────────────────
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS deleted_by_company  BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS deleted_by_employee BOOLEAN NOT NULL DEFAULT false;

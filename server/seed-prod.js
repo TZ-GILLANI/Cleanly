@@ -16,11 +16,11 @@ if (!email || !password || password.length < 10) {
 const hash = await bcrypt.hash(password, 12);
 const existing = await query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
 if (existing.rows.length) {
-  await query("UPDATE users SET password_hash = $1, role = 'admin', is_active = true WHERE email = $2", [hash, email.toLowerCase()]);
+  await query("UPDATE users SET password_hash = $1, role = 'admin', is_active = true, is_super = true, approval_status = 'approved' WHERE email = $2", [hash, email.toLowerCase()]);
   console.log("✔ Admin password updated for", email);
 } else {
   await query(
-    "INSERT INTO users (email, password_hash, role, full_name) VALUES ($1,$2,'admin','Platform Admin')",
+    "INSERT INTO users (email, password_hash, role, full_name, is_super) VALUES ($1,$2,'admin','Platform Admin', true)",
     [email.toLowerCase(), hash]
   );
   console.log("✔ Admin account created:", email);

@@ -233,6 +233,8 @@ export function StoreProvider({ children }) {
     email: user.email, custType: user.customer_type,
     companyId: user.company_id, phone: user.phone,
     phoneVerified: user.phone_verified === true,
+    emailVerified: user.email_verified === true,
+    isSuper: user.is_super === true,
     address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || "en",
     documents: user.documents || [],
   });
@@ -308,7 +310,9 @@ export function StoreProvider({ children }) {
   const signupCompany = async ({ companyName, name, email, password, taxId, regNumber, contactPhone, documents, city }) => {
     if (!isApiMode) { setSession({ role: "company", userId: "owner1", name: name || "Bálint Erdős", custType: null, companyId: "co1" }); return {}; }
     try {
-      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "company", fullName: name || companyName, companyName, taxId, regNumber, contactPhone, documents, city } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "company", fullName: name || companyName, companyName, taxId, regNumber, contactPhone, documents, city } });
+      if (resp.pendingApproval) return { pending: true };
+      const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
       try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
@@ -514,7 +518,7 @@ export function StoreProvider({ children }) {
 
   const markNoticeRead = async (id) => {
     if (isApiMode) { try { await api("/notices/" + id + "/read", { method: "PUT" }); } catch (e) { setError(e.message); return; } }
-    setDb(d => ({ ...d, notices: d.notices.map(n => n.id === id ? { ...n, is_read: true } : n) }));
+    setDb(d => ({ ...d, notices: d.notices.map(n => n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n) }));
   };
 
   /* ════════════ COMPANY ACTIONS ════════════ */
@@ -538,6 +542,14 @@ export function StoreProvider({ children }) {
   const deleteInvite = async (code) => {
     if (isApiMode) { try { await api("/employees/invites/" + code, { method: "DELETE" }); } catch (e) { setError(e.message); return; } }
     setDb(d => ({ ...d, invites: d.invites.filter(i => i.code !== code) }));
+  };
+
+  const deleteNotice = async (id) => {
+    if (isApiMode) {
+      try { await api("/notices/" + id, { method: "DELETE" }); }
+      catch (e) { setError(e.message); return; }
+    }
+    setDb(d => ({ ...d, notices: d.notices.filter(n => n.id !== id) }));
   };
 
   const sendNotice = async (employeeId, body) => {
@@ -622,6 +634,17 @@ export function StoreProvider({ children }) {
     try { return await api("/verify/start", { method: "POST", body: { channel } }); }
     catch (e) { return { error: e.message }; }
   };
+  const emailVerifyStart = async () => {
+    try { return await api("/verify/email/start", { method: "POST" }); }
+    catch (e) { return { error: e.message }; }
+  };
+  const emailVerifyCheck = async (code) => {
+    try {
+      const r = await api("/verify/email/check", { method: "POST", body: { code } });
+      if (r.verified) setSession((s) => ({ ...s, emailVerified: true }));
+      return r;
+    } catch (e) { return { error: e.message }; }
+  };
   const verifyCheck = async (code) => {
     try {
       const r = await api("/verify/check", { method: "POST", body: { code } });
@@ -697,9 +720,9 @@ export function StoreProvider({ children }) {
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint,
-    verifyConfig, verifyStart, verifyCheck,
+    verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
     connectStatus, connectOnboard,
-    toggleTask, setStatus, markNoticeRead,
+    toggleTask, setStatus, markNoticeRead, deleteNotice,
     assignBooking, createInvite, deleteInvite, sendNotice, upsertService,
     adminUpdateCompany, adminUpdateUser, adminFetchStats, adminFetchUsers,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings,

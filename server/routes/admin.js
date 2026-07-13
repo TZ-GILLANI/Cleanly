@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth, requireRole, requireSuper } from "../middleware/auth.js";
 import { sendEmail } from "../lib/mailer.js";
 
 const router = Router();
 const guard = [requireAuth, requireRole("admin")];
 
 /* GET /api/admin/stats */
-router.get("/stats", ...guard, async (req, res) => {
+router.get("/stats", ...guard, requireSuper, async (req, res) => {
   try {
     const [users, companies, bookings, revenue] = await Promise.all([
       query("SELECT COUNT(*) FROM users WHERE role != 'admin'"),
@@ -62,14 +62,32 @@ router.put("/companies/:id", ...guard, async (req, res) => {
       [isApproved, isListed, req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Company not found" });
-    res.json({ company: result.rows[0] });
+    const co = result.rows[0];
+    // Approving a company unlocks the owner's login and emails them.
+    if (isApproved === true) {
+      const owner = await query(
+        "UPDATE users SET approval_status = 'approved' WHERE id = $1 RETURNING email, full_name",
+        [co.owner_id]
+      );
+      if (owner.rows.length) {
+        sendEmail(owner.rows[0].email, `${co.name} is approved on Cleanly ✅`,
+          `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">Welcome aboard, ${co.name}! 🐙</h2>
+           <p>Your company has been verified and approved — you can now log in, list your services and receive bookings.</p>
+           <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Log in to Cleanly</a></p>
+           <p style="color:#69718F;font-size:13px">Tip: open Settings and tap "Set up automatic payouts" so card payments land straight in your bank.</p></div>`);
+      }
+    }
+    if (isApproved === false) {
+      await query("UPDATE users SET approval_status = 'pending' WHERE id = $1", [co.owner_id]);
+    }
+    res.json({ company: co });
   } catch (err) {
     res.status(500).json({ error: "Failed to update company" });
   }
 });
 
 /* GET /api/admin/users */
-router.get("/users", ...guard, async (req, res) => {
+router.get("/users", ...guard, requireSuper, async (req, res) => {
   try {
     const result = await query(
       `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.created_at, u.documents,
@@ -86,7 +104,7 @@ router.get("/users", ...guard, async (req, res) => {
 });
 
 /* PUT /api/admin/users/:id */
-router.put("/users/:id", ...guard, async (req, res) => {
+router.put("/users/:id", ...guard, requireSuper, async (req, res) => {
   const { isActive, makeAdmin, approvalStatus } = req.body || {};
   try {
     if (approvalStatus !== undefined) {
@@ -124,7 +142,7 @@ router.put("/users/:id", ...guard, async (req, res) => {
 });
 
 /* GET /api/admin/bookings */
-router.get("/bookings", ...guard, async (req, res) => {
+router.get("/bookings", ...guard, requireSuper, async (req, res) => {
   try {
     const result = await query(
       `SELECT b.*, c.name AS company_name, c.emoji AS company_emoji,
@@ -144,7 +162,7 @@ router.get("/bookings", ...guard, async (req, res) => {
 });
 
 /* GET /api/admin/revenue — revenue by day (last 30 days) */
-router.get("/revenue", ...guard, async (req, res) => {
+router.get("/revenue", ...guard, requireSuper, async (req, res) => {
   try {
     const result = await query(
       `SELECT scheduled_date::TEXT AS date, COUNT(*) AS bookings, COALESCE(SUM(total_huf),0) AS revenue

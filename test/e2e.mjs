@@ -42,10 +42,12 @@ ok("verification engine dormant without Twilio", (await j("/api/verify/config"))
 
 const badTax = await j("/api/auth/register", { method: "POST", body: { email: "bad@spark.hu", password: "secret123", role: "company", fullName: "Bad Tax", companyName: "Bad Kft.", taxId: "12345678-1-42", city: "Budapest" } });
 ok("invalid tax number rejected (checksum)", badTax.status === 400);
-const co = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Budapest" } });
-ok("company registers with city", co.status === 201, JSON.stringify(co.data));
-const coTok = co.data.token;
-const coId = co.data.user?.company_id;
+const coReg = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Budapest" } });
+ok("company registration goes to pending", coReg.status === 201 && coReg.data.pendingApproval === true, JSON.stringify(coReg.data));
+const coBlocked = await j("/api/auth/login", { method: "POST", body: { email: "boss@spark.hu", password: "secret123" } });
+ok("unapproved company cannot log in", coBlocked.status === 403);
+const coIdRow = await query("SELECT company_id FROM users WHERE email = 'boss@spark.hu'");
+const coId = coIdRow.rows[0].company_id;
 
 console.log("\n── company approval gate ──");
 let list = await j("/api/companies");
@@ -53,7 +55,7 @@ ok("unapproved company hidden from marketplace", !list.data.companies?.some((c) 
 ok("public list has no documents/tax leak", !list.data.companies?.some((c) => "documents" in c || "tax_id" in c));
 
 // admin: create directly, then approve company
-await query("INSERT INTO users (email, password_hash, role, full_name) VALUES ('root@cleanly.hu', 'x', 'admin', 'Root')");
+await query("INSERT INTO users (email, password_hash, role, full_name, is_super) VALUES ('root@cleanly.hu', 'x', 'admin', 'Root', true)");
 const adminLoginFail = await j("/api/auth/login", { method: "POST", body: { email: "root@cleanly.hu", password: "wrong" } });
 ok("bad admin password rejected", adminLoginFail.status !== 200);
 // set a real hash via bcrypt through register-less path: use bcryptjs
@@ -72,6 +74,21 @@ const custTok = cust.data.token;
 
 const approve = await j(`/api/admin/companies/${coId}`, { method: "PUT", token: admTok, body: { isApproved: true } });
 ok("admin approves company", approve.status === 200, JSON.stringify(approve.data));
+const coLogin = await j("/api/auth/login", { method: "POST", body: { email: "boss@spark.hu", password: "secret123" } });
+ok("approved company can log in", coLogin.status === 200 && !!coLogin.data.token);
+const coTok = coLogin.data.token;
+
+// ── admin tiers ──
+const limited = await query("SELECT id FROM users WHERE email = 'anna@test.hu'");
+await j(`/api/admin/users/${limited.rows[0].id}`, { method: "PUT", token: admTok, body: { makeAdmin: true } });
+const limLogin = await j("/api/auth/login", { method: "POST", body: { email: "anna@test.hu", password: "secret123" } });
+const limTok = limLogin.data.token;
+const limCos = await j("/api/admin/companies", { token: limTok });
+const ceoCos = await j("/api/admin/companies", { token: admTok });
+ok("limited admin NOT blocked from company review (same access as CEO)", limCos.status !== 403 && limCos.status === ceoCos.status, `lim ${limCos.status} ceo ${ceoCos.status}`);
+ok("limited admin blocked from users API", (await j("/api/admin/users", { token: limTok })).status === 403);
+ok("limited admin blocked from stats", (await j("/api/admin/stats", { token: limTok })).status === 403);
+await j(`/api/admin/users/${limited.rows[0].id}`, { method: "PUT", token: admTok, body: { makeAdmin: false } });
 list = await j("/api/companies");
 ok("approved company visible with city", list.data.companies?.some((c) => c.id === coId && c.city === "Budapest"));
 
