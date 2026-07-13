@@ -187,7 +187,7 @@ function DocUpload({ docs = [], onChange, label, hint }) {
 /* ── Document viewer (admin review) ───────────────────────── */
 function DocViewer({ docs, title, close }) {
   const { session } = useStore();
-  const canDownload = session?.role === "admin" ? session.isSuper === true : true;
+  const canDownload = true; // all admins have full file access; decisions are recorded in the admin log
   return (
     <Sheet title={title} close={close}>
       {(!docs || docs.length === 0) && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>No documents uploaded.</div>}
@@ -987,7 +987,7 @@ function CustomerHome({ openBooking, openProfile }) {
 
   return (
     <div className="cl-fade">
-      <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "24px 20px 44px", position: "relative", overflow: "hidden" }}>
+      <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(24px + env(safe-area-inset-top)) 20px 44px", position: "relative", overflow: "hidden" }}>
         <Sparkle size={18} style={{ position: "absolute", top: 24, right: 24 }} cls="cl-twinkle" />
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={openProfile} aria-label="Edit profile"
@@ -1363,7 +1363,7 @@ function CustomerBookings({ openBooking }) {
   const [compBody, setCompBody] = useState("");
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("My bookings", "Foglalásaim")}</div>
       {mine.length === 0 && (
         <div style={{ textAlign: "center", padding: "70px 30px" }}>
@@ -1433,7 +1433,7 @@ function CustomerBookings({ openBooking }) {
               💰 {huf(b.total_huf)}{b.pricing_type === "hourly" && b.hours ? ` · ⏱ ${b.hours} ${L("h", "óra")}` : b.pricing_type === "subscription" && b.period ? ` · 🔁 ${everyP(b.period)}` : ""} {b.customer_type === "student" && L("· 🎓 student price", "· 🎓 diákár")}
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
               {b.status <= 1 && (
                 <Btn small ghost style={{ flex: 1, color: C.coral, borderColor: C.line }} onClick={() => setConfirmCancel(b)}>{b.pricing_type === "subscription" ? L("Cancel subscription", "Előfizetés lemondása") : L("Cancel booking", "Foglalás lemondása")}</Btn>
               )}
@@ -1533,7 +1533,7 @@ function EmployeeJobs({ openProfile }) {
 
   return (
     <div className="cl-fade">
-      <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "24px 20px 40px", position: "relative", overflow: "hidden" }}>
+      <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(24px + env(safe-area-inset-top)) 20px 40px", position: "relative", overflow: "hidden" }}>
         <Sparkle size={16} style={{ position: "absolute", top: 22, right: 22 }} cls="cl-twinkle" />
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="Profile">
@@ -1652,7 +1652,7 @@ function EmployeeNotices() {
   const co = companies.find((c) => c.id === session.companyId);
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>
         From {co?.name || "your company"} {unread > 0 && <Pill bg={C.coral} color="#fff" style={{ marginLeft: 6 }}>{unread} new</Pill>}
       </div>
@@ -1711,7 +1711,7 @@ function CompanyJobs({ openProfile }) {
   );
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 4px" }}>
         <div>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{co?.name || "My company"}</div>
@@ -1893,7 +1893,7 @@ function CompanyClients() {
   const filtered = clients.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()));
   const totalSpend = clients.reduce((a, c) => a + c.spend, 0);
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>Clients ({clients.length})</div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
@@ -1944,7 +1944,7 @@ function CompanySchedule() {
   const dayRevenue = dayJobs.reduce((a, b) => a + (b.total_huf || 0), 0);
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 6px" }}>Schedule</div>
       <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 14 }}>Your whole pipeline on a calendar — dots mark days with jobs.</div>
       <Calendar selected={selDay} onSelect={setSelDay} marks={marks} />
@@ -1992,7 +1992,7 @@ function CompanyServices() {
   };
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>Services & prices</div>
         <Btn small onClick={() => openEditor(null)}>+ New service</Btn>
@@ -2106,7 +2106,7 @@ function CompanyTeam() {
   };
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>Team</div>
         <Btn small onClick={() => { setShowAdd(true); setNewCode(null); setLabel(""); }}>+ Invite employee</Btn>
@@ -2325,7 +2325,7 @@ function CompanySettings() {
   };
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Company settings</div>
 
       <div style={{ height: 110, background: f.cover, borderRadius: 20, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
@@ -2436,7 +2436,7 @@ function AdminDashboard() {
   const maxRev = Math.max(...(adminRevenue || []).map((r) => r.revenue || 0), 1);
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Platform dashboard</div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
@@ -2500,7 +2500,7 @@ function AdminCompanies() {
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Companies ({(adminAllCompanies || []).length})</div>
       {(adminAllCompanies || []).map((co) => (
         <div key={co.id} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: co.is_approved ? 1 : .65 }}>
@@ -2557,7 +2557,7 @@ function AdminComplaints() {
   const list = adminComplaints || [];
   const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: "In progress", bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 14px" }}>Complaints ({list.filter(c => c.status !== "resolved").length} open)</div>
       {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No complaints — happy customers 🎉</div>}
       {list.map((c) => (
@@ -2611,7 +2611,7 @@ function AdminUsers() {
   const roleColor = { customer: C.navySoft, employee: C.green, company: "#7B4DE0" };
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>Users ({(adminAllUsers || []).length})</div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 14, padding: "11px 14px", marginBottom: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
         <span style={{ opacity: .45 }}>🔍</span>
@@ -2694,7 +2694,7 @@ function AdminBookings() {
   const shown = filter === "all" ? all : filter === "active" ? all.filter((b) => b.status > 0 && b.status < 4) : filter === "done" ? all.filter((b) => b.status === 4) : all.filter((b) => b.status === 9 || b.status === 8);
 
   return (
-    <div className="cl-fade" style={{ padding: "20px 20px 30px" }}>
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>All bookings ({all.length})</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
         {[{ id: "all", label: "All" }, { id: "active", label: "Active" }, { id: "done", label: "Done" }, { id: "cancelled", label: "Cancelled / Declined" }].map((f) => (
@@ -2726,22 +2726,44 @@ function AdminBookings() {
   );
 }
 
+function AdminLog() {
+  const { adminFetchLog, adminLog, isLive } = useStore();
+  useEffect(() => { if (isLive) adminFetchLog(); }, []);
+  const rows = adminLog || [];
+  const fmt = (ts) => { try { return new Date(ts).toLocaleString(); } catch { return String(ts); } };
+  const LBL = { company_approved: "✅ Approved company", company_rejected: "⛔ Rejected company", company_listed: "👁️ Listed company", company_unlisted: "🚫 Unlisted company", student_approved: "🎓 Approved student", student_rejected: "⛔ Rejected student", student_pending: "↩️ Reset student to pending", admin_granted: "🛡️ Granted admin access", admin_revoked: "🛡️ Revoked admin access", user_activated: "🔓 Reactivated account", user_deactivated: "🔒 Deactivated account", complaint_resolved: "🛟 Resolved complaint", complaint_in_progress: "🛟 Complaint in progress", complaint_open: "🛟 Reopened complaint" };
+  return (
+    <div style={{ padding: "16px 18px 40px" }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginBottom: 4 }}>Decision log</div>
+      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>Every admin decision, signed by who made it.</div>
+      {rows.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>No decisions logged yet.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((e) => (
+          <div key={e.id} style={{ background: C.card, borderRadius: 14, padding: "11px 14px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+            <div style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{LBL[e.action] || e.action}{e.detail ? <span style={{ fontWeight: 500, color: C.inkSoft }}> · {e.detail}</span> : null}</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3 }}>{e.admin_name || "?"} · {e.admin_email || "?"} · {fmt(e.created_at)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel() {
   const { logout, session } = useStore();
   const isCeo = session.isSuper === true;
-  const [tab, setTab] = useState(isCeo ? "dashboard" : "companies");
-  const tabs = isCeo ? [
+  const [tab, setTab] = useState("dashboard");
+  const tabs = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "companies", label: "Companies", icon: "🏢" },
     { id: "users", label: "Users", icon: "👤" },
     { id: "bookings", label: "Bookings", icon: "📅" },
     { id: "complaints", label: "Complaints", icon: "🛟" },
-  ] : [
-    { id: "companies", label: "Company approvals", icon: "🏢" },
+    { id: "log", label: "Decision log", icon: "📜" },
   ];
   return (
     <div className="cl-fade" style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
-      <div style={{ background: `radial-gradient(140% 100% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "22px 20px 18px" }}>
+      <div style={{ background: `radial-gradient(140% 100% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(22px + env(safe-area-inset-top)) 20px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
           <div style={{ flex: 1 }}>
@@ -2766,6 +2788,7 @@ function AdminPanel() {
         {tab === "users" && <AdminUsers />}
         {tab === "bookings" && <AdminBookings />}
         {tab === "complaints" && <AdminComplaints />}
+        {tab === "log" && <AdminLog />}
       </div>
     </div>
   );

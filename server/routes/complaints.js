@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logAdmin } from "../lib/adminlog.js";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -38,7 +39,6 @@ router.get("/", requireAuth, async (req, res) => {
 
 /* PUT /api/complaints/:id — admin only */
 router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
-  if (req.user.isSuper !== true) return res.status(403).json({ error: "CEO admin only" });
   const { status, resolution } = req.body || {};
   if (!["open", "in_progress", "resolved"].includes(status)) return res.status(400).json({ error: "Invalid status" });
   try {
@@ -47,6 +47,7 @@ router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
       [status, resolution || null, req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Not found" });
+    logAdmin(req, `complaint_${status}`, "complaint", req.params.id, resolution || null);
     res.json({ complaint: r.rows[0] });
   } catch (err) {
     res.status(500).json({ error: "Failed to update complaint" });

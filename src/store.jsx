@@ -725,6 +725,11 @@ export function StoreProvider({ children }) {
     try { const { bookings } = await api("/admin/bookings"); setAdminApi(a => ({ ...a, bookings })); return bookings; }
     catch (e) { setError(e.message); return null; }
   };
+  const adminFetchLog = async () => {
+    if (!isApiMode) return [];
+    try { const { log } = await api("/admin/log"); setAdminApi(a => ({ ...a, log })); return log; }
+    catch (e) { setError(e.message); return null; }
+  };
 
   /* employees filtered to current company in demo mode */
   const visibleEmployees = isApiMode ? db.employees : db.employees.filter(e => e.company_id === (session?.companyId || null));
@@ -745,7 +750,7 @@ export function StoreProvider({ children }) {
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, upsertService,
     adminUpdateCompany, adminUpdateUser, adminFetchStats, adminFetchUsers,
-    adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings,
+    adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */
     adminStats:        isApiMode ? adminApi.stats     : demoAdminStats(db),
     adminRevenue:      isApiMode ? adminApi.revenue   : demoAdminRevenue(db),
@@ -753,6 +758,7 @@ export function StoreProvider({ children }) {
     adminAllUsers:     isApiMode ? adminApi.users     : demoAdminUsers(db),
     adminAllBookings:  isApiMode ? adminApi.bookings  : demoAdminBookings(db),
     adminComplaints:   isApiMode ? adminApi.complaints : (db.complaints || []),
+    adminLog:          isApiMode ? (adminApi.log || []) : [],
     demoSwitchRole: !isApiMode ? (role) => {
       if (role === "customer") setSession({ role, userId: "demo-customer", name: "Musa Gillani", custType: "student", companyId: null, address: "Kassai út 26, Debrecen", paymentMethod: "cash", lang: "en" });
       if (role === "employee") setSession({ role, userId: "e1", name: "Eszter Kovács", custType: null, companyId: "co1" });

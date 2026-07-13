@@ -2,12 +2,13 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole, requireSuper } from "../middleware/auth.js";
 import { sendEmail } from "../lib/mailer.js";
+import { logAdmin } from "../lib/adminlog.js";
 
 const router = Router();
 const guard = [requireAuth, requireRole("admin")];
 
 /* GET /api/admin/stats */
-router.get("/stats", ...guard, requireSuper, async (req, res) => {
+router.get("/stats", ...guard, async (req, res) => {
   try {
     const [users, companies, bookings, revenue] = await Promise.all([
       query("SELECT COUNT(*) FROM users WHERE role != 'admin'"),
@@ -80,6 +81,10 @@ router.put("/companies/:id", ...guard, async (req, res) => {
     if (isApproved === false) {
       await query("UPDATE users SET approval_status = 'pending' WHERE id = $1", [co.owner_id]);
     }
+    if (isApproved === true) logAdmin(req, "company_approved", "company", co.id, co.name);
+    else if (isApproved === false) logAdmin(req, "company_rejected", "company", co.id, co.name);
+    if (isListed === true) logAdmin(req, "company_listed", "company", co.id, co.name);
+    else if (isListed === false) logAdmin(req, "company_unlisted", "company", co.id, co.name);
     res.json({ company: co });
   } catch (err) {
     res.status(500).json({ error: "Failed to update company" });
@@ -87,7 +92,7 @@ router.put("/companies/:id", ...guard, async (req, res) => {
 });
 
 /* GET /api/admin/users */
-router.get("/users", ...guard, requireSuper, async (req, res) => {
+router.get("/users", ...guard, async (req, res) => {
   try {
     const result = await query(
       `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.created_at, u.documents,
@@ -104,7 +109,7 @@ router.get("/users", ...guard, requireSuper, async (req, res) => {
 });
 
 /* PUT /api/admin/users/:id */
-router.put("/users/:id", ...guard, requireSuper, async (req, res) => {
+router.put("/users/:id", ...guard, async (req, res) => {
   const { isActive, makeAdmin, approvalStatus } = req.body || {};
   try {
     if (approvalStatus !== undefined) {
@@ -119,6 +124,7 @@ router.put("/users/:id", ...guard, requireSuper, async (req, res) => {
            <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Log in and book your first clean</a></p>
            <p style="color:#69718F;font-size:13px">Cleanly · Hungary · Eight arms, zero dust</p></div>`);
       }
+      logAdmin(req, approvalStatus === "approved" ? "student_approved" : approvalStatus === "rejected" ? "student_rejected" : "student_pending", "user", u.id, `${u.full_name} (${u.email})`);
       return res.json({ user: u });
     }
     if (makeAdmin !== undefined) {
@@ -128,12 +134,14 @@ router.put("/users/:id", ...guard, requireSuper, async (req, res) => {
       if (target.rows[0].role === "company") return res.status(400).json({ error: "Company owners cannot become platform admins" });
       const newRole = makeAdmin ? "admin" : "customer";
       const r = await query("UPDATE users SET role = $1 WHERE id = $2 RETURNING id, role", [newRole, req.params.id]);
+      logAdmin(req, makeAdmin ? "admin_granted" : "admin_revoked", "user", req.params.id, newRole);
       return res.json({ user: r.rows[0] });
     }
     if (typeof isActive !== "boolean") return res.status(400).json({ error: "isActive must be boolean" });
     if (req.params.id === req.user.id && !isActive) return res.status(400).json({ error: "You cannot deactivate yourself" });
     const r = await query("UPDATE users SET is_active = $1 WHERE id = $2 RETURNING id, is_active", [isActive, req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: "User not found" });
+    logAdmin(req, isActive ? "user_activated" : "user_deactivated", "user", req.params.id, null);
     res.json({ user: r.rows[0] });
   } catch (err) {
     console.error(err);
@@ -142,7 +150,7 @@ router.put("/users/:id", ...guard, requireSuper, async (req, res) => {
 });
 
 /* GET /api/admin/bookings */
-router.get("/bookings", ...guard, requireSuper, async (req, res) => {
+router.get("/bookings", ...guard, async (req, res) => {
   try {
     const result = await query(
       `SELECT b.*, c.name AS company_name, c.emoji AS company_emoji,
@@ -162,7 +170,7 @@ router.get("/bookings", ...guard, requireSuper, async (req, res) => {
 });
 
 /* GET /api/admin/revenue — revenue by day (last 30 days) */
-router.get("/revenue", ...guard, requireSuper, async (req, res) => {
+router.get("/revenue", ...guard, async (req, res) => {
   try {
     const result = await query(
       `SELECT scheduled_date::TEXT AS date, COUNT(*) AS bookings, COALESCE(SUM(total_huf),0) AS revenue
@@ -174,6 +182,17 @@ router.get("/revenue", ...guard, requireSuper, async (req, res) => {
     res.json({ revenue: result.rows });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch revenue" });
+  }
+});
+
+router.get("/log", ...guard, async (req, res) => {
+  try {
+    const result = await query(
+      "SELECT id, admin_email, admin_name, action, target_type, target_id, detail, created_at FROM admin_log ORDER BY created_at DESC LIMIT 300"
+    );
+    res.json({ log: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch log" });
   }
 });
 

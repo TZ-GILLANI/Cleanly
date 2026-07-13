@@ -243,3 +243,17 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS archived_by_company BOOLEAN NOT NU
 
 -- ── Terms acceptance (click-wrap consent proof) ────────────────────
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+
+-- Admin decision log - records which admin made which decision (all admins have full access).
+CREATE TABLE IF NOT EXISTS admin_log (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id    UUID,
+  admin_email TEXT,
+  admin_name  TEXT,
+  action      TEXT NOT NULL,
+  target_type TEXT,
+  target_id   TEXT,
+  detail      TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS admin_log_created_idx ON admin_log (created_at DESC);
