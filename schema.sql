@@ -208,3 +208,7 @@ CREATE INDEX IF NOT EXISTS complaints_status_idx ON complaints (status, created_
 -- ── Multi-city (Hungary-wide, Europe-ready) ────────────────────────
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT 'Debrecen';
 CREATE INDEX IF NOT EXISTS companies_city_idx ON companies (city);
+
+-- ── Phone: one number = one active account + verification flag ─────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users (phone) WHERE phone IS NOT NULL AND is_active = true;

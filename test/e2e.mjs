@@ -29,9 +29,15 @@ ok("health endpoint", (await j("/api/health")).data.ok === true);
 ok("payments config (card disabled without keys)", (await j("/api/payments/config")).data.cardEnabled === false);
 
 console.log("\n── registration (with residence + city) ──");
-const cust = await j("/api/auth/register", { method: "POST", body: { email: "anna@test.hu", password: "secret123", role: "customer", fullName: "Anna Teszt", customerType: "student", address: "Piac utca 1, Debrecen" } });
+const DOC = [{ name: "card.jpg", type: "image/jpeg", data: "data:image/jpeg;base64,x" }];
+const noDoc = await j("/api/auth/register", { method: "POST", body: { email: "nodoc@test.hu", password: "secret123", role: "customer", fullName: "No Doc", customerType: "student", address: "X utca 1", phone: "+36301110000" } });
+ok("student without card photo rejected", noDoc.status === 400);
+const cust = await j("/api/auth/register", { method: "POST", body: { email: "anna@test.hu", password: "secret123", role: "customer", fullName: "Anna Teszt", customerType: "student", address: "Piac utca 1, Debrecen", phone: "+36301112222", documents: DOC } });
 ok("customer registers with address", cust.status === 201 && !!cust.data.token, JSON.stringify(cust.data));
 ok("address persisted", cust.data.user?.address === "Piac utca 1, Debrecen");
+const dupPhone = await j("/api/auth/register", { method: "POST", body: { email: "other@test.hu", password: "secret123", role: "customer", fullName: "Other", customerType: "resident", address: "Y utca 2", phone: "+36 30 111 2222" } });
+ok("duplicate phone number blocked (one number = one account)", dupPhone.status === 400, JSON.stringify(dupPhone.data));
+ok("verification engine dormant without Twilio", (await j("/api/verify/config")).data.enabled === false);
 const custTok = cust.data.token;
 
 const co = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "HU123", city: "Budapest" } });
@@ -108,6 +114,8 @@ const del = await j("/api/auth/me", { method: "DELETE", token: custTok });
 ok("account deletion succeeds", del.data.ok === true);
 const anon = await query("SELECT email, full_name, is_active FROM users WHERE id = $1", [cust.data.user.id]);
 ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon.rows[0].is_active === false && anon.rows[0].email.startsWith("deleted-"));
+const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222" } });
+ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
 console.log(`\n════ RESULT: ${passed} passed, ${failed} failed ════`);
 process.exit(failed ? 1 : 0);

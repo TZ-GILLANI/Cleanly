@@ -39,6 +39,19 @@ const getCity = () => {
   return "Debrecen";
 };
 const saveCity = (c) => { try { localStorage.setItem("cleanly_city", c); } catch {} };
+
+/* ── Phone prefix auto-detection (IP country → dial code) ── */
+const DIAL = { HU: "+36", RO: "+40", SK: "+421", AT: "+43", DE: "+49", PL: "+48", CZ: "+420", HR: "+385", RS: "+381", UA: "+380", GB: "+44", IT: "+39", ES: "+34", FR: "+33", NL: "+31", PK: "+92", TR: "+90" };
+let _dial = null;
+async function getDial() {
+  if (_dial) return _dial;
+  try {
+    const r = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(4000) });
+    const j = await r.json();
+    _dial = DIAL[j.country_code] || "+36";
+  } catch { _dial = "+36"; }
+  return _dial;
+}
 const F = `'Quicksand','Inter',system-ui,sans-serif`;
 const B = `'Inter',system-ui,sans-serif`;
 /* Bilingual helpers for literals living outside the t() dictionary.
@@ -601,7 +614,8 @@ function Auth() {
   const { t, lang, setLang } = store;
   const [role, setRole] = useState(null);
   const [mode, setMode] = useState("signup");
-  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "Debrecen", documents: [] });
+  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "Debrecen", phone: "", documents: [] });
+  React.useEffect(() => { getDial().then((d) => setF((prev) => (prev.phone ? prev : { ...prev, phone: d + " " }))); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -642,7 +656,7 @@ function Auth() {
             {roles.map((r, i) => (
               <button key={r.id} onClick={() => { setRole(r.id); setMode("signup"); setErr(null); }} className="cl-rise cl-card" style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 14, textAlign: "left",
-                background: "rgba(255,255,255,.97)", border: "none", borderRadius: 20, padding: "16px 18px",
+                background: C.card, border: "none", borderRadius: 20, padding: "16px 18px",
                 marginBottom: 12, cursor: "pointer", boxShadow: "0 8px 24px rgba(0,0,0,.22)", animationDelay: `${.2 + i * .09}s`,
               }}>
                 <div style={{ width: 48, height: 48, borderRadius: 15, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 23, flexShrink: 0 }}>{r.icon}</div>
@@ -679,8 +693,8 @@ function Auth() {
 
   const ready = mode === "login"
     ? f.email && f.password
-    : role === "customer" ? f.name && f.address.trim() && (!isLive || (f.email && f.password.length >= 6))
-    : role === "employee" ? f.code.trim().length >= 4 && f.address.trim() && (!isLive || (f.name && f.email && f.password.length >= 6))
+    : role === "customer" ? f.name && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (f.custType !== "student" || f.documents.length >= 1) && (!isLive || (f.email && f.password.length >= 6))
+    : role === "employee" ? f.code.trim().length >= 4 && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (!isLive || (f.name && f.email && f.password.length >= 6))
     : (f.companyName.trim() && f.taxId.trim() && (!isLive || (f.email && f.password.length >= 6)));
 
   return (
@@ -712,6 +726,15 @@ function Auth() {
                 ))}
               </div>
               <Field label={L("Residence address", "Lakcím")} hint={L("Required — where our teams come to clean.", "Kötelező — ide érkezik a takarítás.")} placeholder={L("Street, number, city", "Utca, házszám, város")} value={f.address} onChange={set("address")} />
+              <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account. Country code detected automatically.", "Egy szám = egy fiók. Az országkódot automatikusan felismertük.")} value={f.phone} onChange={set("phone")} />
+              {f.custType === "student" && (
+                <DocUpload
+                  label={L("Student card photo *", "Diákigazolvány fotó *")}
+                  hint={L("Required for the student discount — our team verifies it. Max 2 MB.", "A diákkedvezményhez kötelező — csapatunk ellenőrzi. Max 2 MB.")}
+                  docs={f.documents}
+                  onChange={(docs) => setF({ ...f, documents: docs })}
+                />
+              )}
             </>
           )}
           {mode === "signup" && role === "employee" && (
@@ -719,6 +742,7 @@ function Auth() {
               <Field label="Company invite code" placeholder="e.g. SPARK-7K4D" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} />
               {isLive && <Field label="Your name" placeholder="Full name" value={f.name} onChange={set("name")} />}
               <Field label={L("Residence address", "Lakcím")} hint={L("Required for your work registration.", "A munkavégzés nyilvántartásához szükséges.")} placeholder={L("Street, number, city", "Utca, házszám, város")} value={f.address} onChange={set("address")} />
+              <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account.", "Egy szám = egy fiók.")} value={f.phone} onChange={set("phone")} />
               <DocUpload
                 label="Identity document"
                 hint="ID card or residence card (lakcímkártya / tartózkodási engedély) — required before your first job."

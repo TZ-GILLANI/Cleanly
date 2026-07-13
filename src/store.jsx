@@ -286,10 +286,10 @@ export function StoreProvider({ children }) {
 
   /* ════════════ AUTH ════════════ */
 
-  const signupCustomer = async ({ name, email, password, custType, address }) => {
+  const signupCustomer = async ({ name, email, password, custType, address, phone, documents }) => {
     if (!isApiMode) { setSession({ role: "customer", userId: "demo-customer", name, custType, companyId: null, address: address || "" }); return {}; }
     try {
-      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address } });
+      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents } });
       setToken(token);
       const sess = buildSession(user);
       try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
@@ -308,10 +308,10 @@ export function StoreProvider({ children }) {
     } catch (e) { return { error: e.message }; }
   };
 
-  const signupEmployee = async ({ name, email, password, code, documents, address }) => {
+  const signupEmployee = async ({ name, email, password, code, documents, address, phone }) => {
     if (!isApiMode) { setSession({ role: "employee", userId: "e1", name: "Eszter Kovács", custType: null, companyId: "co1" }); return {}; }
     try {
-      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "employee", fullName: name, inviteCode: code, documents, address } });
+      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "employee", fullName: name, inviteCode: code, documents, address, phone } });
       setToken(token);
       const sess = buildSession(user);
       try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }

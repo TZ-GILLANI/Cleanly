@@ -7,12 +7,21 @@ const router = Router();
 
 /* POST /api/auth/register */
 router.post("/register", async (req, res) => {
-  const { email, password, role, fullName, customerType, inviteCode, companyName, taxId, regNumber, contactPhone, documents, address, city } = req.body;
+  const { email, password, role, fullName, customerType, inviteCode, companyName, taxId, regNumber, contactPhone, documents, address, city, phone } = req.body;
+  const normPhone = phone ? String(phone).replace(/[^0-9+]/g, "").slice(0, 20) : null;
   const docsJson = JSON.stringify(Array.isArray(documents) ? documents.slice(0, 6) : []);
 
   if (!email || !password || !fullName || !role) return res.status(400).json({ error: "Missing required fields" });
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
   if (!["customer", "employee", "company"].includes(role)) return res.status(400).json({ error: "Invalid role" });
+  if (["customer", "employee"].includes(role)) {
+    if (!normPhone || normPhone.replace(/[^0-9]/g, "").length < 8) return res.status(400).json({ error: "A valid phone number is required" });
+    const phoneTaken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true", [normPhone]);
+    if (phoneTaken.rows.length) return res.status(400).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+  }
+  if (role === "customer" && customerType === "student" && !(Array.isArray(documents) && documents.length >= 1)) {
+    return res.status(400).json({ error: "A student card photo is required for student accounts" });
+  }
 
   try {
     const existing = await query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
@@ -50,8 +59,8 @@ router.post("/register", async (req, res) => {
 
       const companyId = invite.rows[0].company_id;
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id",
-        [email.toLowerCase(), hash, "employee", fullName, companyId, docsJson, address ? String(address).slice(0, 300) : null]
+        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",
+        [email.toLowerCase(), hash, "employee", fullName, companyId, docsJson, address ? String(address).slice(0, 300) : null, normPhone]
       );
       const userId = userRes.rows[0].id;
       // atomic claim — a code can only ever be consumed once, even under concurrent signups
@@ -71,8 +80,8 @@ router.post("/register", async (req, res) => {
 
     // customer
     const userRes = await query(
-      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
-      [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null]
+      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, documents) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+      [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null, normPhone, docsJson]
     );
     const user = userRes.rows[0];
     const token = signToken({ id: user.id, role: "customer", companyId: null });
@@ -119,6 +128,11 @@ router.get("/me", requireAuth, async (req, res) => {
 router.put("/profile", requireAuth, async (req, res) => {
   const { fullName, phone, customerType, address, paymentMethod, lang, documents } = req.body;
   try {
+    if (phone) {
+      const np = String(phone).replace(/[^0-9+]/g, "").slice(0, 20);
+      const taken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true AND id <> $2", [np, req.user.id]);
+      if (taken.rows.length) return res.status(400).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+    }
     const result = await query(
       `UPDATE users SET
         full_name = COALESCE($1, full_name),

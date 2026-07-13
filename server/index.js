@@ -14,6 +14,7 @@ import reviewsRouter from "./routes/reviews.js";
 import adminRouter from "./routes/admin.js";
 import paymentsRouter from "./routes/payments.js";
 import complaintsRouter from "./routes/complaints.js";
+import verifyRouter from "./routes/verify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -42,6 +43,7 @@ app.use("/api/reviews", reviewsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/complaints", complaintsRouter);
+app.use("/api/verify", verifyRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
