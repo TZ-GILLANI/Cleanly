@@ -699,6 +699,15 @@ export function StoreProvider({ children }) {
       return {};
     } catch (e) { return { error: e.message }; }
   };
+  const adminDeleteUser = async (id) => {
+    if (!isApiMode) return {};
+    try {
+      await api("/admin/users/" + id, { method: "DELETE" });
+      setAdminApi(a => ({ ...a, users: a.users?.filter(u => u.id !== id) ?? null }));
+      return {};
+    } catch (e) { return { error: e.message }; }
+  };
+
 
   const adminFetchStats = async () => {
     if (!isApiMode) return demoAdminStats(db);
@@ -749,7 +758,7 @@ export function StoreProvider({ children }) {
     connectStatus, connectOnboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, upsertService,
-    adminUpdateCompany, adminUpdateUser, adminFetchStats, adminFetchUsers,
+    adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */
     adminStats:        isApiMode ? adminApi.stats     : demoAdminStats(db),

@@ -754,7 +754,7 @@ function Auth() {
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: `radial-gradient(130% 100% at 50% 0%, ${C.navyMid}, ${C.navyDeep} 72%)`, padding: "0 26px", position: "relative", overflow: "hidden" }}>
         <div className="cl-bubble" style={{ left: "16%" }} />
         <div className="cl-bubble" style={{ left: "72%", animationDelay: ".9s", width: 13, height: 13 }} />
-        <div style={{ position: "absolute", top: 16, right: 18, display: "flex", gap: 6, zIndex: 2 }}>
+        <div style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top))", right: 18, display: "flex", gap: 6, zIndex: 2 }}>
           {LANGS.map((o) => (
             <button key={o.id} onClick={() => setLang(o.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "5px 10px", borderRadius: 99, border: "none", cursor: "pointer", background: lang === o.id ? "#fff" : "rgba(255,255,255,.14)", color: lang === o.id ? C.navy : "#C9D2F5" }}>{o.label}</button>
           ))}
@@ -812,7 +812,7 @@ function Auth() {
 
   return (
     <div className="cl-fade" style={{ height: "100dvh", minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", padding: "0 26px", overflow: "hidden", boxSizing: "border-box" }}>
-      <div style={{ paddingTop: 22, flexShrink: 0 }}>
+      <div style={{ paddingTop: "calc(22px + env(safe-area-inset-top))", flexShrink: 0 }}>
         <button onClick={() => setRole(null)} style={{ background: C.card, border: "none", width: 38, height: 38, borderRadius: 13, fontSize: 16, cursor: "pointer", boxShadow: "0 2px 8px rgba(20,28,58,.08)" }}>←</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", paddingTop: 24 }}>
@@ -2591,11 +2591,12 @@ function AdminComplaints() {
 }
 
 function AdminUsers() {
-  const { adminAllUsers, adminFetchUsers, adminUpdateUser } = useStore();
+  const { adminAllUsers, adminFetchUsers, adminUpdateUser, adminDeleteUser } = useStore();
   const toast = useToast();
   const [busy, setBusy] = useState(!adminAllUsers);
   const [q, setQ] = useState("");
   const [viewDocs, setViewDocs] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
 
   React.useEffect(() => {
     if (!adminAllUsers) adminFetchUsers().finally(() => setBusy(false));
@@ -2670,11 +2671,23 @@ function AdminUsers() {
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${u.is_active === false ? C.green : C.coral}`, background: C.card, color: u.is_active === false ? C.green : C.coral, cursor: "pointer" }}>
               {u.is_active === false ? "Activate" : "Deactivate"}
             </button>
+            <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
+              🗑️ Delete
+            </button>
           </div>
         </div>
       ))}
       {filtered.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>No users found.</div>}
       {viewDocs && <DocViewer title={viewDocs.title} docs={viewDocs.docs} close={() => setViewDocs(null)} />}
+      {confirmDel && (
+        <ConfirmDialog
+          title={L("Delete this account?", "Fiók törlése?")}
+          body={L(`${confirmDel.full_name || confirmDel.email} — personal data is permanently anonymised (booking history is kept for accounting). This cannot be undone.`, `${confirmDel.full_name || confirmDel.email} — a személyes adatok véglegesen anonimizálódnak (a foglalási előzmények megmaradnak). Ez nem vonható vissza.`)}
+          confirmLabel={L("Delete forever", "Végleges törlés")}
+          onConfirm={async () => { const res = await adminDeleteUser(confirmDel.id); if (res?.error) toast(res.error, "error"); else { toast(L("Account deleted", "Fiók törölve")); adminFetchUsers(); } setConfirmDel(null); }}
+          onCancel={() => setConfirmDel(null)}
+        />
+      )}
     </div>
   );
 }
@@ -2731,7 +2744,7 @@ function AdminLog() {
   useEffect(() => { if (isLive) adminFetchLog(); }, []);
   const rows = adminLog || [];
   const fmt = (ts) => { try { return new Date(ts).toLocaleString(); } catch { return String(ts); } };
-  const LBL = { company_approved: "✅ Approved company", company_rejected: "⛔ Rejected company", company_listed: "👁️ Listed company", company_unlisted: "🚫 Unlisted company", student_approved: "🎓 Approved student", student_rejected: "⛔ Rejected student", student_pending: "↩️ Reset student to pending", admin_granted: "🛡️ Granted admin access", admin_revoked: "🛡️ Revoked admin access", user_activated: "🔓 Reactivated account", user_deactivated: "🔒 Deactivated account", complaint_resolved: "🛟 Resolved complaint", complaint_in_progress: "🛟 Complaint in progress", complaint_open: "🛟 Reopened complaint" };
+  const LBL = { company_approved: "✅ Approved company", company_rejected: "⛔ Rejected company", company_listed: "👁️ Listed company", company_unlisted: "🚫 Unlisted company", student_approved: "🎓 Approved student", student_rejected: "⛔ Rejected student", student_pending: "↩️ Reset student to pending", admin_granted: "🛡️ Granted admin access", admin_revoked: "🛡️ Revoked admin access", user_activated: "🔓 Reactivated account", user_deactivated: "🔒 Deactivated account", complaint_resolved: "🛟 Resolved complaint", complaint_in_progress: "🛟 Complaint in progress", complaint_open: "🛟 Reopened complaint", account_deleted: "🗑️ Deleted account" };
   return (
     <div style={{ padding: "16px 18px 40px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginBottom: 4 }}>Decision log</div>

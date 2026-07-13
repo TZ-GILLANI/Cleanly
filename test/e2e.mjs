@@ -94,6 +94,15 @@ const logRes = await j("/api/admin/log", { token: limTok });
 ok("admin decision log is populated", logRes.status === 200 && Array.isArray(logRes.data.log) && logRes.data.log.length > 0, `status ${logRes.status} len ${logRes.data.log?.length}`);
 ok("decision log records the acting admin signature", (logRes.data.log || []).some((e) => e.admin_email === "root@cleanly.hu"));
 await j(`/api/admin/users/${limited.rows[0].id}`, { method: "PUT", token: admTok, body: { makeAdmin: false } });
+const victimReg = await j("/api/auth/register", { method: "POST", body: { email: "victim@test.hu", password: "secret123", role: "customer", fullName: "Victim User", customerType: "resident", address: "X utca 9", phone: "+36301117777", termsAccepted: true } });
+const victimId = victimReg.data.user?.id || (await query("SELECT id FROM users WHERE email = 'victim@test.hu'")).rows[0].id;
+const delRes = await j(`/api/admin/users/${victimId}`, { method: "DELETE", token: admTok });
+ok("admin can delete an account", delRes.status === 200 && delRes.data.ok === true, JSON.stringify(delRes.data));
+const victimRow = (await query("SELECT email, is_active, phone FROM users WHERE id = $1", [victimId])).rows[0];
+ok("deleted account is anonymised (inactive + email scrubbed)", victimRow && victimRow.is_active === false && String(victimRow.email).startsWith("deleted-"));
+ok("deleted account phone is freed for reuse", victimRow && victimRow.phone === null);
+const rootId2 = (await query("SELECT id FROM users WHERE email = 'root@cleanly.hu'")).rows[0].id;
+ok("admin cannot delete their own account via this route", (await j(`/api/admin/users/${rootId2}`, { method: "DELETE", token: admTok })).status === 400);
 list = await j("/api/companies");
 ok("approved company visible with city", list.data.companies?.some((c) => c.id === coId && c.city === "Budapest"));
 

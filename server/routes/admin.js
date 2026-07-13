@@ -185,6 +185,26 @@ router.get("/revenue", ...guard, async (req, res) => {
   }
 });
 
+router.delete("/users/:id", ...guard, async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account here" });
+  try {
+    const target = await query("SELECT id, email, full_name, role, company_id FROM users WHERE id = $1", [req.params.id]);
+    if (!target.rows.length) return res.status(404).json({ error: "User not found" });
+    const u = target.rows[0];
+    const anonEmail = `deleted-${u.id}-${Date.now()}@deleted.cleanly`;
+    await query(
+      `UPDATE users SET email = $1, full_name = 'Deleted user', phone = NULL, address = NULL, documents = '[]'::jsonb, password_hash = 'account-deleted', is_active = false WHERE id = $2`,
+      [anonEmail, u.id]
+    );
+    if (u.role === "company" && u.company_id) await query("UPDATE companies SET is_listed = false WHERE id = $1", [u.company_id]);
+    logAdmin(req, "account_deleted", "user", u.id, `${u.full_name} (${u.email})`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("admin delete error:", err);
+    res.status(500).json({ error: "Could not delete account" });
+  }
+});
+
 router.get("/log", ...guard, async (req, res) => {
   try {
     const result = await query(
