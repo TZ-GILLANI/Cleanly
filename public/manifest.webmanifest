@@ -1,0 +1,13 @@
+{
+  "name": "Cleanly",
+  "short_name": "Cleanly",
+  "description": "Book verified cleaning companies in Debrecen. Students save up to 20%.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10194A",
+  "theme_color": "#10194A",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,59 @@
+# Codemagic cloud build — builds the iOS app WITHOUT a Mac and can submit
+# straight to App Store Connect. Connect this repo at codemagic.io,
+# then add the App Store Connect integration + iOS certificate in the UI
+# (Teams → Integrations → App Store Connect; Code signing identities).
+workflows:
+  ios-appstore:
+    name: Cleanly iOS (App Store)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: codemagic   # name of your App Store Connect API key in Codemagic
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.cleanly.app
+    scripts:
+      - name: Install dependencies
+        script: npm ci || npm install
+      - name: Build web bundle (API mode)
+        script: npm run build
+      - name: Add & sync iOS platform
+        script: |
+          npx cap add ios || true
+          npx cap sync ios
+      - name: iOS permission strings
+        script: |
+          plutil -replace NSLocationWhenInUseUsageDescription -string "Cleanly uses your location to fill in your address when booking a cleaning." ios/App/App/Info.plist
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  android-playstore:
+    name: Cleanly Android (Play Store bundle)
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      node: 20
+      java: 17
+    scripts:
+      - name: Install dependencies
+        script: npm ci || npm install
+      - name: Build web bundle (API mode)
+        script: npm run build
+      - name: Sync Android
+        script: npx cap sync android
+      - name: Build release bundle
+        script: cd android && chmod +x gradlew && ./gradlew bundleRelease
+    artifacts:
+      - android/app/build/outputs/**/*.aab

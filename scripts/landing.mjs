@@ -1,0 +1,12 @@
+import { chromium } from "playwright";
+import path from "path";
+import { fileURLToPath } from "url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 430, height: 924 }, deviceScaleFactor: 2 });
+const page = await ctx.newPage();
+await page.goto("http://localhost:5173", { waitUntil: "networkidle" });
+await page.waitForTimeout(1500);
+await page.screenshot({ path: path.join(__dirname, "..", "shots", "20-welcome-logo.png"), fullPage: true });
+console.log("captured welcome");
+await browser.close();

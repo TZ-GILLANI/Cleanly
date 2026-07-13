@@ -1,0 +1,16 @@
+import { chromium } from "playwright";
+import path from "path";
+import { fileURLToPath } from "url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OUT = path.join(__dirname, "..", "shots");
+const BASE = "http://localhost:5173";
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 430, height: 844 }, deviceScaleFactor: 2 });
+const page = await ctx.newPage();
+await page.goto(BASE, { waitUntil: "networkidle" }); await pause(1200);
+await page.screenshot({ path: path.join(OUT, "80-landing-en.png") }); console.log("📸 en");
+await page.getByRole("button", { name: "HU" }).click(); await pause(900);
+await page.screenshot({ path: path.join(OUT, "81-landing-hu.png") }); console.log("📸 hu");
+await browser.close();
+console.log("done");

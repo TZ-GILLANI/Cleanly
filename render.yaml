@@ -1,0 +1,30 @@
+# Render blueprint — creates the Cleanly backend with one click.
+# In Render: New → Blueprint → point it at your GitHub repo.
+services:
+  - type: web
+    name: cleanly
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_USE_API
+        value: "true"
+      # Web build is served from the same origin as the API → keep base empty here.
+      - key: VITE_API_BASE
+        value: ""
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false   # paste your Supabase connection string in the Render dashboard
+      - key: BARION_ENV
+        value: test
+      - key: BARION_POSKEY
+        sync: false
+      - key: BARION_PAYEE
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false   # set to https://<your-app>.onrender.com after first deploy
