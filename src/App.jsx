@@ -40,6 +40,19 @@ const getCity = () => {
 };
 const saveCity = (c) => { try { localStorage.setItem("cleanly_city", c); } catch {} };
 
+/* Hungarian company identifiers (mirror of server-side validation) */
+const huTaxIdValid = (raw) => {
+  const d = String(raw || "").replace(/[^0-9]/g, "");
+  if (d.length !== 11) return false;
+  const w = [9, 7, 3, 1, 9, 7, 3];
+  const sum = w.reduce((a, wi, i) => a + wi * Number(d[i]), 0);
+  if ((10 - (sum % 10)) % 10 !== Number(d[7])) return false;
+  if (!"12345".includes(d[8])) return false;
+  const county = Number(d.slice(9, 11));
+  return (county >= 2 && county <= 44) || county === 51;
+};
+const huRegNumberValid = (raw) => String(raw || "").replace(/[^0-9]/g, "").length === 10;
+
 /* ── Phone prefix auto-detection (IP country → dial code) ── */
 const DIAL = { HU: "+36", RO: "+40", SK: "+421", AT: "+43", DE: "+49", PL: "+48", CZ: "+420", HR: "+385", RS: "+381", UA: "+380", GB: "+44", IT: "+39", ES: "+34", FR: "+33", NL: "+31", PK: "+92", TR: "+90" };
 let _dial = null;
@@ -297,14 +310,30 @@ const Avatar = ({ name = "?", color = C.navySoft, size = 36 }) => (
     {name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
   </div>
 );
-const Field = ({ label, area, ...props }) => (
-  <div style={{ marginBottom: 13 }}>
-    {label && <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{label}</div>}
-    {area
-      ? <textarea {...props} rows={props.rows || 3} style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 13.5, outline: "none", background: C.card, color: C.ink, resize: "none" }} />
-      : <input {...props} style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, outline: "none", background: C.card, color: C.ink }} />}
-  </div>
-);
+const Field = ({ label, hint, area, ...props }) => {
+  const [showPw, setShowPw] = useState(false);
+  const isPw = props.type === "password";
+  return (
+    <div style={{ marginBottom: 13 }}>
+      {label && <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{label}</div>}
+      {area
+        ? <textarea {...props} rows={props.rows || 3} style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 13.5, outline: "none", background: C.card, color: C.ink, resize: "none" }} />
+        : (
+          <div style={{ position: "relative" }}>
+            <input {...props} type={isPw && showPw ? "text" : props.type}
+              style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", paddingRight: isPw ? 46 : 15, borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, outline: "none", background: C.card, color: C.ink }} />
+            {isPw && (
+              <button type="button" tabIndex={-1} onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Hide password" : "Show password"}
+                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 17, opacity: .7, padding: 6 }}>
+                {showPw ? "🙈" : "👁️"}
+              </button>
+            )}
+          </div>
+        )}
+      {hint && <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{hint}</div>}
+    </div>
+  );
+};
 const StatusPill = ({ status }) => {
   const ended = status === 8 || status === 9; // 8 declined · 9 cancelled
   return (
@@ -449,6 +478,61 @@ function AddressPicker({ value, onChange }) {
           }}>{L("Use this address", "Ezt a címet használom")}</Btn>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Phone verification gate: blocks customers/cleaners until the code
+      they receive on WhatsApp/SMS is entered. Appears ONLY when the
+      Twilio keys are configured on the server. ── */
+function PhoneVerifyGate() {
+  const { session, verifyConfig, verifyStart, verifyCheck, logout, isLive } = useStore();
+  const [enabled, setEnabled] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  React.useEffect(() => { if (isLive) verifyConfig().then((c) => setEnabled(!!c.enabled)); }, [isLive]);
+  const needs = enabled && session && ["customer", "employee"].includes(session.role) && session.phone && !session.phoneVerified;
+  if (!needs) return null;
+  const send = async (channel) => {
+    setBusy(true); setErr("");
+    const r = await verifyStart(channel);
+    setBusy(false);
+    if (r?.error) setErr(r.error); else setSent(true);
+  };
+  const check = async () => {
+    setBusy(true); setErr("");
+    const r = await verifyCheck(code);
+    setBusy(false);
+    if (!r?.verified) setErr(r?.error || L("Wrong code — try again", "Hibás kód — próbáld újra"));
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 95, background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center" }}>
+      <div style={{ fontSize: 52 }}>📱</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, marginTop: 14 }}>{L("Verify your number", "Erősítsd meg a számodat")}</div>
+      <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 8, lineHeight: 1.6, maxWidth: 320 }}>
+        {sent
+          ? L(`Enter the code we sent to ${session.phone}`, `Írd be a(z) ${session.phone} számra küldött kódot`)
+          : L(`We'll send a confirmation code to ${session.phone}`, `Megerősítő kódot küldünk a(z) ${session.phone} számra`)}
+      </div>
+      {err && <div style={{ fontFamily: B, fontSize: 12.5, color: C.coralText, marginTop: 12 }}>{err}</div>}
+      <div style={{ width: "100%", maxWidth: 300, marginTop: 22, display: "flex", flexDirection: "column", gap: 10 }}>
+        {!sent ? (
+          <>
+            <Btn full disabled={busy} onClick={() => send("whatsapp")}>💬 {L("Send code via WhatsApp", "Kód küldése WhatsAppon")}</Btn>
+            <Btn ghost full disabled={busy} onClick={() => send("sms")}>{L("Send as SMS instead", "Inkább SMS-ben")}</Btn>
+          </>
+        ) : (
+          <>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))} inputMode="numeric" placeholder="• • • • • •"
+              style={{ textAlign: "center", letterSpacing: 8, fontSize: 22, fontFamily: F, fontWeight: 700, padding: "14px 10px", borderRadius: 15, border: `1.5px solid ${C.line}`, background: C.card, color: C.ink, outline: "none" }} />
+            <Btn full disabled={busy || code.length < 4} onClick={check}>{busy ? "..." : L("Verify", "Megerősítés")}</Btn>
+            <Btn ghost full disabled={busy} onClick={() => send("sms")}>{L("Resend as SMS", "Újraküldés SMS-ben")}</Btn>
+          </>
+        )}
+        <button onClick={logout} style={{ background: "none", border: "none", fontFamily: B, fontSize: 12, fontWeight: 700, color: C.inkFaint, cursor: "pointer", marginTop: 6 }}>{L("Log out", "Kijelentkezés")}</button>
+      </div>
     </div>
   );
 }
@@ -626,6 +710,7 @@ function Auth() {
     { id: "company", icon: "🏢", title: t("auth.r.company.title"), sub: t("auth.r.company.sub") },
   ];
 
+  const [pendingScreen, setPendingScreen] = useState(false);
   const submit = async () => {
     setBusy(true); setErr(null);
     let res;
@@ -634,8 +719,22 @@ function Auth() {
     else if (role === "employee") res = await store.signupEmployee(f);
     else res = await store.signupCompany(f);
     setBusy(false);
+    if (res?.pending) { setPendingScreen(true); return; }
     if (res?.error) setErr(res.error);
   };
+
+  if (pendingScreen)
+    return (
+      <div className="cl-fade" style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center" }}>
+        <div className="cl-pop" style={{ fontSize: 58 }}>🎓</div>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>{L("Application received!", "Jelentkezés beérkezett!")}</div>
+        <div style={{ fontFamily: B, fontSize: 13.5, color: C.inkSoft, marginTop: 12, lineHeight: 1.7, maxWidth: 340 }}>
+          {L("Our team is verifying your student card. You'll get an email as soon as your account is approved — then just log in.",
+             "Csapatunk ellenőrzi a diákigazolványodat. E-mailt küldünk, amint jóváhagytuk a fiókodat — utána már be is léphetsz.")}
+        </div>
+        <Btn style={{ marginTop: 26 }} onClick={() => { setPendingScreen(false); setRole(null); }}>{L("Back to start", "Vissza a kezdőlapra")}</Btn>
+      </div>
+    );
 
   if (!role)
     return (
@@ -695,7 +794,7 @@ function Auth() {
     ? f.email && f.password
     : role === "customer" ? f.name && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (f.custType !== "student" || f.documents.length >= 1) && (!isLive || (f.email && f.password.length >= 6))
     : role === "employee" ? f.code.trim().length >= 4 && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (!isLive || (f.name && f.email && f.password.length >= 6))
-    : (f.companyName.trim() && f.taxId.trim() && (!isLive || (f.email && f.password.length >= 6)));
+    : (f.companyName.trim() && huTaxIdValid(f.taxId) && (!f.regNumber.trim() || huRegNumberValid(f.regNumber)) && (!isLive || (f.email && f.password.length >= 6)));
 
   return (
     <div className="cl-fade" style={{ height: "100dvh", minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", padding: "0 26px", overflow: "hidden", boxSizing: "border-box" }}>
@@ -759,7 +858,9 @@ function Auth() {
                 style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
                 {ALL_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
-              <Field label="Tax ID / VAT (ÁFA) *" placeholder="e.g. HU12345678" value={f.taxId} onChange={set("taxId")} />
+              <Field label={L("Tax number (adószám) *", "Adószám *")} placeholder="12345678-1-42"
+                hint={f.taxId.trim() ? (huTaxIdValid(f.taxId) ? "✅ " + L("Valid tax number", "Érvényes adószám") : "❌ " + L("Invalid — check the digits (format: 12345678-1-42)", "Hibás — ellenőrizd a számokat (formátum: 12345678-1-42)")) : L("We verify this against the official checksum.", "A hivatalos ellenőrzőszám alapján ellenőrizzük.")}
+                value={f.taxId} onChange={set("taxId")} />
               <Field label="Company registration no." placeholder="e.g. 09-09-123456" value={f.regNumber} onChange={set("regNumber")} />
               <Field label="Contact phone" placeholder="+36 …" value={f.contactPhone} onChange={set("contactPhone")} />
               <DocUpload
@@ -952,7 +1053,7 @@ function CustomerHome({ openBooking, openProfile }) {
 }
 
 function BookingFlow({ company, close, onBooked }) {
-  const { session, services, reviews, createBooking, startPayment, getPaymentStatus } = useStore();
+  const { session, services, reviews, createBooking, startPayment, getPaymentStatus, feePct } = useStore();
   const toast = useToast();
   const svcs = services.filter((s) => s.company_id === company.id && s.is_active);
   const revs = reviews.filter((r) => r.company_id === company.id);
@@ -973,7 +1074,9 @@ function BookingFlow({ company, close, onBooked }) {
   const stud = (n) => (isStudent ? Math.round((n || 0) * company.student_discount / 100) : 0);
   const gross = !svc ? 0 : isHourly ? (svc.hourly_rate_huf || 0) * hours : (svc.price_huf || 0);
   const discount = stud(gross);
-  const total = gross - discount;
+  const companyShare = gross - discount;
+  const serviceFee = Math.round(companyShare * (feePct ?? 10) / 100);
+  const total = companyShare + serviceFee;
   const youPay = (s) => {
     const g = s.pricing_type === "hourly" ? s.hourly_rate_huf : s.price_huf;
     const d = g - stud(g);
@@ -1142,6 +1245,11 @@ function BookingFlow({ company, close, onBooked }) {
                     <span>{L("Student discount", "Diákkedvezmény")} (−{company.student_discount}%)</span><span>−{huf(discount)}</span>
                   </div>
                 )}
+                {serviceFee > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 7 }}>
+                    <span>{L(`Cleanly service fee (${feePct ?? 10}%)`, `Cleanly szolgáltatási díj (${feePct ?? 10}%)`)}</span><span>+{huf(serviceFee)}</span>
+                  </div>
+                )}
                 <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "12px 0" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>
                   <span>{isSub ? (HUL() ? everyP(svc.period).charAt(0).toUpperCase() + everyP(svc.period).slice(1) : `Per ${periodLabel(svc.period)}`) : L("Total", "Összesen")}</span><span>{huf(total)}</span>
@@ -1211,6 +1319,7 @@ function CustomerBookings({ openBooking }) {
   const [body, setBody] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(null);
   const [complaining, setComplaining] = useState(null);
+  const [googlePrompt, setGooglePrompt] = useState(null);
   const [compSubject, setCompSubject] = useState("");
   const [compBody, setCompBody] = useState("");
 
@@ -1312,6 +1421,16 @@ function CustomerBookings({ openBooking }) {
         />
       )}
 
+      {googlePrompt && (
+        <ConfirmDialog
+          title={L("Loved it? Tell Google too ⭐", "Tetszett? Mondd el a Google-ön is ⭐")}
+          body={L(`A Google review helps ${googlePrompt.name} get found by more people. It takes 30 seconds.`, `Egy Google-értékelés segít, hogy többen megtalálják: ${googlePrompt.name}. 30 másodperc az egész.`)}
+          confirmLabel={L("Review on Google", "Értékelés Google-ön")}
+          onCancel={() => setGooglePrompt(null)}
+          onConfirm={() => { window.open(`https://search.google.com/local/writereview?placeid=${googlePrompt.google_place_id}`, "_blank"); setGooglePrompt(null); }}
+        />
+      )}
+
       {complaining && (
         <Sheet title={L("Report a problem", "Probléma bejelentése")} close={() => setComplaining(null)}>
           <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14, lineHeight: 1.6 }}>
@@ -1334,7 +1453,13 @@ function CustomerBookings({ openBooking }) {
             {[1, 2, 3, 4, 5].map((n) => <Star key={n} size={34} filled={n <= stars} onClick={() => setStars(n)} />)}
           </div>
           <Field area placeholder={L("What stood out? (optional)", "Mi tetszett? (opcionális)")} value={body} onChange={(e) => setBody(e.target.value)} />
-          <Btn full onClick={() => { addReview({ bookingId: reviewing.id, companyId: reviewing.company_id, stars, body }); toast(L("Review submitted — thank you!", "Értékelés elküldve — köszönjük!")); setReviewing(null); }}>
+          <Btn full onClick={() => {
+            addReview({ bookingId: reviewing.id, companyId: reviewing.company_id, stars, body });
+            const co2 = companies.find((c) => c.id === reviewing.company_id);
+            toast(L("Review submitted — thank you!", "Értékelés elküldve — köszönjük!"));
+            if (co2?.google_place_id && stars >= 4) setGooglePrompt(co2);
+            setReviewing(null);
+          }}>
             {L("Submit review", "Értékelés küldése")}
           </Btn>
         </Sheet>
@@ -1513,13 +1638,14 @@ function CompanyJobs() {
   const open = mine.filter((b) => b.status < 4 && b.status !== 9);
   const done = mine.filter((b) => b.status === 4);
   const cancelled = mine.filter((b) => b.status === 9 || b.status === 8);
-  const revenue = done.reduce((a, b) => a + (b.total_huf || 0), 0);
-  const pipeline = open.reduce((a, b) => a + (b.total_huf || 0), 0);
+  const net = (b) => (b.total_huf || 0) - (b.service_fee_huf || 0); // company share (Cleanly fee excluded)
+  const revenue = done.reduce((a, b) => a + net(b), 0);
+  const pipeline = open.reduce((a, b) => a + net(b), 0);
   const unassigned = open.filter((b) => !b.assigned_to).length;
   const todayISO2 = localISO(new Date());
   const isToday = (b) => String(b.scheduled_date).slice(0, 10) === todayISO2;
   const todayJobs = done.filter(isToday);
-  const todayRevenue = todayJobs.reduce((a, b) => a + (b.total_huf || 0), 0);
+  const todayRevenue = todayJobs.reduce((a, b) => a + net(b), 0);
   const subs = open.filter((b) => b.pricing_type === "subscription");
   const shownOpen = open.filter((b) =>
     filter === "new" ? b.status === 0 :
@@ -1673,7 +1799,7 @@ function CompanyClients() {
       if (!key) continue;
       const c = map.get(key) || { key, name: b.customer_name || "Customer", phone: b.customer_phone || null, kind: b.customer_kind || b.customer_type, addresses: new Set(), jobs: 0, done: 0, spend: 0, last: "", hasSub: false };
       c.jobs += 1;
-      if (b.status === 4) { c.done += 1; c.spend += b.total_huf || 0; }
+      if (b.status === 4) { c.done += 1; c.spend += (b.total_huf || 0) - (b.service_fee_huf || 0); }
       if (b.pricing_type === "subscription" && b.status < 8) c.hasSub = true;
       if (b.address) c.addresses.add(b.address);
       if (String(b.scheduled_date) > c.last) c.last = String(b.scheduled_date).slice(0, 10);
@@ -1988,6 +2114,45 @@ function CompanyTeam() {
   );
 }
 
+/* ── Company payout onboarding (Stripe Connect) ── */
+function PayoutSetup() {
+  const { connectStatus, connectOnboard, isLive } = useStore();
+  const toast = useToast();
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  React.useEffect(() => { if (isLive) connectStatus().then(setSt); }, [isLive]);
+  if (!isLive || !st || !st.available) return null;
+  const ready = st.connected && st.chargesEnabled;
+  return (
+    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)", border: ready ? `1.5px solid ${C.mint}` : `1.5px dashed ${C.line}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 22 }}>{ready ? "✅" : "⚡"}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>
+            {ready ? "Automatic payouts active" : "Set up automatic payouts"}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.5 }}>
+            {ready
+              ? "Card payments land in your bank automatically, service fee already deducted."
+              : st.connected
+              ? "Onboarding started but not finished — continue below."
+              : "Connect your bank via Stripe: card bookings then pay out to you automatically."}
+          </div>
+        </div>
+        {!ready && (
+          <Btn small disabled={busy} onClick={async () => {
+            setBusy(true);
+            const r = await connectOnboard();
+            setBusy(false);
+            if (r?.url) window.open(r.url, "_blank");
+            else toast(r?.error || "Could not start onboarding", "error");
+          }}>{st.connected ? "Continue" : "Connect"}</Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CompanySettings() {
   const { session, companies, updateCompany } = useStore();
   const toast = useToast();
@@ -1996,7 +2161,7 @@ function CompanySettings() {
     name: co?.name || "", tagline: co?.tagline || "", area: co?.area || "", city: co?.city || "Debrecen",
     emoji: co?.emoji || "🫧", student_discount: co?.student_discount ?? 10,
     cover: co?.cover || COVER_PRESETS[0], logo_url: co?.logo_url || null,
-    tax_id: co?.tax_id || "", reg_number: co?.reg_number || "", contact_phone: co?.contact_phone || "",
+    tax_id: co?.tax_id || "", reg_number: co?.reg_number || "", contact_phone: co?.contact_phone || "", google_place_id: co?.google_place_id || "",
     documents: co?.documents || [],
   });
   const [busy, setBusy] = useState(false);
@@ -2017,7 +2182,7 @@ function CompanySettings() {
     const disc = parseInt(f.student_discount, 10);
     if (isNaN(disc) || disc < 0 || disc > 50) return toast("Discount must be 0–50%", "error");
     setBusy(true);
-    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, documents: f.documents });
+    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else toast("Company profile updated ✓");
@@ -2059,9 +2224,13 @@ function CompanySettings() {
       <Field label="Service area" placeholder="e.g. Belváros · Nagyerdő" value={f.area} onChange={set("area")} />
 
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>Business details (for verification & invoicing)</div>
-      <Field label="Tax ID / VAT (ÁFA)" placeholder="HU12345678" value={f.tax_id} onChange={set("tax_id")} />
+      <Field label="Tax number (adószám)" placeholder="12345678-1-42"
+        hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? "✅ Valid" : "❌ Invalid format — 12345678-1-42") : undefined}
+        value={f.tax_id} onChange={set("tax_id")} />
       <Field label="Company registration no." placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
       <Field label="Contact phone" placeholder="+36 …" value={f.contact_phone} onChange={set("contact_phone")} />
+      <PayoutSetup />
+      <Field label="Google Place ID (optional)" hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
       <DocUpload
         label="Verification documents"
         hint="Cégkivonat, tax certificate, insurance — reviewed by the Cleanly admin."
@@ -2329,6 +2498,25 @@ function AdminUsers() {
                 🪪 Docs ({u.documents.length})
               </button>
             )}
+            {u.approval_status === "pending" && (
+              <>
+                <Pill bg={C.amberSoft} color={C.amber}>🎓 Pending review</Pill>
+                <button onClick={async () => {
+                  const res = await adminUpdateUser(u.id, { approvalStatus: "approved" });
+                  if (res?.error) toast(res.error, "error");
+                  else { toast("Student approved — email sent ✉️"); adminFetchUsers(); }
+                }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.green}`, background: C.card, color: C.green, cursor: "pointer" }}>
+                  ✓ Approve
+                </button>
+                <button onClick={async () => {
+                  const res = await adminUpdateUser(u.id, { approvalStatus: "rejected" });
+                  if (res?.error) toast(res.error, "error");
+                  else { toast("Application rejected"); adminFetchUsers(); }
+                }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.card, color: C.coral, cursor: "pointer" }}>
+                  ✕ Reject
+                </button>
+              </>
+            )}
             {["customer", "employee", "admin"].includes(u.role) && (
               <button onClick={async () => {
                 const res = await adminUpdateUser(u.id, { makeAdmin: u.role !== "admin" });
@@ -2402,6 +2590,7 @@ function AdminBookings() {
 }
 
 function AdminPanel() {
+  const { logout } = useStore();
   const [tab, setTab] = useState("dashboard");
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -2415,10 +2604,13 @@ function AdminPanel() {
       <div style={{ background: `radial-gradient(140% 100% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "22px 20px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>Admin panel</div>
             <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>Cleanly platform · Magyarország</div>
           </div>
+          <button onClick={logout} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 99, padding: "7px 14px", fontFamily: B, fontWeight: 700, fontSize: 11, color: "#C9D2F5", cursor: "pointer" }}>
+            🚪 Log out
+          </button>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 16, overflowX: "auto" }} className="cl-noscroll">
           {tabs.map((t) => (
@@ -2515,7 +2707,7 @@ function Shell() {
     <div style={{ minHeight: "100vh", background: C.shell, display: "flex", justifyContent: "center", fontFamily: B }}>
       <style>{css}</style>
       <div style={{ width: "100%", maxWidth: 430, background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", boxShadow: "0 0 50px rgba(20,28,58,.14)", position: "relative" }}>
-        {role === "customer" && demoSwitchRole && (
+        {(role === "customer" || role === "admin") && demoSwitchRole && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 16px", background: C.navyDeep }}>
             <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.mint, letterSpacing: .8 }}>🧪 DEMO</span>
             <select value={role} onChange={(e) => { demoSwitchRole(e.target.value); setTab("home"); }}
@@ -2528,7 +2720,7 @@ function Shell() {
             </select>
           </div>
         )}
-        {role !== "customer" && (
+        {role !== "customer" && role !== "admin" && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 16px", background: C.navyDeep }}>
           <button onClick={() => setShowProfile(true)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, padding: 0 }}>
             <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.navySoft + "44", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, fontWeight: 700, fontSize: 10, color: "#C9D2F5" }}>
@@ -2601,6 +2793,7 @@ function Shell() {
         )}
 
         {showProfile && <ProfileSheet close={() => setShowProfile(false)} />}
+        <PhoneVerifyGate />
 
         <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: C.navBg, backdropFilter: "blur(20px) saturate(1.4)", WebkitBackdropFilter: "blur(20px) saturate(1.4)", border: `1px solid ${C.line}`, borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 14px 44px rgba(0,0,0,.5)" : "0 14px 44px rgba(16,25,74,.22)" }}>
           {NAVS[role].map((tb) => {

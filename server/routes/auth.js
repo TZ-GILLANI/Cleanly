@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db.js";
 import { signToken, requireAuth } from "../middleware/auth.js";
+import { huTaxIdValid, huRegNumberValid, formatTaxId } from "../lib/validate.js";
 
 const router = Router();
 
@@ -32,6 +33,8 @@ router.post("/register", async (req, res) => {
     if (role === "company") {
       if (!companyName?.trim()) return res.status(400).json({ error: "Company name is required" });
       if (!taxId?.trim()) return res.status(400).json({ error: "Tax ID is required for company registration" });
+      if (!huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42 — check the digits." });
+      if (regNumber?.trim() && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid company registration number (cégjegyzékszám). Format: 09-09-123456." });
       const userRes = await query(
         "INSERT INTO users (email, password_hash, role, full_name, phone) VALUES ($1,$2,$3,$4,$5) RETURNING id",
         [email.toLowerCase(), hash, "company", fullName, contactPhone || null]
@@ -40,7 +43,7 @@ router.post("/register", async (req, res) => {
       // New companies start unlisted/pending until an admin reviews their documents.
       const coRes = await query(
         "INSERT INTO companies (owner_id, name, tax_id, reg_number, contact_phone, documents, city, is_approved, is_listed) VALUES ($1,$2,$3,$4,$5,$6,$7,false,true) RETURNING id",
-        [userId, companyName.trim(), taxId.trim(), regNumber?.trim() || null, contactPhone?.trim() || null, docsJson, city ? String(city).slice(0, 60) : 'Debrecen']
+        [userId, companyName.trim(), formatTaxId(taxId.trim()), regNumber?.trim() || null, contactPhone?.trim() || null, docsJson, city ? String(city).slice(0, 60) : 'Debrecen']
       );
       await query("UPDATE users SET company_id = $1 WHERE id = $2", [coRes.rows[0].id, userId]);
 
@@ -79,11 +82,14 @@ router.post("/register", async (req, res) => {
     }
 
     // customer
+    const isStudent = customerType === "student";
     const userRes = await query(
-      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, documents) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
-      [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null, normPhone, docsJson]
+      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, documents, approval_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+      [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null, normPhone, docsJson, isStudent ? "pending" : "approved"]
     );
     const user = userRes.rows[0];
+    // Student accounts wait for admin review of the card photo — no session yet.
+    if (isStudent) return res.status(201).json({ pendingApproval: true });
     const token = signToken({ id: user.id, role: "customer", companyId: null });
     return res.status(201).json({ token, user });
   } catch (err) {
@@ -104,6 +110,10 @@ router.post("/login", async (req, res) => {
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Invalid email or password" });
+    if (user.approval_status === "pending")
+      return res.status(403).json({ error: "Your student account is waiting for approval — we'll email you as soon as it's ready." });
+    if (user.approval_status === "rejected")
+      return res.status(403).json({ error: "Your student verification was declined. Register as a resident, or contact support." });
 
     const token = signToken({ id: user.id, role: user.role, companyId: user.company_id });
     res.json({ token, user });

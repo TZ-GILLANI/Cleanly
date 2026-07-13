@@ -32,15 +32,17 @@ console.log("\n── registration (with residence + city) ──");
 const DOC = [{ name: "card.jpg", type: "image/jpeg", data: "data:image/jpeg;base64,x" }];
 const noDoc = await j("/api/auth/register", { method: "POST", body: { email: "nodoc@test.hu", password: "secret123", role: "customer", fullName: "No Doc", customerType: "student", address: "X utca 1", phone: "+36301110000" } });
 ok("student without card photo rejected", noDoc.status === 400);
-const cust = await j("/api/auth/register", { method: "POST", body: { email: "anna@test.hu", password: "secret123", role: "customer", fullName: "Anna Teszt", customerType: "student", address: "Piac utca 1, Debrecen", phone: "+36301112222", documents: DOC } });
-ok("customer registers with address", cust.status === 201 && !!cust.data.token, JSON.stringify(cust.data));
-ok("address persisted", cust.data.user?.address === "Piac utca 1, Debrecen");
+const studReg = await j("/api/auth/register", { method: "POST", body: { email: "anna@test.hu", password: "secret123", role: "customer", fullName: "Anna Teszt", customerType: "student", address: "Piac utca 1, Debrecen", phone: "+36301112222", documents: DOC } });
+ok("student registration goes to pending (no session)", studReg.status === 201 && studReg.data.pendingApproval === true && !studReg.data.token, JSON.stringify(studReg.data));
+const blocked = await j("/api/auth/login", { method: "POST", body: { email: "anna@test.hu", password: "secret123" } });
+ok("pending student cannot log in", blocked.status === 403);
 const dupPhone = await j("/api/auth/register", { method: "POST", body: { email: "other@test.hu", password: "secret123", role: "customer", fullName: "Other", customerType: "resident", address: "Y utca 2", phone: "+36 30 111 2222" } });
 ok("duplicate phone number blocked (one number = one account)", dupPhone.status === 400, JSON.stringify(dupPhone.data));
 ok("verification engine dormant without Twilio", (await j("/api/verify/config")).data.enabled === false);
-const custTok = cust.data.token;
 
-const co = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "HU123", city: "Budapest" } });
+const badTax = await j("/api/auth/register", { method: "POST", body: { email: "bad@spark.hu", password: "secret123", role: "company", fullName: "Bad Tax", companyName: "Bad Kft.", taxId: "12345678-1-42", city: "Budapest" } });
+ok("invalid tax number rejected (checksum)", badTax.status === 400);
+const co = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Budapest" } });
 ok("company registers with city", co.status === 201, JSON.stringify(co.data));
 const coTok = co.data.token;
 const coId = co.data.user?.company_id;
@@ -61,6 +63,13 @@ const admin = await j("/api/auth/login", { method: "POST", body: { email: "root@
 ok("admin logs in", admin.status === 200 && !!admin.data.token);
 const admTok = admin.data.token;
 
+const pendingUser = await query("SELECT id FROM users WHERE email = 'anna@test.hu'");
+const approveStud = await j(`/api/admin/users/${pendingUser.rows[0].id}`, { method: "PUT", token: admTok, body: { approvalStatus: "approved" } });
+ok("admin approves student", approveStud.data.user?.approval_status === "approved");
+const cust = await j("/api/auth/login", { method: "POST", body: { email: "anna@test.hu", password: "secret123" } });
+ok("approved student logs in", cust.status === 200 && !!cust.data.token);
+const custTok = cust.data.token;
+
 const approve = await j(`/api/admin/companies/${coId}`, { method: "PUT", token: admTok, body: { isApproved: true } });
 ok("admin approves company", approve.status === 200, JSON.stringify(approve.data));
 list = await j("/api/companies");
@@ -73,7 +82,7 @@ const svcId = svc.data.service?.id;
 
 const bk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: "2026-07-20", scheduledSlot: "09:30", address: "Piac utca 1, Debrecen", hours: null } });
 ok("customer books", bk.status === 201, JSON.stringify(bk.data));
-ok("student discount applied server-side (20000 → 18000 @10%)", bk.data.booking?.total_huf === 18000, `got ${bk.data.booking?.total_huf}`);
+ok("student discount + 10% fee on top (20000 → 18000 + 1800 = 19800)", bk.data.booking?.total_huf === 19800 && bk.data.booking?.service_fee_huf === 1800, `got ${bk.data.booking?.total_huf} fee ${bk.data.booking?.service_fee_huf}`);
 const bkId = bk.data.booking?.id;
 
 console.log("\n── subscription lifecycle ──");

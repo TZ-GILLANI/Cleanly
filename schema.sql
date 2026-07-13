@@ -212,3 +212,16 @@ CREATE INDEX IF NOT EXISTS companies_city_idx ON companies (city);
 -- ── Phone: one number = one active account + verification flag ─────
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users (phone) WHERE phone IS NOT NULL AND is_active = true;
+
+-- ── Student verification workflow ──────────────────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved' CHECK (approval_status IN ('pending','approved','rejected'));
+CREATE INDEX IF NOT EXISTS users_approval_idx ON users (approval_status) WHERE approval_status = 'pending';
+
+-- ── Google review hand-off (policy-compliant: customer posts it themselves) ──
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS google_place_id TEXT;
+
+-- ── Stripe Connect: automatic payout split to companies ────────────
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_account_id TEXT;
+
+-- ── Customer-facing service fee (added on top of company price) ────
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS service_fee_huf INT NOT NULL DEFAULT 0;

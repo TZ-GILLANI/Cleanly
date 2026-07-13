@@ -196,6 +196,7 @@ export function StoreProvider({ children }) {
   const [adminApi, setAdminApi] = useState({ stats: null, revenue: null, companies: null, users: null, bookings: null });
   /* language (en | hu) — persisted, synced to a customer's profile when they change it */
   const [lang, setLangState] = useState(getLang);
+  const [feePct, setFeePct] = useState(10);
   const t = (key, vars) => translate(lang, key, vars);
   const setLang = (l) => { setLangState(l); saveLang(l); if (session?.role === "customer") updateProfile({ lang: l }); };
 
@@ -231,11 +232,16 @@ export function StoreProvider({ children }) {
     role: user.role, userId: user.id, name: user.full_name,
     email: user.email, custType: user.customer_type,
     companyId: user.company_id, phone: user.phone,
+    phoneVerified: user.phone_verified === true,
     address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || "en",
     documents: user.documents || [],
   });
 
+  const loadFee = async () => {
+    try { const c = await api("/payments/config"); if (c && c.feePct != null) setFeePct(Number(c.feePct)); } catch {}
+  };
   const loadAllData = useCallback(async (sess) => {
+    loadFee();
     const next = { companies: [], services: [], employees: [], bookings: [], notices: [], invites: [], reviews: [] };
     const [companies, services, reviews] = await Promise.all([
       api("/companies"),
@@ -289,7 +295,9 @@ export function StoreProvider({ children }) {
   const signupCustomer = async ({ name, email, password, custType, address, phone, documents }) => {
     if (!isApiMode) { setSession({ role: "customer", userId: "demo-customer", name, custType, companyId: null, address: address || "" }); return {}; }
     try {
-      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents } });
+      if (resp.pendingApproval) return { pending: true };
+      const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
       try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
@@ -374,7 +382,7 @@ export function StoreProvider({ children }) {
   const updateCompany = async (fields) => {
     if (isApiMode) {
       try {
-        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city } });
+        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id } });
         setDb(d => ({ ...d, companies: d.companies.map(c => c.id === session.companyId ? company : c) }));
         return {};
       } catch (e) { return { error: e.message }; }
@@ -605,6 +613,33 @@ export function StoreProvider({ children }) {
     } catch (e) { return { error: e.message }; }
   };
 
+  /* ── Phone verification (Twilio, dormant until configured) ── */
+  const verifyConfig = async () => {
+    if (!isApiMode) return { enabled: false };
+    try { return await api("/verify/config"); } catch { return { enabled: false }; }
+  };
+  const verifyStart = async (channel) => {
+    try { return await api("/verify/start", { method: "POST", body: { channel } }); }
+    catch (e) { return { error: e.message }; }
+  };
+  const verifyCheck = async (code) => {
+    try {
+      const r = await api("/verify/check", { method: "POST", body: { code } });
+      if (r.verified) setSession((s) => ({ ...s, phoneVerified: true }));
+      return r;
+    } catch (e) { return { error: e.message }; }
+  };
+
+  /* ── Stripe Connect (company payouts) ── */
+  const connectStatus = async () => {
+    if (!isApiMode) return { available: false };
+    try { return await api("/payments/connect/status"); } catch { return { available: false }; }
+  };
+  const connectOnboard = async () => {
+    try { return await api("/payments/connect/onboard", { method: "POST" }); }
+    catch (e) { return { error: e.message }; }
+  };
+
   const adminUpdateUser = async (id, patch) => {
     if (!isApiMode) {
       if (patch.makeAdmin !== undefined) return {}; // role changes only apply in API mode
@@ -616,7 +651,7 @@ export function StoreProvider({ children }) {
       return {};
     }
     try {
-      await api("/admin/users/" + id, { method: "PUT", body: patch.makeAdmin !== undefined ? { makeAdmin: patch.makeAdmin } : { isActive: patch.is_active } });
+      await api("/admin/users/" + id, { method: "PUT", body: patch.approvalStatus !== undefined ? { approvalStatus: patch.approvalStatus } : patch.makeAdmin !== undefined ? { makeAdmin: patch.makeAdmin } : { isActive: patch.is_active } });
       setAdminApi(a => ({ ...a, users: a.users?.map(u => u.id === id ? { ...u, is_active: patch.is_active } : u) ?? null }));
       return {};
     } catch (e) { return { error: e.message }; }
@@ -653,6 +688,7 @@ export function StoreProvider({ children }) {
 
   const value = {
     isLive: isApiMode, session, loading, error, clearError: () => setError(null),
+    feePct,
     lang, setLang, t,
     companies: db.companies, services: db.services, employees: visibleEmployees, allEmployees: db.employees,
     bookings: db.bookings, notices: db.notices, invites: db.invites, reviews: db.reviews,
@@ -661,6 +697,8 @@ export function StoreProvider({ children }) {
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint,
+    verifyConfig, verifyStart, verifyCheck,
+    connectStatus, connectOnboard,
     toggleTask, setStatus, markNoticeRead,
     assignBooking, createInvite, deleteInvite, sendNotice, upsertService,
     adminUpdateCompany, adminUpdateUser, adminFetchStats, adminFetchUsers,

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { sendEmail } from "../lib/mailer.js";
 
 const router = Router();
 const guard = [requireAuth, requireRole("admin")];
@@ -86,8 +87,22 @@ router.get("/users", ...guard, async (req, res) => {
 
 /* PUT /api/admin/users/:id */
 router.put("/users/:id", ...guard, async (req, res) => {
-  const { isActive, makeAdmin } = req.body || {};
+  const { isActive, makeAdmin, approvalStatus } = req.body || {};
   try {
+    if (approvalStatus !== undefined) {
+      if (!["approved", "rejected", "pending"].includes(approvalStatus)) return res.status(400).json({ error: "Invalid approval status" });
+      const r = await query("UPDATE users SET approval_status = $1 WHERE id = $2 RETURNING id, email, full_name, approval_status", [approvalStatus, req.params.id]);
+      if (!r.rows.length) return res.status(404).json({ error: "User not found" });
+      const u = r.rows[0];
+      if (approvalStatus === "approved") {
+        sendEmail(u.email, "Your Cleanly student account is approved 🎓",
+          `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">Welcome to Cleanly, ${u.full_name}! 🐙</h2>
+           <p>Your student card has been verified — your account is now active and your student discount is live.</p>
+           <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Log in and book your first clean</a></p>
+           <p style="color:#69718F;font-size:13px">Cleanly · Hungary · Eight arms, zero dust</p></div>`);
+      }
+      return res.json({ user: u });
+    }
     if (makeAdmin !== undefined) {
       if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot change your own admin access" });
       const target = await query("SELECT role FROM users WHERE id = $1", [req.params.id]);

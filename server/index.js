@@ -12,7 +12,7 @@ import employeesRouter from "./routes/employees.js";
 import noticesRouter from "./routes/notices.js";
 import reviewsRouter from "./routes/reviews.js";
 import adminRouter from "./routes/admin.js";
-import paymentsRouter from "./routes/payments.js";
+import paymentsRouter, { stripeWebhook, simplepayIpn } from "./routes/payments.js";
 import complaintsRouter from "./routes/complaints.js";
 import verifyRouter from "./routes/verify.js";
 
@@ -29,6 +29,9 @@ const corsOrigins = [
   ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map(o => o.trim()) : []),
 ];
 app.use(cors({ origin: corsOrigins, credentials: true }));
+// Stripe webhook must read the raw body — register it BEFORE the JSON parser.
+app.post("/api/payments/stripe-webhook", express.raw({ type: "application/json" }), stripeWebhook);
+app.post("/api/payments/simplepay-ipn", express.raw({ type: "application/json" }), simplepayIpn);
 // Registration documents & company logos travel as data-URLs — raise the default 100kb cap.
 app.use(express.json({ limit: "8mb" }));
 
