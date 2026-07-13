@@ -30,19 +30,21 @@ ok("payments config (card disabled without keys)", (await j("/api/payments/confi
 
 console.log("\n── registration (with residence + city) ──");
 const DOC = [{ name: "card.jpg", type: "image/jpeg", data: "data:image/jpeg;base64,x" }];
-const noDoc = await j("/api/auth/register", { method: "POST", body: { email: "nodoc@test.hu", password: "secret123", role: "customer", fullName: "No Doc", customerType: "student", address: "X utca 1", phone: "+36301110000" } });
+const noTerms = await j("/api/auth/register", { method: "POST", body: { email: "noterms@test.hu", password: "secret123", role: "customer", fullName: "No Terms", customerType: "resident", address: "X", phone: "+36301119999" } });
+ok("registration without accepting terms rejected", noTerms.status === 400);
+const noDoc = await j("/api/auth/register", { method: "POST", body: { email: "nodoc@test.hu", password: "secret123", role: "customer", fullName: "No Doc", customerType: "student", address: "X utca 1", phone: "+36301110000", termsAccepted: true } });
 ok("student without card photo rejected", noDoc.status === 400);
-const studReg = await j("/api/auth/register", { method: "POST", body: { email: "anna@test.hu", password: "secret123", role: "customer", fullName: "Anna Teszt", customerType: "student", address: "Piac utca 1, Debrecen", phone: "+36301112222", documents: DOC } });
+const studReg = await j("/api/auth/register", { method: "POST", body: { email: "anna@test.hu", password: "secret123", role: "customer", fullName: "Anna Teszt", customerType: "student", address: "Piac utca 1, Debrecen", phone: "+36301112222", documents: DOC, termsAccepted: true } });
 ok("student registration goes to pending (no session)", studReg.status === 201 && studReg.data.pendingApproval === true && !studReg.data.token, JSON.stringify(studReg.data));
 const blocked = await j("/api/auth/login", { method: "POST", body: { email: "anna@test.hu", password: "secret123" } });
 ok("pending student cannot log in", blocked.status === 403);
-const dupPhone = await j("/api/auth/register", { method: "POST", body: { email: "other@test.hu", password: "secret123", role: "customer", fullName: "Other", customerType: "resident", address: "Y utca 2", phone: "+36 30 111 2222" } });
+const dupPhone = await j("/api/auth/register", { method: "POST", body: { email: "other@test.hu", password: "secret123", role: "customer", fullName: "Other", customerType: "resident", address: "Y utca 2", phone: "+36 30 111 2222", termsAccepted: true } });
 ok("duplicate phone number blocked (one number = one account)", dupPhone.status === 400, JSON.stringify(dupPhone.data));
 ok("verification engine dormant without Twilio", (await j("/api/verify/config")).data.enabled === false);
 
-const badTax = await j("/api/auth/register", { method: "POST", body: { email: "bad@spark.hu", password: "secret123", role: "company", fullName: "Bad Tax", companyName: "Bad Kft.", taxId: "12345678-1-42", city: "Budapest" } });
+const badTax = await j("/api/auth/register", { method: "POST", body: { email: "bad@spark.hu", password: "secret123", role: "company", fullName: "Bad Tax", companyName: "Bad Kft.", taxId: "12345678-1-42", city: "Budapest", termsAccepted: true } });
 ok("invalid tax number rejected (checksum)", badTax.status === 400);
-const coReg = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Budapest" } });
+const coReg = await j("/api/auth/register", { method: "POST", body: { email: "boss@spark.hu", password: "secret123", role: "company", fullName: "Béla Boss", companyName: "SparkClean Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Budapest", termsAccepted: true } });
 ok("company registration goes to pending", coReg.status === 201 && coReg.data.pendingApproval === true, JSON.stringify(coReg.data));
 const coBlocked = await j("/api/auth/login", { method: "POST", body: { email: "boss@spark.hu", password: "secret123" } });
 ok("unapproved company cannot log in", coBlocked.status === 403);
@@ -115,6 +117,17 @@ ok("completing visit auto-schedules next (weekly +7d)", done.data.next?.schedule
 const again = await j(`/api/bookings/${sb.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
 ok("re-completing does NOT duplicate next visit", again.data.next === null);
 
+console.log("\n── invoices & archiving ──");
+const invEarly = await j(`/api/bookings/${bkId}/invoice`, { method: "PUT", token: coTok, body: { invoice: { name: "szamla.pdf", type: "application/pdf", data: "data:application/pdf;base64,x" } } });
+ok("invoice rejected before completion", invEarly.status === 400);
+await j(`/api/bookings/${bkId}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
+const inv = await j(`/api/bookings/${bkId}/invoice`, { method: "PUT", token: coTok, body: { invoice: { name: "szamla.pdf", type: "application/pdf", data: "data:application/pdf;base64,x" } } });
+ok("company uploads invoice on completed job", inv.status === 200 && inv.data.booking?.invoice?.name === "szamla.pdf", JSON.stringify(inv.data).slice(0,120));
+const custView = await j("/api/bookings", { token: custTok });
+ok("customer sees the invoice", custView.data.bookings?.some((b) => b.id === bkId && b.invoice?.name === "szamla.pdf"));
+const arch = await j(`/api/bookings/${bkId}/archive`, { method: "PUT", token: coTok });
+ok("company archives completed job", arch.status === 200);
+
 console.log("\n── complaints ──");
 const comp = await j("/api/complaints", { method: "POST", token: custTok, body: { bookingId: bkId, subject: "Test complaint", body: "details" } });
 ok("customer files complaint", comp.status === 201);
@@ -140,7 +153,7 @@ const del = await j("/api/auth/me", { method: "DELETE", token: custTok });
 ok("account deletion succeeds", del.data.ok === true);
 const anon = await query("SELECT email, full_name, is_active FROM users WHERE id = $1", [cust.data.user.id]);
 ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon.rows[0].is_active === false && anon.rows[0].email.startsWith("deleted-"));
-const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222" } });
+const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
 console.log(`\n════ RESULT: ${passed} passed, ${failed} failed ════`);

@@ -297,7 +297,7 @@ export function StoreProvider({ children }) {
   const signupCustomer = async ({ name, email, password, custType, address, phone, documents }) => {
     if (!isApiMode) { setSession({ role: "customer", userId: "demo-customer", name, custType, companyId: null, address: address || "" }); return {}; }
     try {
-      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents, termsAccepted: true } });
       if (resp.pendingApproval) return { pending: true };
       const { token, user } = resp;
       setToken(token);
@@ -310,7 +310,7 @@ export function StoreProvider({ children }) {
   const signupCompany = async ({ companyName, name, email, password, taxId, regNumber, contactPhone, documents, city }) => {
     if (!isApiMode) { setSession({ role: "company", userId: "owner1", name: name || "Bálint Erdős", custType: null, companyId: "co1" }); return {}; }
     try {
-      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "company", fullName: name || companyName, companyName, taxId, regNumber, contactPhone, documents, city } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "company", fullName: name || companyName, companyName, taxId, regNumber, contactPhone, documents, city, termsAccepted: true } });
       if (resp.pendingApproval) return { pending: true };
       const { token, user } = resp;
       setToken(token);
@@ -323,7 +323,7 @@ export function StoreProvider({ children }) {
   const signupEmployee = async ({ name, email, password, code, documents, address, phone }) => {
     if (!isApiMode) { setSession({ role: "employee", userId: "e1", name: "Eszter Kovács", custType: null, companyId: "co1" }); return {}; }
     try {
-      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "employee", fullName: name, inviteCode: code, documents, address, phone } });
+      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "employee", fullName: name, inviteCode: code, documents, address, phone, termsAccepted: true } });
       setToken(token);
       const sess = buildSession(user);
       try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
@@ -544,6 +544,26 @@ export function StoreProvider({ children }) {
     setDb(d => ({ ...d, invites: d.invites.filter(i => i.code !== code) }));
   };
 
+  const uploadInvoice = async (bookingId, invoice) => {
+    if (isApiMode) {
+      try {
+        const { booking } = await api("/bookings/" + bookingId + "/invoice", { method: "PUT", body: { invoice } });
+        setDb(d => ({ ...d, bookings: d.bookings.map(x => x.id === bookingId ? booking : x) }));
+        return {};
+      } catch (e) { return { error: e.message }; }
+    }
+    setDb(d => ({ ...d, bookings: d.bookings.map(x => x.id === bookingId ? { ...x, invoice } : x) }));
+    return {};
+  };
+  const archiveBooking = async (id) => {
+    if (isApiMode) {
+      try { await api("/bookings/" + id + "/archive", { method: "PUT" }); }
+      catch (e) { return { error: e.message }; }
+    }
+    setDb(d => ({ ...d, bookings: d.bookings.map(x => x.id === id ? { ...x, archived_by_company: true } : x) }));
+    return {};
+  };
+
   const deleteNotice = async (id) => {
     if (isApiMode) {
       try { await api("/notices/" + id, { method: "DELETE" }); }
@@ -722,7 +742,7 @@ export function StoreProvider({ children }) {
     submitComplaint, adminFetchComplaints, adminUpdateComplaint,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
     connectStatus, connectOnboard,
-    toggleTask, setStatus, markNoticeRead, deleteNotice,
+    toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, upsertService,
     adminUpdateCompany, adminUpdateUser, adminFetchStats, adminFetchUsers,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings,

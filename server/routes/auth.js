@@ -8,13 +8,14 @@ const router = Router();
 
 /* POST /api/auth/register */
 router.post("/register", async (req, res) => {
-  const { email, password, role, fullName, customerType, inviteCode, companyName, taxId, regNumber, contactPhone, documents, address, city, phone } = req.body;
+  const { email, password, role, fullName, customerType, inviteCode, companyName, taxId, regNumber, contactPhone, documents, address, city, phone, termsAccepted } = req.body;
   const normPhone = phone ? String(phone).replace(/[^0-9+]/g, "").slice(0, 20) : null;
   const docsJson = JSON.stringify(Array.isArray(documents) ? documents.slice(0, 6) : []);
 
   if (!email || !password || !fullName || !role) return res.status(400).json({ error: "Missing required fields" });
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
   if (!["customer", "employee", "company"].includes(role)) return res.status(400).json({ error: "Invalid role" });
+  if (termsAccepted !== true) return res.status(400).json({ error: "You must accept the Terms of Service and Privacy Policy" });
   if (["customer", "employee"].includes(role)) {
     if (!normPhone || normPhone.replace(/[^0-9]/g, "").length < 8) return res.status(400).json({ error: "A valid phone number is required" });
     const phoneTaken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true", [normPhone]);
@@ -36,7 +37,7 @@ router.post("/register", async (req, res) => {
       if (!huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42 — check the digits." });
       if (regNumber?.trim() && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid company registration number (cégjegyzékszám). Format: 09-09-123456." });
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, phone, approval_status) VALUES ($1,$2,$3,$4,$5,'pending') RETURNING id",
+        "INSERT INTO users (email, password_hash, role, full_name, phone, approval_status, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW()) RETURNING id",
         [email.toLowerCase(), hash, "company", fullName, contactPhone || null]
       );
       const userId = userRes.rows[0].id;
@@ -61,7 +62,7 @@ router.post("/register", async (req, res) => {
 
       const companyId = invite.rows[0].company_id;
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",
+        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id",
         [email.toLowerCase(), hash, "employee", fullName, companyId, docsJson, address ? String(address).slice(0, 300) : null, normPhone]
       );
       const userId = userRes.rows[0].id;
@@ -83,7 +84,7 @@ router.post("/register", async (req, res) => {
     // customer
     const isStudent = customerType === "student";
     const userRes = await query(
-      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, documents, approval_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, documents, approval_status, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) RETURNING *",
       [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null, normPhone, docsJson, isStudent ? "pending" : "approved"]
     );
     const user = userRes.rows[0];

@@ -265,7 +265,10 @@ router.post("/connect/onboard", requireAuth, requireRole("company"), async (req,
     res.json({ url: link.url });
   } catch (e) {
     console.error("connect onboard:", e.message);
-    res.status(502).json({ error: "Could not start Stripe onboarding" });
+    const hint = /platform.profile|responsibilit|capabilit|review the responsibilities/i.test(e.message)
+      ? " — The platform owner must first complete Stripe's Connect setup (Stripe dashboard → Settings → Connect)."
+      : "";
+    res.status(502).json({ error: (e.message || "Could not start Stripe onboarding").slice(0, 300) + hint });
   }
 });
 

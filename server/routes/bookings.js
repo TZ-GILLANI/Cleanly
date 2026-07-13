@@ -246,4 +246,39 @@ router.put("/:id/tasks", requireAuth, async (req, res) => {
   }
 });
 
+/* PUT /api/bookings/:id/invoice — company uploads the invoice for a completed job */
+router.put("/:id/invoice", requireAuth, async (req, res) => {
+  if (req.user.role !== "company") return res.status(403).json({ error: "Company only" });
+  const { invoice } = req.body || {};
+  if (!invoice || !invoice.data || !invoice.name) return res.status(400).json({ error: "Invoice file required" });
+  if (String(invoice.data).length > 3 * 1024 * 1024) return res.status(400).json({ error: "Invoice too large (max ~2 MB)" });
+  try {
+    const b = await query("SELECT * FROM bookings WHERE id = $1", [req.params.id]);
+    if (!b.rows.length) return res.status(404).json({ error: "Not found" });
+    if (b.rows[0].company_id !== req.user.companyId) return res.status(403).json({ error: "Forbidden" });
+    if (b.rows[0].status !== 4) return res.status(400).json({ error: "Invoices can be added to completed jobs only" });
+    const r = await query("UPDATE bookings SET invoice = $1 WHERE id = $2 RETURNING *",
+      [JSON.stringify({ name: String(invoice.name).slice(0, 120), type: String(invoice.type || "application/pdf").slice(0, 80), data: invoice.data }), req.params.id]);
+    res.json({ booking: r.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to save invoice" });
+  }
+});
+
+/* PUT /api/bookings/:id/archive — company hides finished jobs from its board */
+router.put("/:id/archive", requireAuth, async (req, res) => {
+  if (req.user.role !== "company") return res.status(403).json({ error: "Company only" });
+  try {
+    const r = await query(
+      "UPDATE bookings SET archived_by_company = true WHERE id = $1 AND company_id = $2 AND status IN (4, 8, 9) RETURNING id",
+      [req.params.id, req.user.companyId]
+    );
+    if (!r.rows.length) return res.status(400).json({ error: "Only finished jobs can be archived" });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to archive" });
+  }
+});
+
 export default router;

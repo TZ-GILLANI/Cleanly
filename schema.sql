@@ -236,3 +236,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code_expires TIMESTAMPTZ;
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS deleted_by_company  BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS deleted_by_employee BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Invoices on bookings + company-side archiving ──────────────────
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invoice JSONB;               -- {name,type,data} uploaded by company
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS archived_by_company BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Terms acceptance (click-wrap consent proof) ────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;

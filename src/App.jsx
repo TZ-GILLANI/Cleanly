@@ -711,7 +711,7 @@ function Auth() {
   const { t, lang, setLang } = store;
   const [role, setRole] = useState(null);
   const [mode, setMode] = useState("signup");
-  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "Debrecen", phone: "", documents: [] });
+  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "Debrecen", phone: "", documents: [], terms: false });
   React.useEffect(() => { getDial().then((d) => setF((prev) => (prev.phone ? prev : { ...prev, phone: d + " " }))); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -805,6 +805,7 @@ function Auth() {
 
   const ready = mode === "login"
     ? f.email && f.password
+    : !f.terms ? false
     : role === "customer" ? f.name && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (f.custType !== "student" || f.documents.length >= 1) && (!isLive || (f.email && f.password.length >= 6))
     : role === "employee" ? f.code.trim().length >= 4 && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (!isLive || (f.name && f.email && f.password.length >= 6))
     : (f.companyName.trim() && huTaxIdValid(f.taxId) && (!f.regNumber.trim() || huRegNumberValid(f.regNumber)) && (!isLive || (f.email && f.password.length >= 6)));
@@ -897,6 +898,17 @@ function Auth() {
         </div>
       </div>
       <div style={{ paddingTop: 12, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", flexShrink: 0 }}>
+          {mode === "signup" && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, margin: "4px 0 14px", cursor: "pointer" }}>
+              <input type="checkbox" checked={f.terms} onChange={(e) => setF({ ...f, terms: e.target.checked })} style={{ marginTop: 3, width: 17, height: 17, accentColor: "#5EE6A8" }} />
+              <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.55 }}>
+                {L("I accept the ", "Elfogadom az ")}
+                <a href={role === "company" ? "/partner-terms" : "/terms"} target="_blank" rel="noreferrer" style={{ color: C.navySoft, fontWeight: 700 }}>{role === "company" ? L("Partner Terms", "Partneri ÁSZF-et") : L("Terms of Service", "ÁSZF-et")}</a>
+                {L(" and the ", " és az ")}
+                <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: C.navySoft, fontWeight: 700 }}>{L("Privacy Policy", "Adatkezelési tájékoztatót")}</a>.
+              </span>
+            </label>
+          )}
         <Btn full disabled={!ready || busy} onClick={submit}>
           {busy ? "One moment…" : mode === "login" ? "Log in →" : role === "customer" ? "Create account →" : role === "company" ? "Register company →" : "Join my company →"}
         </Btn>
@@ -934,6 +946,19 @@ function CityPickerSheet({ close, city, onPick }) {
         {L("More cities and countries coming as Cleanly grows 🐙", "Új városok és országok jönnek, ahogy a Cleanly növekszik 🐙")}
       </div>
     </Sheet>
+  );
+}
+
+function MiniLang({ light }) {
+  const { lang, setLang } = useStore();
+  return (
+    <div style={{ display: "flex", borderRadius: 99, overflow: "hidden", border: light ? "1px solid rgba(255,255,255,.3)" : `1.5px solid ${C.line}`, flexShrink: 0 }}>
+      {LANGS.map((o) => (
+        <button key={o.id} onClick={() => setLang(o.id)} style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10, padding: "5px 9px",
+          background: lang === o.id ? (light ? "#fff" : C.navy) : "transparent",
+          color: lang === o.id ? (light ? C.navy : "#fff") : (light ? "#C9D2F5" : C.inkSoft) }}>{o.id.toUpperCase()}</button>
+      ))}
+    </div>
   );
 }
 
@@ -979,7 +1004,8 @@ function CustomerHome({ openBooking, openProfile }) {
               </div>
             </div>
           </button>
-          <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <MiniLang light />
             <Pill bg={isStudent ? "rgba(94,230,168,.18)" : "rgba(255,255,255,.12)"} color={isStudent ? C.mint : "#C9D2F5"}>
               {isStudent ? t("home.student") : t("home.resident")}
             </Pill>
@@ -1419,6 +1445,9 @@ function CustomerBookings({ openBooking }) {
               {b.status >= 1 && b.status !== 9 && (
                 <Btn small ghost style={{ flex: 1 }} onClick={() => setComplaining(b)}>🛟 {L("Report", "Bejelentés")}</Btn>
               )}
+              {b.invoice && (
+                <a href={b.invoice.data} download={b.invoice.name} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, padding: "9px 0", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>📄 {L("Invoice", "Számla")}</a>
+              )}
               {isLive && b.payment_status !== "paid" && b.status !== 9 && b.status !== 8 && (
                 <Btn small mint style={{ flex: 1 }} onClick={async () => {
                   const pay = await startPayment(b.id);
@@ -1655,7 +1684,7 @@ function EmployeeNotices() {
 ════════════════════════════════════════════════════════════ */
 
 function CompanyJobs({ openProfile }) {
-  const { session, bookings, employees, assignBooking, declineBooking, companies } = useStore();
+  const { session, bookings, employees, assignBooking, declineBooking, companies, uploadInvoice, archiveBooking } = useStore();
   const toast = useToast();
   const [declining, setDeclining] = useState(null); // booking being declined
   const [reason, setReason] = useState("");
@@ -1663,7 +1692,7 @@ function CompanyJobs({ openProfile }) {
   const co = companies.find((c) => c.id === session.companyId);
   const mine = bookings.filter((b) => b.company_id === session.companyId);
   const open = mine.filter((b) => b.status < 4 && b.status !== 9);
-  const done = mine.filter((b) => b.status === 4);
+  const done = mine.filter((b) => b.status === 4 && !b.archived_by_company);
   const cancelled = mine.filter((b) => b.status === 9 || b.status === 8);
   const net = (b) => (b.total_huf || 0) - (b.service_fee_huf || 0); // company share (Cleanly fee excluded)
   const revenue = done.reduce((a, b) => a + net(b), 0);
@@ -1782,12 +1811,36 @@ function CompanyJobs({ openProfile }) {
         <>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "20px 0 10px" }}>Completed jobs</div>
           {done.map((b) => (
-            <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .85 }}>
-              <div>
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{(b.service_snapshot || {}).name} · {b.customer_name}</div>
-                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{dayLabel(b.scheduled_date)} · {huf(b.total_huf)} collected</div>
+            <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .9 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{(b.service_snapshot || {}).name} · {b.customer_name}</div>
+                  <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{dayLabel(b.scheduled_date)} · {huf((b.total_huf || 0) - (b.service_fee_huf || 0))} your share</div>
+                </div>
+                <Pill>Done ✨</Pill>
               </div>
-              <Pill>Done ✨</Pill>
+              <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
+                {b.invoice ? (
+                  <a href={b.invoice.data} download={b.invoice.name} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>📄 {b.invoice.name.slice(0, 22)}</a>
+                ) : (
+                  <label style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, cursor: "pointer" }}>
+                    📄 Upload invoice
+                    <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => {
+                      const file = e.target.files?.[0]; e.target.value = "";
+                      if (!file) return;
+                      if (file.size > 2 * 1024 * 1024) { toast("Max 2 MB", "error"); return; }
+                      const reader = new FileReader();
+                      reader.onload = async () => {
+                        const r = await uploadInvoice(b.id, { name: file.name, type: file.type, data: reader.result });
+                        if (r?.error) toast(r.error, "error"); else toast("Invoice attached — customer can download it");
+                      };
+                      reader.readAsDataURL(file);
+                    }} />
+                  </label>
+                )}
+                <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast("Moved to history (Settings)"); }}
+                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>🗄 Clear</button>
+              </div>
             </div>
           ))}
         </>
@@ -2170,6 +2223,33 @@ function CompanyTeam() {
   );
 }
 
+/* ── Completed-job history (archived jobs live here, data never lost) ── */
+function JobHistory() {
+  const { session, bookings } = useStore();
+  const [open, setOpen] = useState(false);
+  const done = bookings.filter((b) => b.company_id === session.companyId && b.status === 4);
+  const total = done.reduce((a, b) => a + (b.total_huf || 0) - (b.service_fee_huf || 0), 0);
+  return (
+    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+      <button onClick={() => setOpen(!open)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: 0, textAlign: "left" }}>
+        <span style={{ fontSize: 20 }}>🗄</span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>Completed jobs history</span>
+          <span style={{ display: "block", fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>{done.length} jobs · {huf(total)} earned all-time</span>
+        </span>
+        <span style={{ color: C.inkFaint }}>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && done.map((b) => (
+        <div key={b.id} style={{ borderTop: `1px dashed ${C.line}`, paddingTop: 9, marginTop: 9, display: "flex", justifyContent: "space-between", gap: 8, fontFamily: B, fontSize: 12 }}>
+          <span style={{ color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(b.service_snapshot || {}).name} · {b.customer_name}</span>
+          <span style={{ color: C.inkSoft, flexShrink: 0 }}>{String(b.scheduled_date).slice(0, 10)} · {huf((b.total_huf || 0) - (b.service_fee_huf || 0))}</span>
+        </div>
+      ))}
+      {open && done.length === 0 && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, marginTop: 10 }}>Nothing completed yet.</div>}
+    </div>
+  );
+}
+
 /* ── Company payout onboarding (Stripe Connect) ── */
 function PayoutSetup() {
   const { connectStatus, connectOnboard, isLive } = useStore();
@@ -2285,6 +2365,7 @@ function CompanySettings() {
         value={f.tax_id} onChange={set("tax_id")} />
       <Field label="Company registration no." placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
       <Field label="Contact phone" placeholder="+36 …" value={f.contact_phone} onChange={set("contact_phone")} />
+      <JobHistory />
       <PayoutSetup />
       <Field label="Google Place ID (optional)" hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
       <DocUpload
