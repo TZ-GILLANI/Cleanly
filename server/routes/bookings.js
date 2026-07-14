@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { refundBookingPayment } from "./payments.js";
+import { notify } from "../lib/notify.js";
 
 const router = Router();
 
@@ -177,6 +178,19 @@ router.put("/:id/status", requireAuth, async (req, res) => {
     if (status === 8 && b.payment_status === "paid") {
       await refundBookingPayment(b);
     }
+
+    // Notify the relevant party of the change.
+    try {
+      if (status === 1) await notify(b.customer_id, "status", "Cleaner assigned 🧹", "A cleaner has been assigned to your booking.", b.id);
+      else if (status === 2) await notify(b.customer_id, "status", "On the way 🚗", "Your cleaner is on the way.", b.id);
+      else if (status === 3) await notify(b.customer_id, "status", "Cleaning in progress ✨", "Your cleaning has started.", b.id);
+      else if (status === 4 && b.status !== 4) await notify(b.customer_id, "status", "Job completed ✅", "Your cleaning is done — please leave a review.", b.id);
+      else if (status === 8) await notify(b.customer_id, "declined", "Order declined", b.payment_status === "paid" ? "The company can't take this booking — you've been refunded in full." : "The company can't take this booking.", b.id);
+      else if (status === 9 && req.user.role === "customer") {
+        const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
+        if (oc.rows[0]) await notify(oc.rows[0].owner_id, "cancelled", "Booking cancelled", "A customer cancelled a booking.", b.id);
+      }
+    } catch (e) { console.error("notify status:", e.message); }
 
     /* Subscription recurrence: completing a visit schedules the next one. */
     let next = null;

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { notify } from "../lib/notify.js";
 
 const router = Router();
 
@@ -324,7 +325,18 @@ export async function stripeWebhook(req, res) {
     if (event.type === "checkout.session.completed") {
       const sess = event.data.object;
       const bookingId = sess.metadata?.booking_id;
-      if (bookingId) await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [bookingId]);
+      if (bookingId) {
+        await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [bookingId]);
+        try {
+          const bq = await query("SELECT b.customer_id, b.service_snapshot, c.owner_id, c.name AS company_name FROM bookings b JOIN companies c ON c.id = b.company_id WHERE b.id = $1", [bookingId]);
+          const bn = bq.rows[0];
+          if (bn) {
+            const svcName = (bn.service_snapshot && bn.service_snapshot.name) || "your cleaning";
+            await notify(bn.customer_id, "payment_confirmed", "Payment confirmed 💳", `Your booking for ${svcName} is confirmed.`, bookingId);
+            await notify(bn.owner_id, "new_order", "New paid order 🧽", `${bn.company_name} has a new confirmed booking.`, bookingId);
+          }
+        } catch (e) { console.error("notify on paid:", e.message); }
+      }
     }
     res.json({ received: true });
   } catch (e) {

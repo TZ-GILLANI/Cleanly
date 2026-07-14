@@ -3,6 +3,7 @@ import { query } from "../db.js";
 import { requireAuth, requireRole, requireSuper } from "../middleware/auth.js";
 import { sendEmail } from "../lib/mailer.js";
 import { logAdmin } from "../lib/adminlog.js";
+import { notify } from "../lib/notify.js";
 
 const router = Router();
 const guard = [requireAuth, requireRole("admin")];
@@ -81,7 +82,7 @@ router.put("/companies/:id", ...guard, async (req, res) => {
     if (isApproved === false) {
       await query("UPDATE users SET approval_status = 'pending' WHERE id = $1", [co.owner_id]);
     }
-    if (isApproved === true) logAdmin(req, "company_approved", "company", co.id, co.name);
+    if (isApproved === true) { logAdmin(req, "company_approved", "company", co.id, co.name); notify(co.owner_id, "approval", "Company approved ✅", "Your company is verified — you can receive bookings now.", null); }
     else if (isApproved === false) logAdmin(req, "company_rejected", "company", co.id, co.name);
     if (isListed === true) logAdmin(req, "company_listed", "company", co.id, co.name);
     else if (isListed === false) logAdmin(req, "company_unlisted", "company", co.id, co.name);
@@ -125,6 +126,7 @@ router.put("/users/:id", ...guard, async (req, res) => {
            <p style="color:#69718F;font-size:13px">Cleanly · Hungary · Eight arms, zero dust</p></div>`);
       }
       logAdmin(req, approvalStatus === "approved" ? "student_approved" : approvalStatus === "rejected" ? "student_rejected" : "student_pending", "user", u.id, `${u.full_name} (${u.email})`);
+      if (approvalStatus === "approved") notify(u.id, "approval", "Account approved 🎓", "Your student account is verified — your discount is live.", null);
       return res.json({ user: u });
     }
     if (makeAdmin !== undefined) {

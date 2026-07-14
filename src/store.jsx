@@ -190,6 +190,7 @@ export function StoreProvider({ children }) {
   // API mode must never show demo seed data — start empty and fill from the server.
   const EMPTY_DB = { companies: [], services: [], employees: [], bookings: [], notices: [], invites: [], reviews: [], complaints: [], userStatus: {} };
   const [db, setDb]           = useState(() => (isApiMode ? EMPTY_DB : loadDemo()));
+  const [notif, setNotif]     = useState({ notifications: [], unread: 0 });
   const [loading, setLoading] = useState(isApiMode);
   const [error, setError]     = useState(null);
   /* admin caches — API mode only (demo mode derives these from db) */
@@ -740,6 +741,17 @@ export function StoreProvider({ children }) {
     catch (e) { setError(e.message); return null; }
   };
 
+  const fetchNotifications = async () => {
+    if (!isApiMode) return { notifications: [], unread: 0 };
+    try { const d = await api("/notifications"); setNotif({ notifications: d.notifications || [], unread: d.unread || 0 }); return d; }
+    catch (e) { return { notifications: [], unread: 0 }; }
+  };
+  const markNotificationsRead = async () => {
+    if (!isApiMode) return;
+    try { await api("/notifications/read"); setNotif(n => ({ notifications: n.notifications.map(x => ({ ...x, is_read: true })), unread: 0 })); }
+    catch (e) {}
+  };
+
   /* employees filtered to current company in demo mode */
   const visibleEmployees = isApiMode ? db.employees : db.employees.filter(e => e.company_id === (session?.companyId || null));
 
@@ -753,6 +765,7 @@ export function StoreProvider({ children }) {
     updateProfile, changePassword, updateCompany,
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
+    fetchNotifications, markNotificationsRead, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
     connectStatus, connectOnboard,

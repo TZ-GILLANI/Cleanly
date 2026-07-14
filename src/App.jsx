@@ -372,6 +372,40 @@ const Progress = ({ done, total }) => (
     <div style={{ height: "100%", borderRadius: 9, width: `${total ? (done / total) * 100 : 0}%`, background: C.mint, transition: "width .3s" }} />
   </div>
 );
+function NotificationBell() {
+  const { notifications, unreadNotif, fetchNotifications, markNotificationsRead, isLive } = useStore();
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!isLive) return;
+    fetchNotifications();
+    const t = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(t);
+  }, []);
+  const openSheet = () => { setOpen(true); if (unreadNotif > 0) markNotificationsRead(); };
+  return (
+    <>
+      <button onClick={openSheet} aria-label="Notifications" style={{ position: "fixed", right: 16, bottom: "calc(92px + env(safe-area-inset-bottom))", width: 50, height: 50, borderRadius: "50%", border: "none", cursor: "pointer", background: C.card, boxShadow: "0 8px 24px rgba(20,28,58,.22)", fontSize: 21, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        🔔
+        {unreadNotif > 0 && <span style={{ position: "absolute", top: -2, right: -2, minWidth: 20, height: 20, borderRadius: 99, background: C.coral, color: "#fff", fontSize: 11, fontWeight: 700, fontFamily: B, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", border: `2px solid ${C.bg}` }}>{unreadNotif > 9 ? "9+" : unreadNotif}</span>}
+      </button>
+      {open && (
+        <Sheet title="🔔 Notifications" close={() => setOpen(false)}>
+          {(!notifications || notifications.length === 0) && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 28 }}>No notifications yet.</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(notifications || []).map((n) => (
+              <div key={n.id} style={{ background: n.is_read ? C.card : C.mintSoft, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{n.title}</div>
+                {n.body && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>{n.body}</div>}
+                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 5 }}>{(() => { try { return new Date(n.created_at).toLocaleString(); } catch { return ""; } })()}</div>
+              </div>
+            ))}
+          </div>
+        </Sheet>
+      )}
+    </>
+  );
+}
+
 function ConfirmDialog({ title, body, confirmLabel, onConfirm, onCancel }) {
   React.useEffect(() => {
     document.body.classList.add("cl-modal-open");
@@ -2944,6 +2978,7 @@ function Shell() {
         {showProfile && <ProfileSheet close={() => setShowProfile(false)} />}
         <PhoneVerifyGate />
 
+        {role !== "employee" && <NotificationBell />}
         <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: C.navBg, backdropFilter: "blur(20px) saturate(1.4)", WebkitBackdropFilter: "blur(20px) saturate(1.4)", border: `1px solid ${C.line}`, borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 14px 44px rgba(0,0,0,.5)" : "0 14px 44px rgba(16,25,74,.22)" }}>
           {NAVS[role].map((tb) => {
             const active = tab === tb.id;
@@ -2971,3 +3006,4 @@ export default function App() {
     </StoreProvider>
   );
 }
+
