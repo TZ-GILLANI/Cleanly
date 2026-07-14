@@ -49,6 +49,29 @@ async function getStripe() {
   return _stripe;
 }
 
+/* Full refund (cleaning price + Cleanly fee) when a company/admin cancels a PAID booking.
+   No-op for non-Stripe or unpaid bookings. Never throws — logs and returns a result. */
+export async function refundBookingPayment(booking) {
+  try {
+    if (!booking || booking.payment_status !== "paid") return { refunded: false, reason: "not-paid" };
+    const ref = booking.barion_payment_id || "";
+    if (!ref.startsWith("stripe:") || !process.env.STRIPE_SECRET_KEY) return { refunded: false, reason: "no-stripe" };
+    const stripe = await getStripe();
+    const session = await stripe.checkout.sessions.retrieve(ref.slice("stripe:".length));
+    if (!session || !session.payment_intent) return { refunded: false, reason: "no-payment-intent" };
+    await stripe.refunds.create({
+      payment_intent: session.payment_intent,
+      refund_application_fee: true,
+      reverse_transfer: true,
+    });
+    await query("UPDATE bookings SET payment_status = 'refunded' WHERE id = $1", [booking.id]);
+    return { refunded: true };
+  } catch (e) {
+    console.error("refund failed:", e.message);
+    return { refunded: false, error: e.message };
+  }
+}
+
 /* POST /api/payments/start { bookingId } — customer only */
 router.post("/start", requireAuth, requireRole("customer"), async (req, res) => {
   if (!configured()) {

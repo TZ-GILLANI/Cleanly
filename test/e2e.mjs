@@ -114,7 +114,19 @@ const svcId = svc.data.service?.id;
 const bk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: "2026-07-20", scheduledSlot: "09:30", address: "Piac utca 1, Debrecen", hours: null } });
 ok("customer books", bk.status === 201, JSON.stringify(bk.data));
 ok("student discount + 10% fee on top (20000 → 18000 + 1800 = 19800)", bk.data.booking?.total_huf === 19800 && bk.data.booking?.service_fee_huf === 1800, `got ${bk.data.booking?.total_huf} fee ${bk.data.booking?.service_fee_huf}`);
+
 const bkId = bk.data.booking?.id;
+// payment gating: company must NOT see an unpaid new order
+const coUnpaid = await j("/api/bookings", { token: coTok });
+ok("company does NOT see an unpaid new order", !((coUnpaid.data.bookings || []).some((b) => b.id === bkId)), `saw it: ${(coUnpaid.data.bookings||[]).map(b=>b.id).includes(bkId)}`);
+await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [bkId]);
+const coPaid = await j("/api/bookings", { token: coTok });
+ok("company sees the order once it is paid", (coPaid.data.bookings || []).some((b) => b.id === bkId));
+// company declines a PAID booking -> refund path runs (Stripe not configured in tests -> no-op, must not crash)
+const declBk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: "2026-07-24", scheduledSlot: "10:00", address: "Piac utca 1, Debrecen" } });
+await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [declBk.data.booking.id]);
+const declined = await j(`/api/bookings/${declBk.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 8, declineReason: "Unavailable" } });
+ok("company can decline a paid booking without error (refund path)", declined.status === 200 && declined.data.booking?.status === 8, JSON.stringify(declined.data).slice(0,100));
 
 console.log("\n── subscription lifecycle ──");
 const sub = await j("/api/services", { method: "POST", token: coTok, body: { name: "Weekly plan", description: "sub", priceHuf: 12000, minutes: 90, pricingType: "subscription", period: "weekly" } });

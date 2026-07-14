@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { refundBookingPayment } from "./payments.js";
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.get("/", requireAuth, async (req, res) => {
          LEFT JOIN users u ON u.id = b.assigned_to
          LEFT JOIN users cu ON cu.id = b.customer_id
          WHERE b.company_id = $1
+           AND (b.payment_status = 'paid' OR b.status <> 0 OR b.pricing_type = 'subscription')
          ORDER BY b.created_at DESC`,
         [req.user.companyId]
       );
@@ -170,6 +172,11 @@ router.put("/:id/status", requireAuth, async (req, res) => {
       [status, status === 8 ? (declineReason || "Not available for this time") : b.decline_reason, req.params.id]
     );
     const updated = result.rows[0];
+
+    // Company/admin declined a PAID booking -> refund the customer in full (price + fee).
+    if (status === 8 && b.payment_status === "paid") {
+      await refundBookingPayment(b);
+    }
 
     /* Subscription recurrence: completing a visit schedules the next one. */
     let next = null;
