@@ -2741,7 +2741,7 @@ function AdminBookings() {
 
 function AdminLog() {
   const { adminFetchLog, adminLog, isLive } = useStore();
-  useEffect(() => { if (isLive) adminFetchLog(); }, []);
+  React.useEffect(() => { if (isLive) adminFetchLog(); }, []);
   const rows = adminLog || [];
   const fmt = (ts) => { try { return new Date(ts).toLocaleString(); } catch { return String(ts); } };
   const LBL = { company_approved: "✅ Approved company", company_rejected: "⛔ Rejected company", company_listed: "👁️ Listed company", company_unlisted: "🚫 Unlisted company", student_approved: "🎓 Approved student", student_rejected: "⛔ Rejected student", student_pending: "↩️ Reset student to pending", admin_granted: "🛡️ Granted admin access", admin_revoked: "🛡️ Revoked admin access", user_activated: "🔓 Reactivated account", user_deactivated: "🔒 Deactivated account", complaint_resolved: "🛟 Resolved complaint", complaint_in_progress: "🛟 Complaint in progress", complaint_open: "🛟 Reopened complaint", account_deleted: "🗑️ Deleted account" };

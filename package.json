@@ -1,7 +1,7 @@
 {
   "name": "cleanly",
   "private": true,
-  "version": "3.4.0",
+  "version": "3.4.1",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n CLIENT,SERVER -c cyan,magenta \"npm run client\" \"npm run server\"",
