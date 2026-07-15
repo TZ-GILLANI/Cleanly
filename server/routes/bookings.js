@@ -110,12 +110,14 @@ router.post("/", requireAuth, async (req, res) => {
       tasks: svc.tasks, pricing_type: svc.pricing_type, period: svc.period,
     };
 
+    const onq = await query("SELECT COALESCE(MAX(order_no),0)+1 AS n FROM bookings");
+    const orderNo = onq.rows[0].n;
     const result = await query(
       `INSERT INTO bookings
-        (customer_id, company_id, service_id, service_snapshot, scheduled_date, scheduled_slot, address, note, customer_type, total_huf, service_fee_huf, pricing_type, hours, period)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        (customer_id, company_id, service_id, service_snapshot, scheduled_date, scheduled_slot, address, note, customer_type, total_huf, service_fee_huf, pricing_type, hours, period, order_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [req.user.id, companyId, serviceId, JSON.stringify(snapshot), scheduledDate, scheduledSlot, address, note || null,
-       customerType, total, serviceFee, svc.pricing_type, effHours, svc.pricing_type === "subscription" ? svc.period : null]
+       customerType, total, serviceFee, svc.pricing_type, effHours, svc.pricing_type === "subscription" ? svc.period : null, orderNo]
     );
     res.status(201).json({ booking: result.rows[0] });
   } catch (err) {
@@ -205,13 +207,14 @@ router.put("/:id/status", requireAuth, async (req, res) => {
         [b.customer_id, b.service_id, nextDate]
       );
       if (dupe.rows.length) return res.json({ booking: updated, next: null });
+      const onq2 = await query("SELECT COALESCE(MAX(order_no),0)+1 AS n FROM bookings");
       const nextRes = await query(
         `INSERT INTO bookings
-          (customer_id, company_id, service_id, service_snapshot, scheduled_date, scheduled_slot, address, note, customer_type, total_huf, service_fee_huf, pricing_type, hours, period, assigned_to, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+          (customer_id, company_id, service_id, service_snapshot, scheduled_date, scheduled_slot, address, note, customer_type, total_huf, service_fee_huf, pricing_type, hours, period, assigned_to, status, order_no)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
         [b.customer_id, b.company_id, b.service_id, JSON.stringify(b.service_snapshot), nextDate, b.scheduled_slot,
          b.address, b.note, b.customer_type, b.total_huf, b.service_fee_huf || 0, b.pricing_type, b.hours, b.period,
-         b.assigned_to, b.assigned_to ? 1 : 0]
+         b.assigned_to, b.assigned_to ? 1 : 0, onq2.rows[0].n]
       );
       next = nextRes.rows[0];
     }

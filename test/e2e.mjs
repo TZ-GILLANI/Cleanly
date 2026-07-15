@@ -80,6 +80,16 @@ const coLogin = await j("/api/auth/login", { method: "POST", body: { email: "bos
 ok("approved company can log in", coLogin.status === 200 && !!coLogin.data.token);
 const coTok = coLogin.data.token;
 
+// ── employee -> company two-way messaging ──
+await query("INSERT INTO users (email, password_hash, role, full_name, company_id, approval_status, is_active) VALUES ('cleaner@test.hu', $1, 'employee', 'Cleaner Bob', $2, 'approved', true)", [await bcrypt.hash("cleaner123", 10), coId]);
+const empLogin = await j("/api/auth/login", { method: "POST", body: { email: "cleaner@test.hu", password: "cleaner123" } });
+ok("employee logs in", empLogin.status === 200 && !!empLogin.data.token, JSON.stringify(empLogin.data).slice(0,90));
+const empTok = empLogin.data.token;
+const empMsg = await j("/api/notices/reply", { method: "POST", token: empTok, body: { body: "Running 10 min late to the job" } });
+ok("employee can message the company", empMsg.status === 201 && empMsg.data.notice?.from_employee === true, JSON.stringify(empMsg.data).slice(0,90));
+const coInbox = await j("/api/notices", { token: coTok });
+ok("company sees the employee message", (coInbox.data.notices || []).some((n) => n.from_employee === true && String(n.body).includes("10 min late")));
+
 // ── admin tiers ──
 const limited = await query("SELECT id FROM users WHERE email = 'anna@test.hu'");
 await j(`/api/admin/users/${limited.rows[0].id}`, { method: "PUT", token: admTok, body: { makeAdmin: true } });
@@ -113,6 +123,7 @@ const svcId = svc.data.service?.id;
 
 const bk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: "2026-07-20", scheduledSlot: "09:30", address: "Piac utca 1, Debrecen", hours: null } });
 ok("customer books", bk.status === 201, JSON.stringify(bk.data));
+ok("booking gets a sequential order number", typeof bk.data.booking?.order_no === "number" && bk.data.booking.order_no >= 1, `order_no ${bk.data.booking?.order_no}`);
 ok("student discount + 10% fee on top (20000 → 18000 + 1800 = 19800)", bk.data.booking?.total_huf === 19800 && bk.data.booking?.service_fee_huf === 1800, `got ${bk.data.booking?.total_huf} fee ${bk.data.booking?.service_fee_huf}`);
 
 const bkId = bk.data.booking?.id;
@@ -166,6 +177,21 @@ const resd = await j(`/api/complaints/${comp.data.complaint.id}`, { method: "PUT
 ok("admin resolves complaint", resd.data.complaint?.status === "resolved");
 const foreign = await j(`/api/complaints/${comp.data.complaint.id}`, { method: "PUT", token: custTok, body: { status: "resolved" } });
 ok("customer cannot resolve complaints", foreign.status === 403);
+
+// ── complaint threads + assign-to-company ──
+const compId = comp.data.complaint.id;
+const assign = await j(`/api/complaints/${compId}/assign`, { method: "PUT", token: admTok, body: { companyId: coId } });
+ok("admin assigns a complaint to a company", assign.status === 200 && assign.data.complaint?.assigned_company_id === coId, JSON.stringify(assign.data).slice(0,90));
+const coSees = await j("/api/complaints", { token: coTok });
+ok("assigned company sees the complaint", (coSees.data.complaints || []).some((c) => c.id === compId));
+const coMsg = await j(`/api/complaints/${compId}/messages`, { method: "POST", token: coTok, body: { body: "We are sorry, sending a re-clean." } });
+ok("assigned company can reply on the thread", coMsg.status === 201);
+const custThread = await j(`/api/complaints/${compId}/messages`, { token: custTok });
+ok("customer sees the company reply", (custThread.data.messages || []).some((m) => String(m.body).includes("re-clean")));
+const coResolve = await j(`/api/complaints/${compId}`, { method: "PUT", token: coTok, body: { status: "resolved", resolution: "Re-clean done" } });
+ok("assigned company can resolve the complaint", coResolve.status === 200 && coResolve.data.complaint?.status === "resolved");
+const strangerCo = await j(`/api/complaints/${compId}/messages`, { token: custTok, method: "POST", body: { body: "thanks" } });
+ok("complaint owner can still reply", strangerCo.status === 201);
 
 console.log("\n── admin access control ──");
 const self = await j(`/api/admin/users/${admin.data.user.id}`, { method: "PUT", token: admTok, body: { makeAdmin: false } });

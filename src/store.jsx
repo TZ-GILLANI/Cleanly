@@ -573,6 +573,11 @@ export function StoreProvider({ children }) {
     setDb(d => ({ ...d, notices: d.notices.filter(n => n.id !== id) }));
   };
 
+  const sendCompanyMessage = async (body) => {
+    if (!isApiMode) { setDb(d => ({ ...d, notices: [{ id: uid(), company_id: session.companyId, to_employee: session.userId, body, from_employee: true, is_read: true, created_at: nowLabel() }, ...d.notices] })); return {}; }
+    try { const { notice } = await api("/notices/reply", { method: "POST", body: { body } }); setDb(d => ({ ...d, notices: [notice, ...d.notices] })); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
   const sendNotice = async (employeeId, body) => {
     if (isApiMode) {
       try { const { notice } = await api("/notices", { method: "POST", body: { toEmployee: employeeId, body } }); setDb(d => ({ ...d, notices: [notice, ...d.notices] })); return; }
@@ -633,6 +638,27 @@ export function StoreProvider({ children }) {
     if (!isApiMode) return;
     try { const { complaints } = await api("/complaints"); setAdminApi(a => ({ ...a, complaints })); }
     catch (e) { setError(e.message); }
+  };
+  const [myComplaints, setMyComplaints] = useState([]);
+  const fetchMyComplaints = async () => {
+    if (!isApiMode) return [];
+    try { const { complaints } = await api("/complaints"); setMyComplaints(complaints || []); return complaints || []; }
+    catch (e) { return []; }
+  };
+  const assignComplaint = async (id, companyId) => {
+    if (!isApiMode) return {};
+    try { await api("/complaints/" + id + "/assign", { method: "PUT", body: { companyId } }); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+  const fetchComplaintThread = async (id) => {
+    if (!isApiMode) return [];
+    try { const { messages } = await api("/complaints/" + id + "/messages"); return messages || []; }
+    catch (e) { return []; }
+  };
+  const sendComplaintMessage = async (id, body) => {
+    if (!isApiMode) return {};
+    try { const { message } = await api("/complaints/" + id + "/messages", { method: "POST", body: { body } }); return { message }; }
+    catch (e) { return { error: e.message }; }
   };
   const adminUpdateComplaint = async (id, patch) => {
     if (!isApiMode) {
@@ -767,10 +793,11 @@ export function StoreProvider({ children }) {
     startPayment, getPaymentStatus, deleteAccount,
     fetchNotifications, markNotificationsRead, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint,
+    myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
     connectStatus, connectOnboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
-    assignBooking, createInvite, deleteInvite, sendNotice, upsertService,
+    assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService,
     adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */

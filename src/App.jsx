@@ -384,7 +384,7 @@ function NotificationBell() {
   const openSheet = () => { setOpen(true); if (unreadNotif > 0) markNotificationsRead(); };
   return (
     <>
-      <button onClick={openSheet} aria-label="Notifications" style={{ position: "fixed", right: 16, bottom: "calc(92px + env(safe-area-inset-bottom))", width: 50, height: 50, borderRadius: "50%", border: "none", cursor: "pointer", background: C.card, boxShadow: "0 8px 24px rgba(20,28,58,.22)", fontSize: 21, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <button onClick={openSheet} aria-label="Notifications" style={{ position: "fixed", right: 12, top: "calc(env(safe-area-inset-top) + 10px)", width: 40, height: 40, borderRadius: "50%", border: "none", cursor: "pointer", background: C.card, boxShadow: "0 4px 14px rgba(20,28,58,.18)", fontSize: 17, zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", opacity: .93 }}>
         🔔
         {unreadNotif > 0 && <span style={{ position: "absolute", top: -2, right: -2, minWidth: 20, height: 20, borderRadius: 99, background: C.coral, color: "#fff", fontSize: 11, fontWeight: 700, fontFamily: B, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", border: `2px solid ${C.bg}` }}>{unreadNotif > 9 ? "9+" : unreadNotif}</span>}
       </button>
@@ -1395,10 +1395,15 @@ function CustomerBookings({ openBooking }) {
   const [googlePrompt, setGooglePrompt] = useState(null);
   const [compSubject, setCompSubject] = useState("");
   const [compBody, setCompBody] = useState("");
+  const [showReports, setShowReports] = useState(false);
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("My bookings", "Foglalásaim")}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 18px" }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("My bookings", "Foglalásaim")}</div>
+        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>🛟 {L("My reports", "Bejelentéseim")}</button>
+      </div>
+      {showReports && <CustomerReports close={() => setShowReports(false)} />}
       {mine.length === 0 && (
         <div style={{ textAlign: "center", padding: "70px 30px" }}>
           <div style={{ width: 88, height: 88, borderRadius: 28, background: C.card, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>🫧</div>
@@ -1679,24 +1684,29 @@ function EmployeeJobs({ openProfile }) {
 }
 
 function EmployeeNotices() {
-  const { session, notices, markNoticeRead, deleteNotice, companies } = useStore();
+  const { session, notices, markNoticeRead, deleteNotice, companies, sendCompanyMessage } = useStore();
   const toast = useToast();
   const mine = notices.filter((n) => n.to_employee === session.userId);
   const unread = mine.filter((n) => !n.is_read).length;
   const co = companies.find((c) => c.id === session.companyId);
+  const [reply, setReply] = useState("");
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>
         From {co?.name || "your company"} {unread > 0 && <Pill bg={C.coral} color="#fff" style={{ marginLeft: 6 }}>{unread} new</Pill>}
       </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Message your company…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 14, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
+        <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast("Message sent to your company"); setReply(""); } }}>Send</Btn>
+      </div>
       {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>No messages from your company yet.</div>}
       {mine.map((n) => (
-        <div key={n.id} onClick={() => { if (!n.is_read) { markNoticeRead(n.id); toast("Marked as read"); } }} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: n.is_read ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: n.is_read ? "default" : "pointer" }}>
+        <div key={n.id} onClick={() => { if (!n.from_employee && !n.is_read) { markNoticeRead(n.id); toast("Marked as read"); } }} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: (n.from_employee || n.is_read) ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: (n.from_employee || n.is_read) ? "default" : "pointer" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-              <CompanyLogo co={co} size={32} radius={10} />
-              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{co?.name || "Company"}</span>
+              {n.from_employee ? <div style={{ width: 32, height: 32, borderRadius: 10, background: C.mint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>🧽</div> : <CompanyLogo co={co} size={32} radius={10} />}
+              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? "You → company" : (co?.name || "Company")}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontFamily: B, fontSize: 10, color: C.inkFaint }}>{typeof n.created_at === "string" && n.created_at.length < 25 ? n.created_at : new Date(n.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
@@ -1706,7 +1716,7 @@ function EmployeeNotices() {
             </div>
           </div>
           <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, lineHeight: 1.65, marginTop: 10 }}>{n.body}</div>
-          {!n.is_read && <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green, marginTop: 8 }}>Tap to mark as read ✓</div>}
+          {!n.from_employee && !n.is_read && <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green, marginTop: 8 }}>Tap to mark as read ✓</div>}
         </div>
       ))}
     </div>
@@ -2224,14 +2234,16 @@ function CompanyTeam() {
       {notices.filter((n) => n.company_id === session.companyId).map((n) => {
         const emp = employees.find((e) => e.id === n.to_employee);
         return (
-          <div key={n.id} style={{ background: C.card, borderRadius: 15, padding: "13px 15px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+          <div key={n.id} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 15, padding: "13px 15px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               <Avatar name={n.employee_name || emp?.full_name || "?"} size={30} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.employee_name || emp?.full_name || "Employee"}</div>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? `↩ ${n.employee_name || emp?.full_name || "Cleaner"}` : (n.employee_name || emp?.full_name || "Employee")}</div>
                 <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.body}</div>
               </div>
-              {n.is_read
+              {n.from_employee
+                ? <Pill bg={C.mintSoft} color={C.green}>💬 Reply</Pill>
+                : n.is_read
                 ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Seen"}</Pill>
                 : <Pill bg={C.amberSoft} color={C.amber}>✓ Not seen yet</Pill>}
               <button onClick={() => { deleteNotice(n.id); }}
@@ -2581,11 +2593,127 @@ function AdminCompanies() {
   );
 }
 
-function AdminComplaints() {
-  const { adminComplaints, adminFetchComplaints, adminUpdateComplaint } = useStore();
+function ComplaintThread({ complaint, role, close, onChange }) {
+  const { fetchComplaintThread, sendComplaintMessage, adminUpdateComplaint, assignComplaint, adminAllCompanies, adminFetchAllCompanies } = useStore();
   const toast = useToast();
+  const [msgs, setMsgs] = React.useState([]);
+  const [text, setText] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const [assignTo, setAssignTo] = React.useState("");
+  const [status, setStatus] = React.useState(complaint.status);
+  const [assigned, setAssigned] = React.useState(complaint.assigned_company_name || "");
+  const load = () => fetchComplaintThread(complaint.id).then((m) => setMsgs(m || []));
+  React.useEffect(() => { load(); if (role === "admin" && (!adminAllCompanies || adminAllCompanies.length === 0)) adminFetchAllCompanies(); }, []);
+  const send = async () => { if (!text.trim()) return; const r = await sendComplaintMessage(complaint.id, text.trim()); if (r?.error) toast(r.error, "error"); else { setText(""); load(); } };
+  const doResolve = async () => { const r = await adminUpdateComplaint(complaint.id, { status: "resolved", resolution: note }); if (r?.error) toast(r.error, "error"); else { setStatus("resolved"); toast("Marked resolved"); onChange && onChange(); } };
+  const doAssign = async () => { if (!assignTo) return; const r = await assignComplaint(complaint.id, assignTo); if (r?.error) toast(r.error, "error"); else { const co = (adminAllCompanies || []).find((c) => c.id === assignTo); setAssigned(co?.name || "company"); setStatus("in_progress"); toast("Assigned to " + (co?.name || "company")); onChange && onChange(); } };
+  return (
+    <Sheet title={`🛟 ${complaint.subject}`} close={close}>
+      <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 10 }}>
+        {complaint.user_name ? `From ${complaint.user_name} · ` : ""}{new Date(complaint.created_at).toLocaleString()}
+        {assigned && <div style={{ marginTop: 4, color: C.navySoft, fontWeight: 700 }}>➡ Assigned to {assigned}</div>}
+      </div>
+      {complaint.body && <div style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, lineHeight: 1.6, marginBottom: 10 }}>{complaint.body}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12, maxHeight: 280, overflowY: "auto" }}>
+        {msgs.map((m) => {
+          const mine = m.sender_role === role;
+          return (
+            <div key={m.id} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", background: mine ? C.mint : C.card, borderRadius: 13, padding: "9px 12px", boxShadow: "0 1px 4px rgba(20,28,58,.06)" }}>
+              <div style={{ fontFamily: B, fontWeight: 700, fontSize: 10, color: mine ? C.navyDeep : C.navySoft, marginBottom: 2, textTransform: "capitalize" }}>{mine ? "You" : (m.sender_name || m.sender_role)}</div>
+              <div style={{ fontFamily: B, fontSize: 12.5, color: mine ? C.navyDeep : C.ink, lineHeight: 1.5 }}>{m.body}</div>
+            </div>
+          );
+        })}
+        {msgs.length === 0 && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint, textAlign: "center", padding: 10 }}>No replies yet.</div>}
+      </div>
+      {status !== "resolved" ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: (role === "admin" || role === "company") ? 14 : 0 }}>
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a reply…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
+          <Btn small mint disabled={!text.trim()} onClick={send}>Send</Btn>
+        </div>
+      ) : (
+        <div style={{ fontFamily: B, fontSize: 12, fontWeight: 700, color: C.green, textAlign: "center", padding: 8 }}>✓ Resolved{complaint.resolution ? ` — ${complaint.resolution}` : ""}</div>
+      )}
+      {role === "admin" && status !== "resolved" && (
+        <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 12, marginBottom: 12 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>Move to a company to resolve</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink }}>
+              <option value="">Select a company…</option>
+              {(adminAllCompanies || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <Btn small ghost disabled={!assignTo} onClick={doAssign}>Assign →</Btn>
+          </div>
+        </div>
+      )}
+      {(role === "admin" || role === "company") && status !== "resolved" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Resolution note…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink, outline: "none" }} />
+          <Btn small mint onClick={doResolve}>✓ Resolve</Btn>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+function CompanyComplaints() {
+  const { myComplaints, fetchMyComplaints } = useStore();
+  const [busy, setBusy] = useState(true);
+  const [open, setOpen] = useState(null);
+  React.useEffect(() => { fetchMyComplaints().finally(() => setBusy(false)); }, []);
+  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
+  const list = myComplaints || [];
+  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: "To resolve", bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
+  return (
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>Issues to resolve</div>
+      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>Complaints Cleanly assigned to your company.</div>
+      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>Nothing assigned to you 🎉</div>}
+      {list.map((c) => (
+        <div key={c.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{c.subject}</div>
+            <Pill bg={stat[c.status]?.bg} color={stat[c.status]?.c}>{stat[c.status]?.l || c.status}</Pill>
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>{c.user_name || "Customer"} · {new Date(c.created_at).toLocaleDateString()}</div>
+          {c.body && <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 8, background: C.bg, borderRadius: 11, padding: "8px 11px", lineHeight: 1.55 }}>{c.body}</div>}
+          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>{c.status === "resolved" ? "View thread" : "Open & resolve →"}</Btn>
+        </div>
+      ))}
+      {open && <ComplaintThread complaint={open} role="company" close={() => { setOpen(null); fetchMyComplaints(); }} onChange={fetchMyComplaints} />}
+    </div>
+  );
+}
+
+function CustomerReports({ close }) {
+  const { myComplaints, fetchMyComplaints } = useStore();
+  const [open, setOpen] = React.useState(null);
+  React.useEffect(() => { fetchMyComplaints(); }, []);
+  const list = myComplaints || [];
+  const stat = { open: "🟠 Open", in_progress: "🔵 In progress", resolved: "🟢 Resolved" };
+  return (
+    <Sheet title="🛟 My reports" close={close}>
+      {list.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 24 }}>You haven't filed any reports.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {list.map((c) => (
+          <button key={c.id} onClick={() => setOpen(c)} style={{ textAlign: "left", border: "none", cursor: "pointer", background: C.card, borderRadius: 13, padding: "11px 13px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{c.subject}</span>
+              <span style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, whiteSpace: "nowrap" }}>{stat[c.status] || c.status}</span>
+            </div>
+            {c.assigned_company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.navySoft, marginTop: 3 }}>➡ {c.assigned_company_name}</div>}
+          </button>
+        ))}
+      </div>
+      {open && <ComplaintThread complaint={open} role="customer" close={() => { setOpen(null); fetchMyComplaints(); }} />}
+    </Sheet>
+  );
+}
+
+function AdminComplaints() {
+  const { adminComplaints, adminFetchComplaints } = useStore();
   const [busy, setBusy] = useState(!adminComplaints);
-  const [note, setNote] = useState({});
+  const [open, setOpen] = useState(null);
   React.useEffect(() => { if (!adminComplaints) adminFetchComplaints().finally(() => setBusy(false)); }, []);
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
   const list = adminComplaints || [];
@@ -2601,25 +2729,14 @@ function AdminComplaints() {
             <Pill bg={stat[c.status]?.bg} color={stat[c.status]?.c}>{stat[c.status]?.l || c.status}</Pill>
           </div>
           <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>
-            {c.user_name || "User"} · {new Date(c.created_at).toLocaleString()} {c.booking_id ? `· 📅 ${String(c.booking_id).replace(/-/g, "").slice(0, 8).toUpperCase()}` : ""}
+            {c.user_name || "User"} · {new Date(c.created_at).toLocaleString()}{c.assigned_company_name ? ` · ➡ ${c.assigned_company_name}` : ""}
           </div>
           {c.body && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.6, background: C.bg, borderRadius: 12, padding: "9px 12px" }}>{c.body}</div>}
           {c.resolution && <div style={{ fontFamily: B, fontSize: 11.5, color: C.green, marginTop: 8 }}>✓ {c.resolution}</div>}
-          {c.status !== "resolved" && (
-            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
-              {c.status === "open" && (
-                <Btn small ghost onClick={async () => { await adminUpdateComplaint(c.id, { status: "in_progress" }); }}>▶ Take</Btn>
-              )}
-              <input value={note[c.id] || ""} onChange={(e) => setNote({ ...note, [c.id]: e.target.value })} placeholder="Resolution note…"
-                style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 10, padding: "8px 11px", fontFamily: B, fontSize: 12, background: C.card, color: C.ink, outline: "none" }} />
-              <Btn small mint onClick={async () => {
-                const r = await adminUpdateComplaint(c.id, { status: "resolved", resolution: note[c.id] || "" });
-                if (r?.error) toast(r.error, "error"); else toast("Resolved");
-              }}>✓ Resolve</Btn>
-            </div>
-          )}
+          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>💬 Manage / assign →</Btn>
         </div>
       ))}
+      {open && <ComplaintThread complaint={open} role="admin" close={() => { setOpen(null); adminFetchComplaints(); }} onChange={adminFetchComplaints} />}
     </div>
   );
 }
@@ -2730,6 +2847,7 @@ function AdminBookings() {
   const { adminAllBookings, adminFetchAllBookings } = useStore();
   const [busy, setBusy] = useState(!adminAllBookings);
   const [filter, setFilter] = useState("all");
+  const [openCust, setOpenCust] = useState(null);
 
   React.useEffect(() => {
     if (!adminAllBookings) adminFetchAllBookings().finally(() => setBusy(false));
@@ -2740,35 +2858,65 @@ function AdminBookings() {
   const all = adminAllBookings || [];
   const shown = filter === "all" ? all : filter === "active" ? all.filter((b) => b.status > 0 && b.status < 4) : filter === "done" ? all.filter((b) => b.status === 4) : all.filter((b) => b.status === 9 || b.status === 8);
 
+  const groups = {};
+  shown.forEach((b) => {
+    const key = b.customer_id || b.customer_email || b.customer_name || "unknown";
+    if (!groups[key]) groups[key] = { name: b.customer_full_name || b.customer_name || "Customer", email: b.customer_email || "", orders: [] };
+    groups[key].orders.push(b);
+  });
+  const people = Object.entries(groups).sort((a, b) => b[1].orders.length - a[1].orders.length);
+
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>All bookings ({all.length})</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>Orders by customer</div>
+      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{shown.length} order{shown.length === 1 ? "" : "s"} across {people.length} {people.length === 1 ? "person" : "people"} — tap a person to see their orders.</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
         {[{ id: "all", label: "All" }, { id: "active", label: "Active" }, { id: "done", label: "Done" }, { id: "cancelled", label: "Cancelled / Declined" }].map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 13px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.navy : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
         ))}
       </div>
-      {shown.map((b) => {
-        const svc = b.service_snapshot || {};
+      {people.map(([key, p]) => {
+        const total = p.orders.reduce((sum, b) => sum + (Number(b.total_huf) || 0), 0);
+        const open = openCust === key;
         return (
-          <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)", opacity: b.status === 9 ? .65 : 1 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{svc.icon} {svc.name || "Booking"}</div>
-                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.65 }}>
-                  👤 {b.customer_name || b.customer_full_name} · 🏢 {b.company_name}<br />
-                  📅 {dayLabel(b.scheduled_date)} {b.scheduled_slot}
-                </div>
+          <div key={key} style={{ background: C.card, borderRadius: 16, marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)", overflow: "hidden" }}>
+            <button onClick={() => setOpenCust(open ? null : key)} style={{ width: "100%", border: "none", background: "none", cursor: "pointer", padding: "13px 15px", display: "flex", alignItems: "center", gap: 11, textAlign: "left" }}>
+              <Avatar name={p.name} size={38} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{p.name}</div>
+                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.orders.length} order{p.orders.length === 1 ? "" : "s"} · {huf(total)}{p.email ? " · " + p.email : ""}</div>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <StatusPill status={b.status} />
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navy, marginTop: 6 }}>{huf(b.total_huf)}</div>
+              <span style={{ color: C.inkFaint, fontSize: 17, transform: open ? "rotate(90deg)" : "none", transition: "transform .2s" }}>›</span>
+            </button>
+            {open && (
+              <div style={{ padding: "0 12px 12px" }}>
+                {p.orders.slice().sort((a, b) => (b.order_no || 0) - (a.order_no || 0)).map((b) => {
+                  const svc = b.service_snapshot || {};
+                  return (
+                    <div key={b.id} style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", marginBottom: 7, opacity: b.status === 9 ? .7 : 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink }}>{b.order_no ? "#" + b.order_no + " · " : ""}{svc.icon} {svc.name || "Order"}</div>
+                          <div style={{ fontFamily: B, fontSize: 10, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
+                            🏢 {b.company_name}<br />
+                            📅 {dayLabel(b.scheduled_date)} {b.scheduled_slot} · 📍 {b.address || "—"}<br />
+                            💳 {b.payment_status || "unpaid"}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <StatusPill status={b.status} />
+                          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.navy, marginTop: 6 }}>{huf(b.total_huf)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
           </div>
         );
       })}
-      {shown.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>No bookings in this filter.</div>}
+      {people.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>No orders in this filter.</div>}
     </div>
   );
 }
@@ -2796,18 +2944,9 @@ function AdminLog() {
   );
 }
 
-function AdminPanel() {
+function AdminPanel({ tab }) {
   const { logout, session } = useStore();
-  const isCeo = session.isSuper === true;
-  const [tab, setTab] = useState("dashboard");
-  const tabs = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "companies", label: "Companies", icon: "🏢" },
-    { id: "users", label: "Users", icon: "👤" },
-    { id: "bookings", label: "Bookings", icon: "📅" },
-    { id: "complaints", label: "Complaints", icon: "🛟" },
-    { id: "log", label: "Decision log", icon: "📜" },
-  ];
+  const isCeo = session?.isSuper === true;
   return (
     <div className="cl-fade" style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
       <div style={{ background: `radial-gradient(140% 100% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(22px + env(safe-area-inset-top)) 20px 18px" }}>
@@ -2821,16 +2960,9 @@ function AdminPanel() {
             🚪 Log out
           </button>
         </div>
-        <div style={{ display: "flex", gap: 6, marginTop: 16, overflowX: "auto" }} className="cl-noscroll">
-          {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "8px 14px", borderRadius: 99, border: "none", cursor: "pointer", whiteSpace: "nowrap", background: tab === t.id ? C.card : "rgba(255,255,255,.12)", color: tab === t.id ? C.navy : "#C9D2F5" }}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
       </div>
       <div style={{ flex: 1 }}>
-        {tab === "dashboard" && <AdminDashboard />}
+        {(tab === "home" || tab === "dashboard") && <AdminDashboard />}
         {tab === "companies" && <AdminCompanies />}
         {tab === "users" && <AdminUsers />}
         {tab === "bookings" && <AdminBookings />}
@@ -2909,8 +3041,8 @@ function Shell() {
   const NAVS = {
     customer: [{ id: "home", label: t("nav.home"), icon: "🏠" }, { id: "bookings", label: t("nav.bookings"), icon: "📅" }],
     employee: [{ id: "home", label: "My jobs", icon: "🧽" }, { id: "notices", label: "Notices", icon: "🔔", badge: unread }],
-    company: [{ id: "home", label: "Jobs", icon: "📋" }, { id: "schedule", label: "Schedule", icon: "🗓️" }, { id: "clients", label: "Clients", icon: "🤝" }, { id: "services", label: "Services", icon: "🛎️" }, { id: "team", label: "Team", icon: "👥" }, { id: "settings", label: "Settings", icon: "⚙️" }],
-    admin: [{ id: "home", label: "Admin", icon: "🛡️" }],
+    company: [{ id: "home", label: "Jobs", icon: "📋" }, { id: "schedule", label: "Schedule", icon: "🗓️" }, { id: "clients", label: "Clients", icon: "🤝" }, { id: "services", label: "Services", icon: "🛎️" }, { id: "team", label: "Team", icon: "👥" }, { id: "issues", label: "Issues", icon: "🛟" }, { id: "settings", label: "Settings", icon: "⚙️" }],
+    admin: [{ id: "home", label: "Dashboard", icon: "📊" }, { id: "companies", label: "Companies", icon: "🏢" }, { id: "users", label: "Users", icon: "👤" }, { id: "bookings", label: "Orders", icon: "📅" }, { id: "complaints", label: "Complaints", icon: "🛟" }, { id: "log", label: "Log", icon: "📜" }],
   };
 
   return (
@@ -2946,10 +3078,11 @@ function Shell() {
             tab === "clients" ? <CompanyClients /> :
             tab === "services" ? <CompanyServices /> :
             tab === "team" ? <CompanyTeam /> :
+            tab === "issues" ? <CompanyComplaints /> :
             tab === "settings" ? <CompanySettings /> :
             <CompanyJobs openProfile={() => setShowProfile(true)} />
           )}
-          {role === "admin" && <AdminPanel />}
+          {role === "admin" && <AdminPanel tab={tab} />}
         </div>
 
         {bookingCo && role === "customer" && (
@@ -2978,7 +3111,7 @@ function Shell() {
         {showProfile && <ProfileSheet close={() => setShowProfile(false)} />}
         <PhoneVerifyGate />
 
-        {role !== "employee" && <NotificationBell />}
+        {(role === "customer" || role === "company") && <NotificationBell />}
         <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: C.navBg, backdropFilter: "blur(20px) saturate(1.4)", WebkitBackdropFilter: "blur(20px) saturate(1.4)", border: `1px solid ${C.line}`, borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 14px 44px rgba(0,0,0,.5)" : "0 14px 44px rgba(16,25,74,.22)" }}>
           {NAVS[role].map((tb) => {
             const active = tab === tb.id;
@@ -3006,4 +3139,3 @@ export default function App() {
     </StoreProvider>
   );
 }
-

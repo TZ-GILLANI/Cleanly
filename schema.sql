@@ -187,7 +187,8 @@ BEGIN
 END $$;
 
 -- ── Card payments (Barion) ─────────────────────────────────────────
-ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status    TEXT NOT NULL DEFAULT 'unpaid';  -- 'unpaid' | 'pending' | 'paid'
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status    TEXT NOT NULL DEFAULT 'unpaid';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS order_no          INTEGER;  -- 'unpaid' | 'pending' | 'paid'
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS barion_payment_id TEXT;
 CREATE INDEX IF NOT EXISTS bookings_barion_idx ON bookings (barion_payment_id);
 
@@ -236,6 +237,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code_expires TIMESTAMPTZ;
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS deleted_by_company  BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS deleted_by_employee BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS from_employee    BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS read_by_company BOOLEAN NOT NULL DEFAULT false;
 
 -- ── Invoices on bookings + company-side archiving ──────────────────
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invoice JSONB;               -- {name,type,data} uploaded by company
@@ -270,3 +273,16 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications (user_id, created_at DESC);
+
+-- Complaint two-way thread + admin-to-company assignment.
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS assigned_company_id UUID;
+CREATE TABLE IF NOT EXISTS complaint_messages (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+  sender_id    UUID,
+  sender_role  TEXT,
+  sender_name  TEXT,
+  body         TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS complaint_messages_idx ON complaint_messages (complaint_id, created_at);

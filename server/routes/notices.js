@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendEmail } from "../lib/mailer.js";
+import { notify } from "../lib/notify.js";
 
 const router = Router();
 
@@ -49,6 +50,36 @@ res.status(201).json({ notice: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: "Failed to send notice" });
   }
+});
+
+/* POST /api/notices/reply — employee messages their company back */
+router.post("/reply", requireAuth, async (req, res) => {
+  if (req.user.role !== "employee") return res.status(403).json({ error: "Employees only" });
+  const { body } = req.body || {};
+  if (!body || !String(body).trim()) return res.status(400).json({ error: "Message required" });
+  try {
+    const me = await query("SELECT company_id, full_name FROM users WHERE id = $1", [req.user.id]);
+    const companyId = me.rows[0]?.company_id;
+    if (!companyId) return res.status(400).json({ error: "You are not linked to a company" });
+    const result = await query(
+      "INSERT INTO notices (company_id, to_employee, body, from_employee) VALUES ($1,$2,$3,true) RETURNING *",
+      [companyId, req.user.id, String(body).slice(0, 2000)]
+    );
+    const owner = await query("SELECT owner_id FROM companies WHERE id = $1", [companyId]);
+    if (owner.rows[0]) notify(owner.rows[0].owner_id, "employee_message", `Message from ${me.rows[0].full_name || "a cleaner"}`, String(body).slice(0, 140), null);
+    res.status(201).json({ notice: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+/* PUT /api/notices/:id/company-read — company marks an employee message read */
+router.put("/:id/company-read", requireAuth, async (req, res) => {
+  if (req.user.role !== "company") return res.status(403).json({ error: "Company only" });
+  try {
+    await query("UPDATE notices SET read_by_company = true WHERE id = $1 AND company_id = $2", [req.params.id, req.user.companyId]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
 /* PUT /api/notices/:id/read */
