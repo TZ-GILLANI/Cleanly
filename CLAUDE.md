@@ -1,4 +1,12 @@
-# CLAUDE.md — Cleanly project handover brief
+# CLAUDE.md — Cleano project handover brief
+> ⚠️ REBRAND (v3.8.0): the app is now **Cleano** (was Cleanly). User-visible strings, legal
+> pages, manifest, appName and Android applicationId (com.cleano.app) are renamed. INTERNAL
+> identifiers intentionally KEPT for stability: localStorage keys (cleanly_*), css classes
+> (cl-), Render URL (cleanly-2x9z.onrender.com), GitHub repo, java namespace com.cleanly.app,
+> demo seed emails (…@cleanly.hu). Also v3.8.0: street AUTOCOMPLETE (Photon/OSM — street
+> cannot be typed wrong, city auto-locks from the chosen street), labeled saved addresses UI
+> (Home/Office, was missing from the v3.7 sync), city TOGGLE REMOVED (city now derived from
+> profile/saved addresses). User must still update the Stripe statement descriptor to CLEANO.
 *(Read this fully before making any change. You are inheriting a live production system with a paying-customer-ready pipeline. The founder, Musa Gilani, is non-technical — you are his CTO.)*
 
 ## 1. What this is

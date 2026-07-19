@@ -279,9 +279,9 @@ const Sparkle = ({ size = 14, style = {}, cls = "" }) => (
     <path d="M12 0 C13 7 17 11 24 12 C17 13 13 17 12 24 C11 17 7 13 0 12 C7 11 11 7 12 0 Z" fill={C.mint} />
   </svg>
 );
-// Brand mark — the WHITE Cleanly logo, for the app's dark navy surfaces.
+// Brand mark — the WHITE Cleano logo, for the app's dark navy surfaces.
 const Octo = ({ size = 40 }) => (
-  <img src="/white-logo.png" alt="Cleanly" width={size} height={size} style={{ objectFit: "contain", flexShrink: 0 }} draggable="false" />
+  <img src="/white-logo.png" alt="Cleano" width={size} height={size} style={{ objectFit: "contain", flexShrink: 0 }} draggable="false" />
 );
 
 // A company's own uploaded logo on a white tile; falls back to its emoji.
@@ -488,27 +488,68 @@ function ConfirmDialog({ title, body, confirmLabel, onConfirm, onCancel }) {
 }
 
 /* ── Structured address picker: current location / saved / recent / structured new — no freeform typing ── */
+/* Extract a known city from an address string (auto-city: no manual toggle). */
+function cityFromAddress(addr) {
+  if (!addr) return null;
+  const low = String(addr).toLowerCase();
+  return ALL_CITIES.find((c) => low.includes(c.toLowerCase())) || null;
+}
+
+/* Street autocomplete via Photon (OpenStreetMap, free, typo-tolerant). */
+async function suggestStreets(q, city) {
+  try {
+    const query = city ? `${q}, ${city}` : q;
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=${getLang() === "hu" ? "hu" : "en"}`, { signal: AbortSignal.timeout(5000) });
+    const j = await r.json();
+    const seen = new Set();
+    return (j.features || [])
+      .filter((f) => f.properties?.countrycode === "HU" && (f.properties.street || f.properties.name))
+      .map((f) => {
+        const pr = f.properties;
+        const street = pr.street || pr.name;
+        const cty = pr.city || pr.county || "";
+        return { street, city: cty, key: `${street}|${cty}` };
+      })
+      .filter((x) => (seen.has(x.key) ? false : seen.add(x.key)));
+  } catch { return []; }
+}
+
 function AddressPicker({ value, onChange }) {
-  const { session, bookings } = useStore();
+  const { session, bookings, updateProfile } = useStore();
   const toast = useToast();
   const [locBusy, setLocBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [street, setStreet] = useState("");
+  const [streetPicked, setStreetPicked] = useState(null); // {street, city} chosen from suggestions
+  const [sugs, setSugs] = useState([]);
   const [houseNo, setHouseNo] = useState("");
   const [floor, setFloor] = useState("");
+  const [saveAs, setSaveAs] = useState("");
+  const debounceRef = React.useRef(null);
+  const saved = session.savedAddresses || [];
+
+  // live street suggestions — the street cannot be typed wrong
+  const onStreetInput = (v) => {
+    setStreet(v); setStreetPicked(null);
+    clearTimeout(debounceRef.current);
+    if (v.trim().length < 2) { setSugs([]); return; }
+    debounceRef.current = setTimeout(async () => setSugs(await suggestStreets(v.trim(), getCity())), 350);
+  };
+
+  const applyCityFrom = (addr) => { const c = cityFromAddress(addr); if (c) saveCity(c); };
 
   const recent = useMemo(() => {
-    const seen = new Set(session.address ? [session.address.trim()] : []);
+    const seen = new Set([session.address, ...saved.map((a) => a.address)].filter(Boolean).map((a) => a.trim()));
     const out = [];
     for (const b of bookings) {
       if ((b.customer_id === session.userId || b.customer_name === session.name) && b.address) {
         const a = String(b.address).trim();
         if (!seen.has(a)) { seen.add(a); out.push(a); }
-        if (out.length >= 3) break;
+        if (out.length >= 2) break;
       }
     }
     return out;
-  }, [bookings, session]);
+  }, [bookings, session, saved]);
 
   const useCurrentLocation = () => {
     if (!navigator.geolocation) { toast(L("Location is not available on this device", "A helymeghatározás nem elérhető ezen az eszközön"), "error"); return; }
@@ -524,7 +565,7 @@ function AddressPicker({ value, onChange }) {
         const city = a.city || a.town || a.village || getCity();
         const label = road ? `${road}${num}, ${city}` : (j.display_name || "").split(",").slice(0, 3).join(",");
         if (!label) throw new Error("empty");
-        onChange(label);
+        onChange(label); applyCityFrom(label);
         setAdding(false);
       } catch {
         toast(L("Couldn't read your location — add the address instead", "Nem sikerült beolvasni a helyzeted — add meg a címet"), "error");
@@ -532,15 +573,36 @@ function AddressPicker({ value, onChange }) {
     }, () => { setLocBusy(false); toast(L("Location permission denied — pick another option", "Helymeghatározás letiltva — válassz másik lehetőséget"), "error"); }, { enableHighAccuracy: true, timeout: 10000 });
   };
 
-  const Opt = ({ icon, label, sub, selected, onPress, busy }) => (
-    <button onClick={onPress} disabled={busy} style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", borderRadius: 15, marginBottom: 8, border: selected ? `2px solid ${C.navy}` : `2px solid transparent`, background: C.card, cursor: "pointer", boxShadow: "0 1px 6px rgba(20,28,58,.05)", opacity: busy ? .6 : 1 }}>
-      <span style={{ fontSize: 19 }}>{icon}</span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        {sub && <span style={{ display: "block", fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1 }}>{sub}</span>}
-      </span>
-      {selected && <span style={{ color: C.green, fontWeight: 900 }}>✓</span>}
-    </button>
+  // if permission is already granted, prefill silently the first time
+  React.useEffect(() => {
+    if (value || session.address || saved.length) return;
+    try {
+      navigator.permissions?.query({ name: "geolocation" }).then((st) => { if (st.state === "granted") useCurrentLocation(); });
+    } catch {}
+  }, []);
+
+  const labelIcon = (lbl) => (/home|otthon/i.test(lbl) ? "🏠" : /office|iroda|work|munka/i.test(lbl) ? "💼" : "📍");
+
+  const removeSaved = async (addr) => {
+    const next = saved.filter((a) => a.address !== addr.address);
+    await updateProfile({ saved_addresses: next });
+    toast(L("Address removed", "Cím törölve"));
+  };
+
+  const Opt = ({ icon, label, sub, selected, onPress, busy, onRemove }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+      <button onClick={onPress} disabled={busy} style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", borderRadius: 15, border: selected ? `2px solid ${C.navy}` : `2px solid transparent`, background: C.card, cursor: "pointer", boxShadow: "0 1px 6px rgba(20,28,58,.05)", opacity: busy ? .6 : 1, minWidth: 0 }}>
+        <span style={{ fontSize: 19 }}>{icon}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+          {sub && <span style={{ display: "block", fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>}
+        </span>
+        {selected && <span style={{ color: C.green, fontWeight: 900 }}>✓</span>}
+      </button>
+      {onRemove && (
+        <button onClick={onRemove} title={L("Remove", "Törlés")} style={{ border: "none", background: C.bg, color: C.inkFaint, width: 28, height: 28, borderRadius: 10, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
+      )}
+    </div>
   );
 
   return (
@@ -548,33 +610,75 @@ function AddressPicker({ value, onChange }) {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Address", "Cím")}</div>
       <Opt icon={locBusy ? "⏳" : "📍"} busy={locBusy}
         label={locBusy ? L("Locating…", "Helymeghatározás…") : L("Use my current location", "Jelenlegi helyzetem használata")}
-        sub={L("GPS — we fill the address for you", "GPS — mi töltjük ki a címet")}
+        sub={L("GPS fills the exact address for you", "A GPS kitölti a pontos címet")}
         selected={false} onPress={useCurrentLocation} />
-      {session.address && (
-        <Opt icon="🏠" label={session.address} sub={L("Saved home address", "Mentett lakcím")}
-          selected={value === session.address} onPress={() => { onChange(session.address); setAdding(false); }} />
+      {saved.map((a) => (
+        <Opt key={a.address} icon={labelIcon(a.label)} label={a.label} sub={a.address}
+          selected={value === a.address} onPress={() => { onChange(a.address); applyCityFrom(a.address); setAdding(false); }}
+          onRemove={() => removeSaved(a)} />
+      ))}
+      {session.address && !saved.some((a) => a.address === session.address) && (
+        <Opt icon="🏠" label={L("Home address", "Lakcím")} sub={session.address}
+          selected={value === session.address} onPress={() => { onChange(session.address); applyCityFrom(session.address); setAdding(false); }} />
       )}
       {recent.map((a) => (
         <Opt key={a} icon="🕘" label={a} sub={L("Recently used", "Korábban használt")}
-          selected={value === a} onPress={() => { onChange(a); setAdding(false); }} />
+          selected={value === a} onPress={() => { onChange(a); applyCityFrom(a); setAdding(false); }} />
       ))}
-      {value && value !== session.address && !recent.includes(value) && (
+      {value && value !== session.address && !saved.some((a) => a.address === value) && !recent.includes(value) && (
         <Opt icon="📌" label={value} sub={L("Selected address", "Kiválasztott cím")} selected onPress={() => {}} />
       )}
       {!adding ? (
         <button onClick={() => setAdding(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "12px 14px", fontFamily: F, fontWeight: 700, fontSize: 13, color: C.navySoft, cursor: "pointer" }}>
-          ➕ {L("Add a new address", "Új cím megadása")}
+          + {L("Add a new address", "Új cím megadása")}
         </button>
       ) : (
         <div style={{ background: C.card, borderRadius: 15, padding: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
-          <Field label={L("Street", "Utca")} placeholder={L("e.g. Kassai út", "pl. Kassai út")} value={street} onChange={(e) => setStreet(e.target.value)} />
+          <div style={{ position: "relative" }}>
+            <Field label={L("Street", "Utca")} placeholder={L("Start typing — e.g. Bolyai", "Kezdj el gépelni — pl. Bolyai")}
+              value={streetPicked ? `${streetPicked.street}` : street} onChange={(e) => onStreetInput(e.target.value)} />
+            {streetPicked && (
+              <span style={{ position: "absolute", right: 10, top: 38, fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green, background: C.mintSoft, borderRadius: 99, padding: "3px 9px" }}>
+                ✓ {streetPicked.city || getCity()}
+              </span>
+            )}
+            {!streetPicked && sugs.length > 0 && (
+              <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card, borderRadius: 13, boxShadow: "0 10px 30px rgba(20,28,58,.18)", border: `1.5px solid ${C.line}`, overflow: "hidden" }}>
+                {sugs.map((sg) => (
+                  <button key={sg.key} onClick={() => { setStreetPicked(sg); setSugs([]); if (sg.city) saveCity(cityFromAddress(sg.city) || sg.city); }}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none", borderBottom: `1px solid ${C.line}`, background: "transparent", cursor: "pointer", fontFamily: B, fontSize: 13, color: C.ink }}>
+                    {sg.street} <span style={{ color: C.inkSoft, fontSize: 11.5 }}>— {sg.city || "?"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}><Field label={L("House no.", "Házszám")} placeholder="26" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} /></div>
             <div style={{ flex: 1.4 }}><Field label={L("Floor / door (optional)", "Emelet / ajtó (opcionális)")} placeholder="3/12" value={floor} onChange={(e) => setFloor(e.target.value)} /></div>
           </div>
-          <Btn small full disabled={!street.trim() || !houseNo.trim()} onClick={() => {
-            onChange(`${street.trim()} ${houseNo.trim()}${floor.trim() ? ", " + floor.trim() : ""}, ${getCity()}`);
-            setAdding(false); setStreet(""); setHouseNo(""); setFloor("");
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, margin: "2px 0 7px" }}>{L("Save this address as (optional)", "Cím mentése mint (opcionális)")}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            {[L("Home", "Otthon"), L("Office", "Iroda")].map((lbl) => (
+              <button key={lbl} onClick={() => setSaveAs(saveAs === lbl ? "" : lbl)}
+                style={{ border: saveAs === lbl ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`, background: C.card, color: C.ink, borderRadius: 99, padding: "7px 14px", fontFamily: F, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {labelIcon(lbl)} {lbl}
+              </button>
+            ))}
+            <input value={/^(Home|Otthon|Office|Iroda)$/.test(saveAs) ? "" : saveAs} onChange={(e) => setSaveAs(e.target.value)} placeholder={L("Custom…", "Egyéni…")}
+              style={{ flex: 1, minWidth: 90, border: `1.5px solid ${C.line}`, borderRadius: 99, padding: "7px 13px", fontFamily: B, fontSize: 12, background: C.card, color: C.ink, outline: "none" }} />
+          </div>
+          <Btn small full disabled={!(streetPicked || street.trim().length >= 3) || !houseNo.trim()} onClick={async () => {
+            const st = streetPicked ? streetPicked.street : street.trim();
+            const cty = (streetPicked && (cityFromAddress(streetPicked.city) || streetPicked.city)) || getCity();
+            const full = `${st} ${houseNo.trim()}${floor.trim() ? ", " + floor.trim() : ""}, ${cty}`;
+            onChange(full); applyCityFrom(full);
+            if (saveAs.trim()) {
+              const next = [...saved.filter((a) => a.label !== saveAs.trim()), { label: saveAs.trim(), address: full }].slice(0, 6);
+              await updateProfile({ saved_addresses: next });
+              toast(L("Address saved to your profile", "Cím elmentve a profilodba"));
+            }
+            setAdding(false); setStreet(""); setStreetPicked(null); setHouseNo(""); setFloor(""); setSaveAs(""); setSugs([]);
           }}>{L("Use this address", "Ezt a címet használom")}</Btn>
         </div>
       )}
@@ -856,7 +960,7 @@ function Auth() {
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div className="cl-pop" style={{ margin: "0 auto", display: "flex", justifyContent: "center" }}>
-            <img src="/white-logo.png" alt="Cleanly" style={{ width: 196, height: 196, objectFit: "contain" }} draggable="false" />
+            <img src="/white-logo.png" alt="Cleano" style={{ width: 196, height: 196, objectFit: "contain" }} draggable="false" />
           </div>
           <div className="cl-rise" style={{ fontFamily: B, fontSize: 13, color: "#9FB0E8", textAlign: "center", marginTop: 4, animationDelay: ".15s" }}>{t("auth.tagline")}</div>
           <div style={{ marginTop: 34 }}>
@@ -1038,7 +1142,7 @@ function CityPickerSheet({ close, city, onPick }) {
         </React.Fragment>
       ))}
       <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, textAlign: "center", marginTop: 4 }}>
-        {L("More cities and countries coming as Cleanly grows 🐙", "Új városok és országok jönnek, ahogy a Cleanly növekszik 🐙")}
+        {L("More cities and countries coming as Cleano grows 🐙", "Új városok és országok jönnek, ahogy a Cleano növekszik 🐙")}
       </div>
     </Sheet>
   );
@@ -1061,8 +1165,16 @@ function CustomerHome({ openBooking, openProfile }) {
   const { session, companies, services, reviews, t } = useStore();
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("rating");
-  const [city, setCity] = useState(getCity());
-  const [pickingCity, setPickingCity] = useState(false);
+  // City is DERIVED (profile/saved addresses → cached choice → default), never toggled.
+  const derivedCity = useMemo(() => {
+    for (const a of [session.address, ...(session.savedAddresses || []).map((x) => x.address)]) {
+      const c = cityFromAddress(a);
+      if (c) return c;
+    }
+    return getCity();
+  }, [session]);
+  const city = derivedCity;
+  React.useEffect(() => { saveCity(derivedCity); }, [derivedCity]);
   const isStudent = session.custType === "student";
 
   const list = useMemo(() => {
@@ -1110,9 +1222,9 @@ function CustomerHome({ openBooking, openProfile }) {
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 23, color: "#fff", lineHeight: 1.3 }}>
             {t("home.whatSparkle")} <Sparkle size={15} style={{ display: "inline-block" }} />
           </div>
-          <button onClick={() => setPickingCity(true)} style={{ flexShrink: 0, background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 99, padding: "7px 13px", fontFamily: F, fontWeight: 700, fontSize: 12, color: "#fff", cursor: "pointer" }}>
-            📍 {city} ▾
-          </button>
+          <span style={{ flexShrink: 0, fontFamily: F, fontWeight: 700, fontSize: 12, color: "#C9D2F5", padding: "7px 4px" }}>
+            📍 {city}
+          </span>
         </div>
         <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 16, padding: "12px 16px", boxShadow: "0 10px 30px rgba(0,0,0,.18)" }}>
           <span style={{ fontSize: 15, opacity: .55 }}>🔍</span>
@@ -1152,7 +1264,7 @@ function CustomerHome({ openBooking, openProfile }) {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink, display: "flex", alignItems: "center", gap: 5 }}>
                     {co.name}
-                    {co.is_approved !== false && <span title="Documents verified by Cleanly" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", background: C.mint, color: C.navyDeep, fontSize: 9.5, fontWeight: 900, flexShrink: 0 }}>✓</span>}
+                    {co.is_approved !== false && <span title="Documents verified by Cleano" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", background: C.mint, color: C.navyDeep, fontSize: 9.5, fontWeight: 900, flexShrink: 0 }}>✓</span>}
                   </div>
                   {isStudent && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
                 </div>
@@ -1181,7 +1293,6 @@ function CustomerHome({ openBooking, openProfile }) {
           </div>
         )}
       </div>
-      {pickingCity && <CityPickerSheet close={() => setPickingCity(false)} city={city} onPick={(c) => { setCity(c); saveCity(c); }} />}
     </div>
   );
 }
@@ -1381,7 +1492,7 @@ function BookingFlow({ company, close, onBooked }) {
                 )}
                 {serviceFee > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 7 }}>
-                    <span>{L(`Cleanly service fee (${feePct ?? 10}%)`, `Cleanly szolgáltatási díj (${feePct ?? 10}%)`)}</span><span>+{huf(serviceFee)}</span>
+                    <span>{L(`Cleano service fee (${feePct ?? 10}%)`, `Cleano szolgáltatási díj (${feePct ?? 10}%)`)}</span><span>+{huf(serviceFee)}</span>
                   </div>
                 )}
                 <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "12px 0" }} />
@@ -1588,7 +1699,7 @@ function CustomerBookings({ openBooking }) {
       {complaining && (
         <Sheet title={L("Report a problem", "Probléma bejelentése")} close={() => setComplaining(null)}>
           <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14, lineHeight: 1.6 }}>
-            {L("Tell us what went wrong — the Cleanly team reviews every report.", "Írd le, mi történt — a Cleanly csapata minden bejelentést átnéz.")}
+            {L("Tell us what went wrong — the Cleano team reviews every report.", "Írd le, mi történt — a Cleano csapata minden bejelentést átnéz.")}
           </div>
           <Field label={L("Subject", "Tárgy")} placeholder={L("e.g. Cleaner arrived late", "pl. A takarító késett")} value={compSubject} onChange={(e) => setCompSubject(e.target.value)} />
           <Field area label={L("Details", "Részletek")} placeholder={L("What happened?", "Mi történt?")} value={compBody} onChange={(e) => setCompBody(e.target.value)} />
@@ -1805,7 +1916,7 @@ function CompanyJobs({ openProfile }) {
   const open = mine.filter((b) => b.status < 4 && b.status !== 9);
   const done = mine.filter((b) => b.status === 4 && !b.archived_by_company);
   const cancelled = mine.filter((b) => b.status === 9 || b.status === 8);
-  const net = (b) => (b.total_huf || 0) - (b.service_fee_huf || 0); // company share (Cleanly fee excluded)
+  const net = (b) => (b.total_huf || 0) - (b.service_fee_huf || 0); // company share (Cleano fee excluded)
   const revenue = done.reduce((a, b) => a + net(b), 0);
   const pipeline = open.reduce((a, b) => a + net(b), 0);
   const unassigned = open.filter((b) => !b.assigned_to).length;
@@ -2280,7 +2391,7 @@ function CompanyTeam() {
             <>
               <Field label="Who is this invite for? (optional)" placeholder="e.g. Zoltán Farkas" value={label} onChange={(e) => setLabel(e.target.value)} />
               <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.6, background: C.mintSoft, borderRadius: 13, padding: "11px 14px", marginBottom: 16 }}>
-                A one-time <b>invite code</b> is generated. They open Cleanly, choose "I'm a cleaner", and sign up with the code — they're instantly linked to your company.
+                A one-time <b>invite code</b> is generated. They open Cleano, choose "I'm a cleaner", and sign up with the code — they're instantly linked to your company.
               </div>
               <Btn full onClick={async () => { const code = await createInvite(label); if (code) setNewCode(code); else toast("Failed to generate code", "error"); }}>Generate invite code</Btn>
             </>
@@ -2486,7 +2597,7 @@ function CompanySettings() {
       <Field label="Google Place ID (optional)" hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
       <DocUpload
         label="Verification documents"
-        hint="Cégkivonat, tax certificate, insurance — reviewed by the Cleanly admin."
+        hint="Cégkivonat, tax certificate, insurance — reviewed by the Cleano admin."
         docs={f.documents || []}
         onChange={(docs) => setF({ ...f, documents: docs })}
       />
@@ -2737,7 +2848,7 @@ function CompanyComplaints() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>Issues to resolve</div>
-      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>Complaints Cleanly assigned to your company.</div>
+      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>Complaints Cleano assigned to your company.</div>
       {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>Nothing assigned to you 🎉</div>}
       {list.map((c) => (
         <div key={c.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
@@ -3024,7 +3135,7 @@ function AdminPanel({ tab }) {
           <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>Admin panel</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? "CEO admin · Cleanly Magyarország" : "Company review team"}</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? "CEO admin · Cleano Magyarország" : "Company review team"}</div>
           </div>
           <button onClick={logout} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 99, padding: "7px 14px", fontFamily: B, fontWeight: 700, fontSize: 11, color: "#C9D2F5", cursor: "pointer" }}>
             🚪 Log out

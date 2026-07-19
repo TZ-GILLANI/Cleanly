@@ -1,4 +1,4 @@
-/* Cleanly — lightweight i18n (English + Hungarian) */
+/* Cleano — lightweight i18n (English + Hungarian) */
 
 export const LANGS = [
   { id: "en", label: "EN", name: "English" },

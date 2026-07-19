@@ -72,7 +72,7 @@ router.put("/companies/:id", ...guard, async (req, res) => {
         [co.owner_id]
       );
       if (owner.rows.length) {
-        sendEmail(owner.rows[0].email, `${co.name} is approved on Cleanly ✅`,
+        sendEmail(owner.rows[0].email, `${co.name} is approved on Cleano ✅`,
           `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">Welcome aboard, ${co.name}! 🐙</h2>
            <p>Your company has been verified and approved — you can now log in, list your services and receive bookings.</p>
            <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Log in to Cleanly</a></p>
@@ -119,11 +119,11 @@ router.put("/users/:id", ...guard, async (req, res) => {
       if (!r.rows.length) return res.status(404).json({ error: "User not found" });
       const u = r.rows[0];
       if (approvalStatus === "approved") {
-        sendEmail(u.email, "Your Cleanly student account is approved 🎓",
-          `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">Welcome to Cleanly, ${u.full_name}! 🐙</h2>
+        sendEmail(u.email, "Your Cleano student account is approved 🎓",
+          `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">Welcome to Cleano, ${u.full_name}! 🐙</h2>
            <p>Your student card has been verified — your account is now active and your student discount is live.</p>
            <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Log in and book your first clean</a></p>
-           <p style="color:#69718F;font-size:13px">Cleanly · Hungary · Eight arms, zero dust</p></div>`);
+           <p style="color:#69718F;font-size:13px">Cleano · Hungary · Eight arms, zero dust</p></div>`);
       }
       logAdmin(req, approvalStatus === "approved" ? "student_approved" : approvalStatus === "rejected" ? "student_rejected" : "student_pending", "user", u.id, `${u.full_name} (${u.email})`);
       if (approvalStatus === "approved") notify(u.id, "approval", "Account approved 🎓", "Your student account is verified — your discount is live.", null);

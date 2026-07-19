@@ -1,5 +1,5 @@
 /* Email via Resend (resend.com — free tier 100/day).
-   Dormant until env vars exist: RESEND_API_KEY, EMAIL_FROM (e.g. "Cleanly <hello@yourdomain.hu>").
+   Dormant until env vars exist: RESEND_API_KEY, EMAIL_FROM (e.g. "Cleano <hello@yourdomain.hu>").
    For testing before a domain is verified, EMAIL_FROM can be "onboarding@resend.dev". */
 export const mailerConfigured = () => !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 

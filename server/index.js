@@ -60,11 +60,11 @@ app.get("/partner-terms", (req, res) => res.sendFile(path.join(__dirname, "partn
 /* Barion sends the customer back here after paying (web + in-app browser) */
 app.get("/payment-result", (req, res) => {
   res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cleanly — payment</title></head>
+<title>Cleano — payment</title></head>
 <body style="font-family:system-ui;display:flex;min-height:90vh;align-items:center;justify-content:center;text-align:center;background:#F4F6FE">
 <div><div style="font-size:56px">🐙</div>
 <h2 style="color:#1B2A6B">Payment received — you can close this window.</h2>
-<p style="color:#5A6285">A fizetés megtörtént — ezt az ablakot bezárhatod.<br/>Return to the Cleanly app to see your booking.</p></div>
+<p style="color:#5A6285">A fizetés megtörtént — ezt az ablakot bezárhatod.<br/>Return to the Cleano app to see your booking.</p></div>
 </body></html>`);
 });
 // unknown /api paths must return JSON 404, never the SPA shell
@@ -78,7 +78,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 app.listen(PORT, () => {
-  console.log(`\n🐙 Cleanly API running on http://localhost:${PORT}`);
+  console.log(`\n🐙 Cleano API running on http://localhost:${PORT}`);
   console.log(`   Mode: ${process.env.NODE_ENV || "development"}`);
   if (!process.env.DATABASE_URL) console.warn("   ⚠️  DATABASE_URL not set — set it in .env");
   if (process.env.JWT_SECRET === undefined) console.warn("   ⚠️  JWT_SECRET not set — using insecure default");

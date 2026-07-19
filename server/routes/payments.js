@@ -50,7 +50,7 @@ async function getStripe() {
   return _stripe;
 }
 
-/* Full refund (cleaning price + Cleanly fee) when a company/admin cancels a PAID booking.
+/* Full refund (cleaning price + Cleano fee) when a company/admin cancels a PAID booking.
    No-op for non-Stripe or unpaid bookings. Never throws — logs and returns a result. */
 export async function refundBookingPayment(booking) {
   try {
@@ -104,7 +104,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
         currency: "HUF",
         customerEmail: req.user.email || "noreply@cleanly.app",
         language: "HU",
-        sdkVersion: "Cleanly-1.0",
+        sdkVersion: "Cleano-1.0",
         methods: ["CARD"],
         total: String(amount),
         timeout: new Date(Date.now() + 15 * 60e3).toISOString().replace(/\.\d{3}Z$/, "+00:00"),
@@ -132,7 +132,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
     if (provider() === "stripe") {
       const stripe = await getStripe();
       // Marketplace split: if the company completed Stripe onboarding, their share
-      // goes STRAIGHT to their account and Cleanly keeps only the service fee.
+      // goes STRAIGHT to their account and Cleano keeps only the service fee.
       // The exact fee stored on the booking (added on top of the company's price)
       const feeHuf = Number(booking.service_fee_huf) ||
         Math.round(amount * Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50) / (100 + Number(process.env.COMMISSION_PCT || 10)));

@@ -65,9 +65,9 @@ router.post("/email/start", requireAuth, async (req, res) => {
     const code = String(crypto.randomInt(100000, 999999));
     await query("UPDATE users SET email_code = $1, email_code_expires = NOW() + INTERVAL '15 minutes' WHERE id = $2", [code, req.user.id]);
     const me = await query("SELECT email, full_name FROM users WHERE id = $1", [req.user.id]);
-    await sendEmail(me.rows[0].email, `${code} — your Cleanly verification code`,
+    await sendEmail(me.rows[0].email, `${code} — your Cleano verification code`,
       `<div style="font-family:sans-serif;max-width:480px"><p>Hi ${me.rows[0].full_name},</p>
-       <p>Your Cleanly verification code:</p>
+       <p>Your Cleano verification code:</p>
        <p style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#1B2A6B">${code}</p>
        <p style="color:#69718F;font-size:13px">Valid for 15 minutes. If you didn't request this, ignore this email.</p></div>`);
     res.json({ sent: true });
