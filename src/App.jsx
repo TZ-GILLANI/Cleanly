@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useContext, createContext, useCallback } from "react";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang } from "./lib/i18n.js";
+import { API_BASE } from "./lib/api.js";
 
 /* ── Theme: follows the phone's light/dark mode automatically ── */
 const LIGHT = {
@@ -514,6 +515,40 @@ async function suggestStreets(q, city) {
   } catch { return []; }
 }
 
+function ChangePasswordBox() {
+  const { changePassword, isLive } = useStore();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [cur, setCur] = useState("");
+  const [nw, setNw] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!isLive) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      {!open ? (
+        <button onClick={() => setOpen(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer" }}>
+          🔑 {L("Change password", "Jelszó módosítása")}
+        </button>
+      ) : (
+        <div style={{ background: C.bg, borderRadius: 15, padding: 14 }}>
+          <Field label={L("Current password", "Jelenlegi jelszó")} type="password" value={cur} onChange={(e) => setCur(e.target.value)} />
+          <Field label={L("New password", "Új jelszó")} type="password" placeholder={L("Min. 6 characters", "Min. 6 karakter")} value={nw} onChange={(e) => setNw(e.target.value)} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn small ghost onClick={() => { setOpen(false); setCur(""); setNw(""); }}>{L("Cancel", "Mégse")}</Btn>
+            <Btn small full disabled={busy || nw.length < 6 || !cur} onClick={async () => {
+              setBusy(true);
+              const r = await changePassword(cur, nw);
+              setBusy(false);
+              if (r?.error) toast(r.error, "error");
+              else { toast(L("Password changed", "Jelszó módosítva")); setOpen(false); setCur(""); setNw(""); }
+            }}>{L("Save", "Mentés")}</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AddressPicker({ value, onChange }) {
   const { session: rawSession, bookings, updateProfile } = useStore();
   const session = rawSession || {};
@@ -885,6 +920,11 @@ function ProfileSheet({ close }) {
         <Btn ghost full onClick={() => { close(); logout(); }}>🚪 {t("common.logout")}</Btn>
       </div>
 
+      <ChangePasswordBox />
+      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 14, fontFamily: B, fontSize: 11 }}>
+        <a href={session.role === "company" ? "/partner-terms" : "/terms"} target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Terms", "ÁSZF")}</a>
+        <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Privacy", "Adatkezelés")}</a>
+      </div>
       <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "20px 0 14px" }} />
       <button onClick={() => setConfirmDelete(true)}
         style={{ background: "none", border: "none", width: "100%", fontFamily: B, fontSize: 12.5, fontWeight: 700, color: C.coral, cursor: "pointer", padding: "6px 0" }}>
@@ -911,6 +951,8 @@ function ProfileSheet({ close }) {
 ════════════════════════════════════════════════════════════ */
 
 function Auth() {
+  // wake the free-tier server while the user is still looking at the welcome screen
+  React.useEffect(() => { if (isLive) fetch((API_BASE || "") + "/api/health").catch(() => {}); }, []);
   const store = useStore();
   const { t, lang, setLang } = store;
   const [role, setRole] = useState(null);
@@ -928,6 +970,9 @@ function Auth() {
   ];
 
   const [pendingScreen, setPendingScreen] = useState(false);
+  const [forgot, setForgot] = useState(0); // 0=off 1=email sent, enter code+new pw
+  const [fpCode, setFpCode] = useState("");
+  const [fpNew, setFpNew] = useState("");
   const submit = async () => {
     setBusy(true); setErr(null);
     let res;
@@ -1104,6 +1149,32 @@ function Auth() {
         </div>
       </div>
       <div style={{ paddingTop: 12, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", flexShrink: 0 }}>
+          {mode === "login" && !forgot && (
+            <button onClick={async () => {
+              if (!f.email) { setErr(L("Enter your email above first", "Add meg előbb az e-mail címed")); return; }
+              setBusy(true);
+              const r = await store.forgotPassword(f.email);
+              setBusy(false);
+              if (r?.error) setErr(r.error);
+              else { setForgot(1); setErr(null); }
+            }} style={{ background: "none", border: "none", fontFamily: B, fontSize: 12, fontWeight: 700, color: C.navySoft, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+              {L("Forgot your password?", "Elfelejtetted a jelszavad?")}
+            </button>
+          )}
+          {mode === "login" && forgot === 1 && (
+            <div style={{ background: C.card, borderRadius: 15, padding: 14, marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+              <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>{L("We emailed a 6-digit code to", "Elküldtük a 6 jegyű kódot ide:")} <b>{f.email}</b></div>
+              <Field label={L("Code from the email", "Kód az e-mailből")} inputMode="numeric" placeholder="• • • • • •" value={fpCode} onChange={(e) => setFpCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))} />
+              <Field label={L("New password", "Új jelszó")} type="password" placeholder={L("Min. 6 characters", "Min. 6 karakter")} value={fpNew} onChange={(e) => setFpNew(e.target.value)} />
+              <Btn small full disabled={busy || fpCode.length < 6 || fpNew.length < 6} onClick={async () => {
+                setBusy(true);
+                const r = await store.resetPassword(f.email, fpCode, fpNew);
+                setBusy(false);
+                if (r?.error) setErr(r.error);
+                else { setForgot(0); setFpCode(""); setFpNew(""); setErr(null); setF({ ...f, password: "" }); alert(L("Password changed — log in with the new one", "Jelszó megváltoztatva — lépj be az újjal")); }
+              }}>{L("Set new password", "Új jelszó beállítása")}</Btn>
+            </div>
+          )}
           {mode === "signup" && (
             <label style={{ display: "flex", alignItems: "flex-start", gap: 10, margin: "4px 0 14px", cursor: "pointer" }}>
               <input type="checkbox" checked={f.terms} onChange={(e) => setF({ ...f, terms: e.target.checked })} style={{ marginTop: 3, width: 17, height: 17, accentColor: "#5EE6A8" }} />

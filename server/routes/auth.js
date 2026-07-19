@@ -3,6 +3,20 @@ import bcrypt from "bcryptjs";
 import { query } from "../db.js";
 import { signToken, requireAuth } from "../middleware/auth.js";
 import { huTaxIdValid, huRegNumberValid, formatTaxId } from "../lib/validate.js";
+import { sendEmail, mailerConfigured } from "../lib/mailer.js";
+import crypto from "crypto";
+
+/* Tiny in-memory rate limiter (per key, sliding window) — brute-force shield. */
+const _hits = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (_hits.get(key) || []).filter((t) => now - t < windowMs);
+  arr.push(now);
+  _hits.set(key, arr);
+  if (_hits.size > 5000) _hits.clear(); // memory guard
+  return arr.length <= max;
+}
+const ipOf = (req) => req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "?";
 
 const router = Router();
 
@@ -102,6 +116,8 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+  if (!rateLimit("login:" + ipOf(req), 10, 5 * 60e3) || !rateLimit("login:" + String(email).toLowerCase(), 8, 5 * 60e3))
+    return res.status(429).json({ error: "Too many attempts — wait a few minutes and try again" });
 
   try {
     const result = await query("SELECT * FROM users WHERE email = $1 AND is_active = true", [email.toLowerCase()]);
@@ -211,6 +227,51 @@ router.delete("/me", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("account deletion error:", err);
     res.status(500).json({ error: "Could not delete account" });
+  }
+});
+
+/* ── Forgot / reset password (email code; requires the mailer) ── */
+router.post("/forgot", async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.status(400).json({ error: "Email required" });
+  if (!rateLimit("forgot:" + ipOf(req), 5, 15 * 60e3)) return res.status(429).json({ error: "Too many attempts — try later" });
+  if (!mailerConfigured()) return res.status(503).json({ error: "Password reset by email is not enabled yet — contact support" });
+  try {
+    const u = await query("SELECT id, full_name FROM users WHERE email = $1 AND is_active = true", [String(email).toLowerCase()]);
+    // Always answer success — never reveal whether an email exists.
+    if (u.rows.length) {
+      const code = String(crypto.randomInt(100000, 999999));
+      await query("UPDATE users SET email_code = $1, email_code_expires = NOW() + INTERVAL '15 minutes' WHERE id = $2", [code, u.rows[0].id]);
+      sendEmail(String(email).toLowerCase(), `${code} — Cleano password reset`,
+        `<div style="font-family:sans-serif;max-width:480px"><p>Hi ${u.rows[0].full_name},</p>
+         <p>Your Cleano password reset code:</p>
+         <p style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#1B2A6B">${code}</p>
+         <p style="color:#69718F;font-size:13px">Valid for 15 minutes. If you didn't request this, ignore this email.</p></div>`);
+    }
+    res.json({ sent: true });
+  } catch (err) {
+    console.error("forgot:", err);
+    res.status(500).json({ error: "Could not start password reset" });
+  }
+});
+
+router.post("/reset", async (req, res) => {
+  const { email, code, newPassword } = req.body || {};
+  if (!email || !code || !newPassword) return res.status(400).json({ error: "Email, code and new password required" });
+  if (String(newPassword).length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (!rateLimit("reset:" + ipOf(req), 8, 15 * 60e3)) return res.status(429).json({ error: "Too many attempts — try later" });
+  try {
+    const hash = await bcrypt.hash(newPassword, 10);
+    const r = await query(
+      `UPDATE users SET password_hash = $1, email_code = NULL
+       WHERE email = $2 AND email_code = $3 AND email_code_expires > NOW() AND is_active = true RETURNING id`,
+      [hash, String(email).toLowerCase(), String(code).trim()]
+    );
+    if (!r.rows.length) return res.status(400).json({ error: "Wrong or expired code" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("reset:", err);
+    res.status(500).json({ error: "Could not reset password" });
   }
 });
 

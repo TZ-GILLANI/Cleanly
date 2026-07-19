@@ -693,6 +693,14 @@ export function StoreProvider({ children }) {
     try { return await api("/verify/start", { method: "POST", body: { channel } }); }
     catch (e) { return { error: e.message }; }
   };
+  const forgotPassword = async (email) => {
+    try { return await api("/auth/forgot", { method: "POST", body: { email } }); }
+    catch (e) { return { error: e.message }; }
+  };
+  const resetPassword = async (email, code, newPassword) => {
+    try { return await api("/auth/reset", { method: "POST", body: { email, code, newPassword } }); }
+    catch (e) { return { error: e.message }; }
+  };
   const emailVerifyStart = async () => {
     try { return await api("/verify/email/start", { method: "POST" }); }
     catch (e) { return { error: e.message }; }
@@ -807,6 +815,7 @@ export function StoreProvider({ children }) {
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
+    forgotPassword, resetPassword,
     connectStatus, connectOnboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService,

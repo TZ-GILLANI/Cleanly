@@ -217,6 +217,18 @@ ok("and revokes it", demote.data.user?.role === "customer");
 const notAdmin = await j("/api/admin/users", { token: custTok });
 ok("non-admin blocked from admin API", notAdmin.status === 403);
 
+console.log("\n── password reset ──");
+ok("forgot-password blocked without mailer (graceful)", (await j("/api/auth/forgot", { method: "POST", body: { email: "anna@test.hu" } })).status === 503);
+await query("UPDATE users SET email_code = '123456', email_code_expires = NOW() + INTERVAL '10 minutes' WHERE email = 'anna@test.hu'");
+const badReset = await j("/api/auth/reset", { method: "POST", body: { email: "anna@test.hu", code: "999999", newPassword: "newpass123" } });
+ok("reset with wrong code rejected", badReset.status === 400);
+const goodReset = await j("/api/auth/reset", { method: "POST", body: { email: "anna@test.hu", code: "123456", newPassword: "newpass123" } });
+ok("reset with valid code works", goodReset.data.ok === true);
+const relogin = await j("/api/auth/login", { method: "POST", body: { email: "anna@test.hu", password: "newpass123" } });
+ok("login works with the new password", relogin.status === 200);
+const oldpw = await j("/api/auth/login", { method: "POST", body: { email: "anna@test.hu", password: "secret123" } });
+ok("old password no longer works", oldpw.status === 401);
+
 console.log("\n── account deletion (GDPR) ──");
 const del = await j("/api/auth/me", { method: "DELETE", token: custTok });
 ok("account deletion succeeds", del.data.ok === true);
