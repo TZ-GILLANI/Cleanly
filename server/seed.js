@@ -1,5 +1,5 @@
 /**
- * Cleanly — seed script
+ * Cleano — seed script
  * Run: node server/seed.js
  * Creates demo data and an admin account.
  */
@@ -8,7 +8,7 @@ import { query } from "./db.js";
 import "dotenv/config";
 
 async function seed() {
-  console.log("🌱 Seeding Cleanly database…");
+  console.log("🌱 Seeding Cleano database…");
 
   const hash = (p) => bcrypt.hash(p, 10);
 

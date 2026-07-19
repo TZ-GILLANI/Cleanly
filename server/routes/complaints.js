@@ -108,7 +108,7 @@ router.put("/:id/assign", requireAuth, requireRole("admin"), async (req, res) =>
       [companyId, req.params.id]
     );
     logAdmin(req, "complaint_assigned", "complaint", req.params.id, co.rows[0].name);
-    notify(co.rows[0].owner_id, "complaint_assigned", "A complaint needs your attention", "Cleanly assigned an issue to your company to resolve.", null);
+    notify(co.rows[0].owner_id, "complaint_assigned", "A complaint needs your attention", "Cleano assigned an issue to your company to resolve.", null);
     res.json({ complaint: r.rows[0] });
   } catch (err) {
     res.status(500).json({ error: "Failed to assign complaint" });
@@ -121,7 +121,7 @@ router.put("/:id", requireAuth, async (req, res) => {
   if (!["open", "in_progress", "resolved"].includes(status)) return res.status(400).json({ error: "Invalid status" });
   const a = await access(req, req.params.id);
   if (a.code) return res.status(a.code).json({ error: a.code === 404 ? "Not found" : "Forbidden" });
-  if (!a.isAdmin && !a.isCompany) return res.status(403).json({ error: "Only Cleanly or the assigned company can update this" });
+  if (!a.isAdmin && !a.isCompany) return res.status(403).json({ error: "Only Cleano or the assigned company can update this" });
   try {
     const r = await query(
       "UPDATE complaints SET status = $1, resolution = COALESCE($2, resolution), resolved_at = CASE WHEN $1 = 'resolved' THEN NOW() ELSE resolved_at END WHERE id = $3 RETURNING *",

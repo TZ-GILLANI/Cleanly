@@ -98,7 +98,7 @@ router.post("/", requireAuth, async (req, res) => {
     }
     const discount = customerType === "student" ? Math.round(gross * (co.student_discount || 0) / 100) : 0;
     const companyShare = gross - discount;
-    // Cleanly service fee is ADDED ON TOP and shown to the customer:
+    // Cleano service fee is ADDED ON TOP and shown to the customer:
     // company's listed price stays fully theirs.
     const feePct = Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50);
     const serviceFee = Math.round(companyShare * feePct / 100);

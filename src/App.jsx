@@ -515,7 +515,8 @@ async function suggestStreets(q, city) {
 }
 
 function AddressPicker({ value, onChange }) {
-  const { session, bookings, updateProfile } = useStore();
+  const { session: rawSession, bookings, updateProfile } = useStore();
+  const session = rawSession || {};
   const toast = useToast();
   const [locBusy, setLocBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -580,6 +581,7 @@ function AddressPicker({ value, onChange }) {
       navigator.permissions?.query({ name: "geolocation" }).then((st) => { if (st.state === "granted") useCurrentLocation(); });
     } catch {}
   }, []);
+  const canSave = !!rawSession; // save-as needs a logged-in profile
 
   const labelIcon = (lbl) => (/home|otthon/i.test(lbl) ? "🏠" : /office|iroda|work|munka/i.test(lbl) ? "💼" : "📍");
 
@@ -657,8 +659,8 @@ function AddressPicker({ value, onChange }) {
             <div style={{ flex: 1 }}><Field label={L("House no.", "Házszám")} placeholder="26" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} /></div>
             <div style={{ flex: 1.4 }}><Field label={L("Floor / door (optional)", "Emelet / ajtó (opcionális)")} placeholder="3/12" value={floor} onChange={(e) => setFloor(e.target.value)} /></div>
           </div>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, margin: "2px 0 7px" }}>{L("Save this address as (optional)", "Cím mentése mint (opcionális)")}</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {canSave && <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, margin: "2px 0 7px" }}>{L("Save this address as (optional)", "Cím mentése mint (opcionális)")}</div>}
+          {canSave && <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             {[L("Home", "Otthon"), L("Office", "Iroda")].map((lbl) => (
               <button key={lbl} onClick={() => setSaveAs(saveAs === lbl ? "" : lbl)}
                 style={{ border: saveAs === lbl ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`, background: C.card, color: C.ink, borderRadius: 99, padding: "7px 14px", fontFamily: F, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
@@ -667,13 +669,13 @@ function AddressPicker({ value, onChange }) {
             ))}
             <input value={/^(Home|Otthon|Office|Iroda)$/.test(saveAs) ? "" : saveAs} onChange={(e) => setSaveAs(e.target.value)} placeholder={L("Custom…", "Egyéni…")}
               style={{ flex: 1, minWidth: 90, border: `1.5px solid ${C.line}`, borderRadius: 99, padding: "7px 13px", fontFamily: B, fontSize: 12, background: C.card, color: C.ink, outline: "none" }} />
-          </div>
+          </div>}
           <Btn small full disabled={!(streetPicked || street.trim().length >= 3) || !houseNo.trim()} onClick={async () => {
             const st = streetPicked ? streetPicked.street : street.trim();
             const cty = (streetPicked && (cityFromAddress(streetPicked.city) || streetPicked.city)) || getCity();
             const full = `${st} ${houseNo.trim()}${floor.trim() ? ", " + floor.trim() : ""}, ${cty}`;
             onChange(full); applyCityFrom(full);
-            if (saveAs.trim()) {
+            if (canSave && saveAs.trim()) {
               const next = [...saved.filter((a) => a.label !== saveAs.trim()), { label: saveAs.trim(), address: full }].slice(0, 6);
               await updateProfile({ saved_addresses: next });
               toast(L("Address saved to your profile", "Cím elmentve a profilodba"));
@@ -830,7 +832,10 @@ function ProfileSheet({ close }) {
 
       {session.role === "customer" && (
         <>
-          <Field label={t("profile.homeAddress")} placeholder={t("profile.addressPh")} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{t("profile.homeAddress")}</div>
+            <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
+          </div>
           <Field label={t("profile.phone")} placeholder="+36 30 …" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
           <div style={{ marginBottom: 13 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.paymentMethod")}</div>
@@ -1037,7 +1042,8 @@ function Auth() {
                   </button>
                 ))}
               </div>
-              <Field label={L("Residence address", "Lakcím")} hint={L("Required — where our teams come to clean.", "Kötelező — ide érkezik a takarítás.")} placeholder={L("Street, number, city", "Utca, házszám, város")} value={f.address} onChange={set("address")} />
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Residence address *", "Lakcím *")}</div>
+              <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
               <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account. Country code detected automatically.", "Egy szám = egy fiók. Az országkódot automatikusan felismertük.")} value={f.phone} onChange={set("phone")} />
               {f.custType === "student" && (
                 <DocUpload
@@ -1053,7 +1059,8 @@ function Auth() {
             <>
               <Field label="Company invite code" placeholder="e.g. SPARK-7K4D" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} />
               {isLive && <Field label="Your name" placeholder="Full name" value={f.name} onChange={set("name")} />}
-              <Field label={L("Residence address", "Lakcím")} hint={L("Required for your work registration.", "A munkavégzés nyilvántartásához szükséges.")} placeholder={L("Street, number, city", "Utca, házszám, város")} value={f.address} onChange={set("address")} />
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Residence address *", "Lakcím *")}</div>
+              <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
               <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account.", "Egy szám = egy fiók.")} value={f.phone} onChange={set("phone")} />
               <DocUpload
                 label="Identity document"

@@ -1,4 +1,4 @@
-/* Cleanly API client — wraps fetch('/api/*') with auth headers */
+/* Cleano API client — wraps fetch('/api/*') with auth headers */
 
 // Web build: same origin ("").  Mobile (Capacitor) build: the app runs from the
 // phone, so it needs the FULL server URL — set VITE_API_BASE in .env.production.
