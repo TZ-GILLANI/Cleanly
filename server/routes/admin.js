@@ -12,7 +12,7 @@ const guard = [requireAuth, requireRole("admin")];
 router.get("/stats", ...guard, async (req, res) => {
   try {
     const [users, companies, bookings, revenue] = await Promise.all([
-      query("SELECT COUNT(*) FROM users WHERE role != 'admin'"),
+      query("SELECT COUNT(*) FROM users WHERE role != 'admin' AND password_hash <> 'account-deleted'"),
       query("SELECT COUNT(*) FROM companies"),
       query("SELECT COUNT(*), status FROM bookings GROUP BY status"),
       query("SELECT COALESCE(SUM(total_huf),0) AS total FROM bookings WHERE status = 4"),
@@ -100,7 +100,7 @@ router.get("/users", ...guard, async (req, res) => {
         c.name AS company_name
        FROM users u
        LEFT JOIN companies c ON c.id = u.company_id
-       WHERE u.role != 'admin'
+       WHERE u.role != 'admin' AND u.password_hash <> 'account-deleted'
        ORDER BY u.created_at DESC`
     );
     res.json({ users: result.rows });

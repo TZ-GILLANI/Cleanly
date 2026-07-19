@@ -74,6 +74,10 @@ const cust = await j("/api/auth/login", { method: "POST", body: { email: "anna@t
 ok("approved student logs in", cust.status === 200 && !!cust.data.token);
 const custTok = cust.data.token;
 
+// ── saved addresses on profile ──
+const addrSave = await j("/api/auth/profile", { method: "PUT", token: custTok, body: { savedAddresses: [{ id: "a1", label: "Home", street: "Piac utca 1", city: "Debrecen" }, { id: "a2", label: "Office", street: "Kossuth 5", city: "Debrecen" }] } });
+ok("customer can save labelled addresses", addrSave.status === 200 && Array.isArray(addrSave.data.user?.saved_addresses) && addrSave.data.user.saved_addresses.length === 2, JSON.stringify(addrSave.data.user?.saved_addresses||[]).slice(0,80));
+
 const approve = await j(`/api/admin/companies/${coId}`, { method: "PUT", token: admTok, body: { isApproved: true } });
 ok("admin approves company", approve.status === 200, JSON.stringify(approve.data));
 const coLogin = await j("/api/auth/login", { method: "POST", body: { email: "boss@spark.hu", password: "secret123" } });
@@ -110,6 +114,7 @@ const delRes = await j(`/api/admin/users/${victimId}`, { method: "DELETE", token
 ok("admin can delete an account", delRes.status === 200 && delRes.data.ok === true, JSON.stringify(delRes.data));
 const victimRow = (await query("SELECT email, is_active, phone FROM users WHERE id = $1", [victimId])).rows[0];
 ok("deleted account is anonymised (inactive + email scrubbed)", victimRow && victimRow.is_active === false && String(victimRow.email).startsWith("deleted-"));
+ok("deleted account is hidden from the admin users list", !((await j("/api/admin/users", { token: admTok })).data.users || []).some((u) => u.id === victimId));
 ok("deleted account phone is freed for reuse", victimRow && victimRow.phone === null);
 const rootId2 = (await query("SELECT id FROM users WHERE email = 'root@cleanly.hu'")).rows[0].id;
 ok("admin cannot delete their own account via this route", (await j(`/api/admin/users/${rootId2}`, { method: "DELETE", token: admTok })).status === 400);
@@ -127,6 +132,15 @@ ok("booking gets a sequential order number", typeof bk.data.booking?.order_no ==
 ok("student discount + 10% fee on top (20000 → 18000 + 1800 = 19800)", bk.data.booking?.total_huf === 19800 && bk.data.booking?.service_fee_huf === 1800, `got ${bk.data.booking?.total_huf} fee ${bk.data.booking?.service_fee_huf}`);
 
 const bkId = bk.data.booking?.id;
+
+// ── live location (foreground) ──
+await query("UPDATE bookings SET assigned_to = (SELECT id FROM users WHERE email = 'cleaner@test.hu') WHERE id = $1", [bkId]);
+const locPost = await j(`/api/bookings/${bkId}/location`, { method: "PUT", token: empTok, body: { lat: 47.5316, lng: 21.6273 } });
+ok("assigned cleaner posts live location", locPost.status === 200 && locPost.data.ok === true, JSON.stringify(locPost.data));
+const locCust = await j(`/api/bookings/${bkId}/location`, { token: custTok });
+ok("customer can see the cleaner live location", locCust.status === 200 && Math.abs((locCust.data.lat||0) - 47.5316) < 0.01);
+const locCo = await j(`/api/bookings/${bkId}/location`, { token: coTok });
+ok("company can see the cleaner live location", locCo.status === 200 && Math.abs((locCo.data.lng||0) - 21.6273) < 0.01);
 // payment gating: company must NOT see an unpaid new order
 const coUnpaid = await j("/api/bookings", { token: coTok });
 ok("company does NOT see an unpaid new order", !((coUnpaid.data.bookings || []).some((b) => b.id === bkId)), `saw it: ${(coUnpaid.data.bookings||[]).map(b=>b.id).includes(bkId)}`);

@@ -10,7 +10,16 @@ manage services/team/jobs (built-in mini-CRM); cleaners work task checklists; pl
 
 **LIVE:** https://cleanly-2x9z.onrender.com  (Render web service `cleanly`, auto-deploys from GitHub `TZ-GILLANI/Cleanly`, branch main)
 **DB:** Supabase project `bkapfsxqkpgamgonuumd` (EU Ireland).  **Payments:** Stripe LIVE (TZ GILLANI KFT), Connect enabled (Marketplace model, Express accounts).
-Current code: **v3.2.0**, 45/45 e2e tests green.
+Current code: **v3.7.1**, 71/71 e2e tests green.
+Since v3.2 (added in a parallel session "File project review"): order numbers on bookings,
+deleted users filtered from admin, in-app **notifications** (server/routes/notifications.js +
+notifications table), **complaint threads** (two-way messages + admin-to-company assignment,
+complaint_messages table), **live GPS tracking** (cleaner shares via watchPosition; customer
+AND company watch via TrackSheet; bookings.live_lat/lng/at; OSM-based, no paid keys),
+**labeled saved addresses** (Home/Office etc., users.saved_addresses JSONB, switch/delete in
+picker), emoji-reduction pass.
+⚠️ DEPLOY GAP at handover time: the live server runs an older build (no watchPosition in
+bundle) — user must run full schema.sql in Supabase, then push-to-github.bat.
 
 ## 2. Architecture map
 ```

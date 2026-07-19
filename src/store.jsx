@@ -238,6 +238,7 @@ export function StoreProvider({ children }) {
     isSuper: user.is_super === true,
     address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || "en",
     documents: user.documents || [],
+    savedAddresses: user.saved_addresses || [],
   });
 
   const loadFee = async () => {
@@ -352,11 +353,11 @@ export function StoreProvider({ children }) {
 
   /* ════════════ PROFILE ════════════ */
 
-  const updateProfile = async ({ full_name, phone, customer_type, address, payment_method, lang, documents } = {}) => {
+  const updateProfile = async ({ full_name, phone, customer_type, address, payment_method, lang, documents, saved_addresses } = {}) => {
     if (isApiMode) {
       try {
-        const { user } = await api("/auth/profile", { method: "PUT", body: { fullName: full_name, phone, customerType: customer_type, address, paymentMethod: payment_method, lang, documents } });
-        setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [] }));
+        const { user } = await api("/auth/profile", { method: "PUT", body: { fullName: full_name, phone, customerType: customer_type, address, paymentMethod: payment_method, lang, documents, savedAddresses: saved_addresses } });
+        setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [], savedAddresses: user.saved_addresses || [] }));
         if (session?.role === "employee") {
           setDb(d => ({ ...d, employees: d.employees.map(e => e.id === session.userId ? { ...e, full_name: user.full_name, phone: user.phone } : e) }));
         }
@@ -371,6 +372,7 @@ export function StoreProvider({ children }) {
       ...(payment_method !== undefined ? { paymentMethod: payment_method } : {}),
       ...(lang !== undefined ? { lang } : {}),
       ...(documents !== undefined ? { documents } : {}),
+      ...(saved_addresses !== undefined ? { savedAddresses: saved_addresses } : {}),
     }));
     if (session?.role === "employee") setDb(d => ({ ...d, employees: d.employees.map(e => e.id === session.userId ? { ...e, full_name: full_name ?? e.full_name, phone: phone ?? e.phone } : e) }));
     return {};
@@ -626,6 +628,16 @@ export function StoreProvider({ children }) {
   };
 
   /* ── Complaints (customer submit + admin manage) ── */
+  const postLocation = async (bookingId, lat, lng) => {
+    if (!isApiMode) return {};
+    try { await api("/bookings/" + bookingId + "/location", { method: "PUT", body: { lat, lng } }); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+  const fetchLocation = async (bookingId) => {
+    if (!isApiMode) return null;
+    try { return await api("/bookings/" + bookingId + "/location"); }
+    catch (e) { return null; }
+  };
   const submitComplaint = async ({ bookingId, subject, body }) => {
     if (!isApiMode) {
       setDb(d => ({ ...d, complaints: [{ id: uid(), user_id: session.userId, user_name: session.name, booking_id: bookingId || null, subject, body, status: "open", resolution: null, created_at: new Date().toISOString() }, ...(d.complaints || [])] }));
@@ -792,7 +804,7 @@ export function StoreProvider({ children }) {
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
     fetchNotifications, markNotificationsRead, notifications: notif.notifications, unreadNotif: notif.unread,
-    submitComplaint, adminFetchComplaints, adminUpdateComplaint,
+    submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
     connectStatus, connectOnboard,

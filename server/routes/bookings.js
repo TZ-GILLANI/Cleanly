@@ -305,4 +305,29 @@ router.put("/:id/archive", requireAuth, async (req, res) => {
   }
 });
 
+/* PUT /api/bookings/:id/location — the assigned cleaner shares live location */
+router.put("/:id/location", requireAuth, async (req, res) => {
+  const { lat, lng } = req.body || {};
+  if (typeof lat !== "number" || typeof lng !== "number") return res.status(400).json({ error: "lat/lng required" });
+  try {
+    const b = await query("SELECT assigned_to FROM bookings WHERE id = $1", [req.params.id]);
+    if (!b.rows.length) return res.status(404).json({ error: "Not found" });
+    if (b.rows[0].assigned_to !== req.user.id) return res.status(403).json({ error: "Not your job" });
+    await query("UPDATE bookings SET live_lat = $1, live_lng = $2, live_at = NOW() WHERE id = $3", [lat, lng, req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: "Failed to update location" }); }
+});
+
+/* GET /api/bookings/:id/location — customer, assigned cleaner, the company, or admin */
+router.get("/:id/location", requireAuth, async (req, res) => {
+  try {
+    const b = await query("SELECT customer_id, company_id, assigned_to, live_lat, live_lng, live_at, status, address FROM bookings WHERE id = $1", [req.params.id]);
+    if (!b.rows.length) return res.status(404).json({ error: "Not found" });
+    const row = b.rows[0];
+    const allowed = row.customer_id === req.user.id || row.assigned_to === req.user.id || (req.user.role === "company" && row.company_id === req.user.companyId) || req.user.role === "admin";
+    if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    res.json({ lat: row.live_lat, lng: row.live_lng, at: row.live_at, status: row.status, address: row.address });
+  } catch (err) { res.status(500).json({ error: "Failed to fetch location" }); }
+});
+
 export default router;

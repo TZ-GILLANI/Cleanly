@@ -372,6 +372,67 @@ const Progress = ({ done, total }) => (
     <div style={{ height: "100%", borderRadius: 9, width: `${total ? (done / total) * 100 : 0}%`, background: C.mint, transition: "width .3s" }} />
   </div>
 );
+function LiveMap({ lat, lng }) {
+  const ref = React.useRef(null);
+  const mapRef = React.useRef(null);
+  const markerRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!window.L || !ref.current) return;
+    if (!mapRef.current) {
+      mapRef.current = window.L.map(ref.current).setView([lat || 47.53, lng || 21.63], 14);
+      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapRef.current);
+    }
+    if (lat && lng) {
+      if (!markerRef.current) markerRef.current = window.L.marker([lat, lng]).addTo(mapRef.current);
+      else markerRef.current.setLatLng([lat, lng]);
+      mapRef.current.setView([lat, lng], mapRef.current.getZoom());
+    }
+  }, [lat, lng]);
+  React.useEffect(() => () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } }, []);
+  if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>Map unavailable offline.</div>;
+  return <div ref={ref} style={{ width: "100%", height: 300, borderRadius: 16, overflow: "hidden", zIndex: 0 }} />;
+}
+
+function TrackSheet({ bookingId, close }) {
+  const { fetchLocation } = useStore();
+  const [loc, setLoc] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    const load = () => fetchLocation(bookingId).then((d) => { if (alive) setLoc(d); });
+    load();
+    const t = setInterval(load, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const ago = (at) => { if (!at) return ""; const s = Math.round((Date.now() - new Date(at).getTime()) / 1000); return s < 60 ? "just now" : Math.round(s / 60) + " min ago"; };
+  return (
+    <Sheet title={L("Track your cleaner", "Takarító követése")} close={close}>
+      {loc && loc.lat ? (
+        <>
+          <LiveMap lat={loc.lat} lng={loc.lng} />
+          <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", marginTop: 10 }}>{L("Location updated", "Pozíció frissítve")} {ago(loc.at)}</div>
+        </>
+      ) : (
+        <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 30, lineHeight: 1.6 }}>{L("Waiting for the cleaner to start sharing their location. This appears once they are on the way.", "Várakozás a takarító pozíciójára. Akkor jelenik meg, amikor úton van.")}</div>
+      )}
+    </Sheet>
+  );
+}
+
+function LocationShare({ bookingId }) {
+  const { postLocation } = useStore();
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => {
+    if (!navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => { setOn(true); postLocation(bookingId, pos.coords.latitude, pos.coords.longitude); },
+      () => setOn(false),
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [bookingId]);
+  return <div style={{ fontFamily: B, fontSize: 11, fontWeight: 700, color: on ? C.green : C.inkSoft, textAlign: "center", marginTop: 8 }}>{on ? L("Sharing your live location", "Élő helyzet megosztása") : L("Turn on location to share your position", "Kapcsold be a helymeghatározást")}</div>;
+}
+
 function NotificationBell() {
   const { notifications, unreadNotif, fetchNotifications, markNotificationsRead, isLive } = useStore();
   const [open, setOpen] = React.useState(false);
@@ -1396,6 +1457,7 @@ function CustomerBookings({ openBooking }) {
   const [compSubject, setCompSubject] = useState("");
   const [compBody, setCompBody] = useState("");
   const [showReports, setShowReports] = useState(false);
+  const [trackId, setTrackId] = useState(null);
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
@@ -1404,6 +1466,7 @@ function CustomerBookings({ openBooking }) {
         <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>🛟 {L("My reports", "Bejelentéseim")}</button>
       </div>
       {showReports && <CustomerReports close={() => setShowReports(false)} />}
+      {trackId && <TrackSheet bookingId={trackId} close={() => setTrackId(null)} />}
       {mine.length === 0 && (
         <div style={{ textAlign: "center", padding: "70px 30px" }}>
           <div style={{ width: 88, height: 88, borderRadius: 28, background: C.card, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>🫧</div>
@@ -1459,6 +1522,9 @@ function CustomerBookings({ openBooking }) {
                   <b style={{ color: C.ink, fontFamily: F }}>{cleanerName}</b>{L(" is your cleaner", " a takarítód")}{b.pricing_type === "subscription" ? L(" — they stay with your plan", " — ő marad az előfizetésednél") : ""}
                 </div>
               </div>
+            )}
+            {b.status === 2 && (
+              <Btn small ghost style={{ width: "100%", marginBottom: 10 }} onClick={() => setTrackId(b.id)}>{L("Track cleaner on map", "Takarító követése a térképen")}</Btn>
             )}
 
             {b.pricing_type === "subscription" && b.status !== 9 && b.status !== 8 && (
@@ -1654,6 +1720,7 @@ function EmployeeJobs({ openProfile }) {
               <div style={{ marginTop: 12 }}>
                 {b.status === 1 && <Btn small full onClick={() => { setStatus(b.id, 2); toast("Status updated — on the way!"); }}>🚗 I'm on the way</Btn>}
                 {b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 3); toast("Cleaning started"); }}>🧽 Start cleaning</Btn>}
+                {b.status === 2 && <LocationShare bookingId={b.id} />}
                 {b.status === 3 && (
                   <Btn small full mint disabled={!allDone && tasks.length > 0} onClick={() => { setStatus(b.id, 4); toast("Job completed ✓"); }}>
                     {allDone || tasks.length === 0 ? "✓ Complete job" : `Finish all tasks (${b.tasks_done.length}/${tasks.length})`}
@@ -1980,6 +2047,7 @@ function CompanyClients() {
 function CompanySchedule() {
   const { session, bookings, allEmployees } = useStore();
   const [selDay, setSelDay] = useState(localISO(new Date()));
+  const [trackId, setTrackId] = useState(null);
   const mine = bookings.filter((b) => b.company_id === session.companyId && b.status !== 9 && b.status !== 8);
   const marks = {};
   mine.forEach((b) => { const k = String(b.scheduled_date).slice(0, 10); marks[k] = (marks[k] || 0) + 1; });
@@ -2017,9 +2085,11 @@ function CompanySchedule() {
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navy, marginTop: 6 }}>{huf(b.total_huf)}</div>
               </div>
             </div>
+            {b.status === 2 && <Btn small ghost style={{ width: "100%", marginTop: 10 }} onClick={() => setTrackId(b.id)}>{L("Track cleaner on map", "Takarító követése")}</Btn>}
           </div>
         );
       })}
+      {trackId && <TrackSheet bookingId={trackId} close={() => setTrackId(null)} />}
     </div>
   );
 }
@@ -3139,3 +3209,4 @@ export default function App() {
     </StoreProvider>
   );
 }
+

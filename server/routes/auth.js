@@ -138,7 +138,7 @@ router.get("/me", requireAuth, async (req, res) => {
 
 /* PUT /api/auth/profile */
 router.put("/profile", requireAuth, async (req, res) => {
-  const { fullName, phone, customerType, address, paymentMethod, lang, documents } = req.body;
+  const { fullName, phone, customerType, address, paymentMethod, lang, documents, savedAddresses } = req.body;
   try {
     if (phone) {
       const np = String(phone).replace(/[^0-9+]/g, "").slice(0, 20);
@@ -153,10 +153,12 @@ router.put("/profile", requireAuth, async (req, res) => {
         address = COALESCE($4, address),
         payment_method = COALESCE($5, payment_method),
         lang = COALESCE($6, lang),
-        documents = COALESCE($7, documents)
+        documents = COALESCE($7, documents),
+        saved_addresses = COALESCE($9, saved_addresses)
       WHERE id = $8 RETURNING *`,
       [fullName, phone, customerType, address, paymentMethod, lang,
-       Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, req.user.id]
+       Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, req.user.id,
+       Array.isArray(savedAddresses) ? JSON.stringify(savedAddresses.slice(0, 12)) : null]
     );
     res.json({ user: result.rows[0] });
   } catch (err) {

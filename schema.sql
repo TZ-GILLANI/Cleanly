@@ -286,3 +286,9 @@ CREATE TABLE IF NOT EXISTS complaint_messages (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS complaint_messages_idx ON complaint_messages (complaint_id, created_at);
+
+-- Live location (foreground tracking while a cleaner is on the way) + saved addresses.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS live_lat DOUBLE PRECISION;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS live_lng DOUBLE PRECISION;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS live_at  TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS saved_addresses JSONB NOT NULL DEFAULT '[]';
