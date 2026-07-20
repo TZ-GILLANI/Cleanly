@@ -285,6 +285,32 @@ const Octo = ({ size = 40 }) => (
   <img src="/white-logo.png" alt="Cleano" width={size} height={size} style={{ objectFit: "contain", flexShrink: 0 }} draggable="false" />
 );
 
+// Minimalist line icons (single-path SVG, professional look — no emoji pop).
+const ICON_PATHS = {
+  home: "M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15V14H9v7.5H4.5A1.5 1.5 0 0 1 3 20Z",
+  calendar: "M17 3v3M7 3v3M4.5 5h15A1.5 1.5 0 0 1 21 6.5v13A1.5 1.5 0 0 1 19.5 21h-15A1.5 1.5 0 0 1 3 19.5v-13A1.5 1.5 0 0 1 4.5 5ZM3 10h18",
+  sparkle: "M12 3.5 13.9 9 19.5 11 13.9 13 12 18.5 10.1 13 4.5 11 10.1 9Z",
+  bell: "M18 8.5a6 6 0 0 0-12 0c0 6.5-2.5 8-2.5 8h17S18 15 18 8.5M13.8 20.5a2.1 2.1 0 0 1-3.6 0",
+  clipboard: "M9 4.5h6M9 3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Zm7 1.5h1.5A1.5 1.5 0 0 1 19 6v13.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5V6a1.5 1.5 0 0 1 1.5-1.5H8",
+  users: "M16.5 20.5v-1.8a3.6 3.6 0 0 0-3.6-3.6H6.1a3.6 3.6 0 0 0-3.6 3.6v1.8M9.3 11.5a3.9 3.9 0 1 0 0-7.8 3.9 3.9 0 0 0 0 7.8ZM21.5 20.5v-1.8a3.6 3.6 0 0 0-2.7-3.5M15.3 3.9a3.9 3.9 0 0 1 0 7.55",
+  tag: "M20.3 13.7l-6.9 6.9a1.8 1.8 0 0 1-2.55 0L3 12.75V3.5h9.25l8.05 8.05a1.8 1.8 0 0 1 0 2.15ZM7.5 8h.01",
+  briefcase: "M8.5 21V5.2A1.7 1.7 0 0 1 10.2 3.5h3.6a1.7 1.7 0 0 1 1.7 1.7V21M4.5 7.5h15A1.5 1.5 0 0 1 21 9v10.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19.5V9a1.5 1.5 0 0 1 1.5-1.5Z",
+  lifebuoy: "M12 21.5a9.5 9.5 0 1 0 0-19 9.5 9.5 0 0 0 0 19Zm0-5.7a3.8 3.8 0 1 0 0-7.6 3.8 3.8 0 0 0 0 7.6ZM5.3 5.3l4 4m5.4 5.4 4 4m0-13.4-4 4m-5.4 5.4-4 4",
+  settings: "M4 21v-6.5M4 10.5V3M12 21v-9M12 8V3M20 21v-4.5M20 12.5V3M1.8 14.5H6.2M9.8 8H14.2M17.8 16.5h4.4",
+  grid: "M3.5 3.5h7v7h-7Zm10 0h7v7h-7Zm0 10h7v7h-7Zm-10 0h7v7h-7Z",
+  building: "M3 21h18M5.5 21V6.2L12 3l6.5 3.2V21M9.5 9.5h.01M9.5 13h.01M9.5 16.5h.01M14.5 9.5h.01M14.5 13h.01M14.5 16.5h.01",
+  user: "M19 20.5v-1.8a3.7 3.7 0 0 0-3.7-3.7H8.7A3.7 3.7 0 0 0 5 18.7v1.8M12 11.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+  scroll: "M7 3.5h11.5A1.5 1.5 0 0 1 20 5v12M7 3.5A2.5 2.5 0 0 0 4.5 6v12.5A2 2 0 0 0 6.5 20.5H17a3 3 0 0 0 3-3v-.5M7 3.5V17M9.5 8h6M9.5 11.5h6",
+  sofa: "M5 11V7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5V11M3.5 11.5A1.8 1.8 0 0 1 7 12v1h10v-1a1.8 1.8 0 0 1 3.5-.5c.3 1.5-.5 2.7-1.5 3.3V19h-2v-1.5H7V19H5v-4.2c-1-.6-1.8-1.8-1.5-3.3Z",
+};
+function Ic({ name, size = 19, color = "currentColor", sw = 1.7, style }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, display: "block", ...style }} aria-hidden="true">
+      <path d={ICON_PATHS[name] || ICON_PATHS.sparkle} />
+    </svg>
+  );
+}
+
 // A company's own uploaded logo on a white tile; falls back to its emoji.
 const CompanyLogo = ({ co, size = 46, radius }) => (
   <div style={{ width: size, height: size, borderRadius: radius ?? Math.round(size * 0.28), background: C.card, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0, fontSize: size * 0.5 }}>
@@ -989,9 +1015,9 @@ function Auth() {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const roles = [
-    { id: "customer", icon: "🛋️", title: t("auth.r.customer.title"), sub: t("auth.r.customer.sub") },
-    { id: "employee", icon: "🧽", title: t("auth.r.employee.title"), sub: t("auth.r.employee.sub") },
-    { id: "company", icon: "🏢", title: t("auth.r.company.title"), sub: t("auth.r.company.sub") },
+    { id: "customer", icon: "sofa", title: t("auth.r.customer.title"), sub: t("auth.r.customer.sub") },
+    { id: "employee", icon: "sparkle", title: t("auth.r.employee.title"), sub: t("auth.r.employee.sub") },
+    { id: "company", icon: "building", title: t("auth.r.company.title"), sub: t("auth.r.company.sub") },
   ];
 
   const [pendingScreen, setPendingScreen] = useState(false);
@@ -1035,7 +1061,7 @@ function Auth() {
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div className="cl-pop" style={{ margin: "0 auto", display: "flex", justifyContent: "center" }}>
-            <img src="/white-logo.png" alt="Cleano" style={{ width: 196, height: 196, objectFit: "contain" }} draggable="false" />
+            <img src="/white-logo-full.png" alt="Cleano" style={{ width: 210, height: 242, objectFit: "contain" }} draggable="false" />
           </div>
           <div className="cl-rise" style={{ fontFamily: B, fontSize: 13, color: "#9FB0E8", textAlign: "center", marginTop: 4, animationDelay: ".15s" }}>{t("auth.tagline")}</div>
           <div style={{ marginTop: 34 }}>
@@ -1045,7 +1071,7 @@ function Auth() {
                 background: C.card, border: "none", borderRadius: 20, padding: "16px 18px",
                 marginBottom: 12, cursor: "pointer", boxShadow: "0 8px 24px rgba(0,0,0,.22)", animationDelay: `${.2 + i * .09}s`,
               }}>
-                <div style={{ width: 48, height: 48, borderRadius: 15, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 23, flexShrink: 0 }}>{r.icon}</div>
+                <div style={{ width: 48, height: 48, borderRadius: 15, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.navySoft }}><Ic name={r.icon} size={24} /></div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink }}>{r.title}</div>
                   <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{r.sub}</div>
@@ -3323,10 +3349,10 @@ function Shell() {
   const { role } = session;
   const unread = notices.filter((n) => n.to_employee === session.userId && !n.is_read).length;
   const NAVS = {
-    customer: [{ id: "home", label: t("nav.home"), icon: "🏠" }, { id: "bookings", label: t("nav.bookings"), icon: "📅" }],
-    employee: [{ id: "home", label: "My jobs", icon: "🧽" }, { id: "notices", label: "Notices", icon: "🔔", badge: unread }],
-    company: [{ id: "home", label: "Jobs", icon: "📋" }, { id: "schedule", label: "Schedule", icon: "🗓️" }, { id: "clients", label: "Clients", icon: "🤝" }, { id: "services", label: "Services", icon: "🛎️" }, { id: "team", label: "Team", icon: "👥" }, { id: "issues", label: "Issues", icon: "🛟" }, { id: "settings", label: "Settings", icon: "⚙️" }],
-    admin: [{ id: "home", label: "Dashboard", icon: "📊" }, { id: "companies", label: "Companies", icon: "🏢" }, { id: "users", label: "Users", icon: "👤" }, { id: "bookings", label: "Orders", icon: "📅" }, { id: "complaints", label: "Complaints", icon: "🛟" }, { id: "log", label: "Log", icon: "📜" }],
+    customer: [{ id: "home", label: t("nav.home"), icon: "home" }, { id: "bookings", label: t("nav.bookings"), icon: "calendar" }],
+    employee: [{ id: "home", label: "My jobs", icon: "sparkle" }, { id: "notices", label: "Notices", icon: "bell", badge: unread }],
+    company: [{ id: "home", label: "Jobs", icon: "clipboard" }, { id: "schedule", label: "Schedule", icon: "calendar" }, { id: "clients", label: "Clients", icon: "users" }, { id: "services", label: "Services", icon: "tag" }, { id: "team", label: "Team", icon: "briefcase" }, { id: "issues", label: "Issues", icon: "lifebuoy" }, { id: "settings", label: "Settings", icon: "settings" }],
+    admin: [{ id: "home", label: "Dashboard", icon: "grid" }, { id: "companies", label: "Companies", icon: "building" }, { id: "users", label: "Users", icon: "user" }, { id: "bookings", label: "Orders", icon: "calendar" }, { id: "complaints", label: "Complaints", icon: "lifebuoy" }, { id: "log", label: "Log", icon: "scroll" }],
   };
 
   return (
@@ -3396,13 +3422,13 @@ function Shell() {
         <PhoneVerifyGate />
 
         <NotificationBanner />
-        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: C.navBg, backdropFilter: "blur(20px) saturate(1.4)", WebkitBackdropFilter: "blur(20px) saturate(1.4)", border: `1px solid ${C.line}`, borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 14px 44px rgba(0,0,0,.5)" : "0 14px 44px rgba(16,25,74,.22)" }}>
+        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: dark ? "rgba(23,30,58,.55)" : "rgba(255,255,255,.55)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
           {NAVS[role].map((tb) => {
             const active = tab === tb.id;
             return (
               <button key={tb.id} onClick={() => { setTab(tb.id); setBookingCo(null); }}
-                style={{ flex: active ? 1.9 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: 24, padding: "11px 0", position: "relative", background: active ? C.navy : "transparent", boxShadow: active ? "0 6px 18px rgba(27,42,107,.35)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
-                <span style={{ fontSize: 18, lineHeight: 1, filter: active ? "none" : "grayscale(.35)", opacity: active ? 1 : .75 }}>{tb.icon}</span>
+                style={{ flex: active ? 1.9 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: 24, padding: "11px 0", position: "relative", background: active ? `linear-gradient(135deg, ${C.navy}, ${C.navyMid})` : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
+                <Ic name={tb.icon} size={19} sw={active ? 2 : 1.7} color={active ? "#fff" : C.inkSoft} style={{ opacity: active ? 1 : .8 }} />
                 {active && <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap" }}>{tb.label}</span>}
                 {tb.badge > 0 && <span style={{ position: "absolute", top: 4, right: active ? 8 : "50%", marginRight: active ? 0 : -18, width: 16, height: 16, borderRadius: "50%", background: C.coral, color: "#fff", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: B }}>{tb.badge}</span>}
               </button>
