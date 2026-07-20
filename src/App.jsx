@@ -434,37 +434,61 @@ function LocationShare({ bookingId }) {
   return <div style={{ fontFamily: B, fontSize: 11, fontWeight: 700, color: on ? C.green : C.inkSoft, textAlign: "center", marginTop: 8 }}>{on ? L("Sharing your live location", "Élő helyzet megosztása") : L("Turn on location to share your position", "Kapcsold be a helymeghatározást")}</div>;
 }
 
-function NotificationBell() {
+/* Notifications: no bell. New ones slide in as a top banner, auto-hide,
+   and the full history lives in Profile → Notifications. */
+function NotificationBanner() {
   const { notifications, unreadNotif, fetchNotifications, markNotificationsRead, isLive } = useStore();
-  const [open, setOpen] = React.useState(false);
+  const [show, setShow] = React.useState(null); // the notification being flashed
+  const seenRef = React.useRef(new Set());
   React.useEffect(() => {
     if (!isLive) return;
     fetchNotifications();
     const t = setInterval(fetchNotifications, 30000);
     return () => clearInterval(t);
   }, []);
-  const openSheet = () => { setOpen(true); if (unreadNotif > 0) markNotificationsRead(); };
+  React.useEffect(() => {
+    const fresh = (notifications || []).find((n) => !n.is_read && !seenRef.current.has(n.id));
+    if (fresh) {
+      seenRef.current.add(fresh.id);
+      setShow(fresh);
+      const t = setTimeout(() => setShow(null), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [notifications]);
+  React.useEffect(() => { if (unreadNotif > 0) { const t = setTimeout(markNotificationsRead, 8000); return () => clearTimeout(t); } }, [unreadNotif]);
+  if (!show) return null;
   return (
-    <>
-      <button onClick={openSheet} aria-label="Notifications" style={{ position: "fixed", right: 12, top: "calc(env(safe-area-inset-top) + 10px)", width: 40, height: 40, borderRadius: "50%", border: "none", cursor: "pointer", background: C.card, boxShadow: "0 4px 14px rgba(20,28,58,.18)", fontSize: 17, zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", opacity: .93 }}>
-        🔔
-        {unreadNotif > 0 && <span style={{ position: "absolute", top: -2, right: -2, minWidth: 20, height: 20, borderRadius: 99, background: C.coral, color: "#fff", fontSize: 11, fontWeight: 700, fontFamily: B, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", border: `2px solid ${C.bg}` }}>{unreadNotif > 9 ? "9+" : unreadNotif}</span>}
+    <div className="cl-rise" onClick={() => setShow(null)}
+      style={{ position: "fixed", top: "calc(env(safe-area-inset-top) + 10px)", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, zIndex: 60, background: C.navBg, backdropFilter: "blur(18px)", border: `1px solid ${C.line}`, borderRadius: 18, padding: "13px 16px", boxShadow: "0 14px 40px rgba(16,25,74,.28)", cursor: "pointer" }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{show.title}</div>
+      {show.body && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>{show.body}</div>}
+    </div>
+  );
+}
+
+function NotificationHistory() {
+  const { notifications, isLive } = useStore();
+  const [open, setOpen] = useState(false);
+  if (!isLive) return null;
+  const list = notifications || [];
+  return (
+    <div style={{ marginTop: 14 }}>
+      <button onClick={() => setOpen(!open)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
+        <span>{L("Notifications", "Értesítések")} ({list.length})</span><span>{open ? "▴" : "▾"}</span>
       </button>
       {open && (
-        <Sheet title="🔔 Notifications" close={() => setOpen(false)}>
-          {(!notifications || notifications.length === 0) && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 28 }}>No notifications yet.</div>}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {(notifications || []).map((n) => (
-              <div key={n.id} style={{ background: n.is_read ? C.card : C.mintSoft, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{n.title}</div>
-                {n.body && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>{n.body}</div>}
-                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 5 }}>{(() => { try { return new Date(n.created_at).toLocaleString(); } catch { return ""; } })()}</div>
-              </div>
-            ))}
-          </div>
-        </Sheet>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 7, maxHeight: 260, overflowY: "auto" }}>
+          {list.length === 0 && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, textAlign: "center", padding: 14 }}>{L("Nothing yet.", "Még semmi.")}</div>}
+          {list.map((n) => (
+            <div key={n.id} style={{ background: C.bg, borderRadius: 13, padding: "10px 13px" }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.title}</div>
+              {n.body && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{n.body}</div>}
+              <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 4 }}>{(() => { try { return new Date(n.created_at).toLocaleString(); } catch { return ""; } })()}</div>
+            </div>
+          ))}
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -527,7 +551,7 @@ function ChangePasswordBox() {
     <div style={{ marginTop: 14 }}>
       {!open ? (
         <button onClick={() => setOpen(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer" }}>
-          🔑 {L("Change password", "Jelszó módosítása")}
+          {L("Change password", "Jelszó módosítása")}
         </button>
       ) : (
         <div style={{ background: C.bg, borderRadius: 15, padding: 14 }}>
@@ -765,10 +789,10 @@ function PhoneVerifyGate() {
       <div style={{ width: "100%", maxWidth: 300, marginTop: 22, display: "flex", flexDirection: "column", gap: 10 }}>
         {!sent ? (
           mode === "email" ? (
-            <Btn full disabled={busy} onClick={() => send()}>✉️ {L("Send code to my email", "Kód küldése e-mailben")}</Btn>
+            <Btn full disabled={busy} onClick={() => send()}>{L("Send code to my email", "Kód küldése e-mailben")}</Btn>
           ) : (
           <>
-            <Btn full disabled={busy} onClick={() => send("whatsapp")}>💬 {L("Send code via WhatsApp", "Kód küldése WhatsAppon")}</Btn>
+            <Btn full disabled={busy} onClick={() => send("whatsapp")}>{L("Send code via WhatsApp", "Kód küldése WhatsAppon")}</Btn>
             <Btn ghost full disabled={busy} onClick={() => send("sms")}>{L("Send as SMS instead", "Inkább SMS-ben")}</Btn>
           </>
           )
@@ -917,9 +941,10 @@ function ProfileSheet({ close }) {
 
       <Btn full disabled={busy || !f.name.trim()} onClick={save}>{busy ? t("common.saving") : t("profile.saveProfile")}</Btn>
       <div style={{ marginTop: 10 }}>
-        <Btn ghost full onClick={() => { close(); logout(); }}>🚪 {t("common.logout")}</Btn>
+        <Btn ghost full onClick={() => { close(); logout(); }}>{t("common.logout")}</Btn>
       </div>
 
+      <NotificationHistory />
       <ChangePasswordBox />
       <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 14, fontFamily: B, fontSize: 11 }}>
         <a href={session.role === "company" ? "/partner-terms" : "/terms"} target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Terms", "ÁSZF")}</a>
@@ -1731,23 +1756,23 @@ function CustomerBookings({ openBooking }) {
               {b.status <= 1 && (
                 <Btn small ghost style={{ flex: 1, color: C.coral, borderColor: C.line }} onClick={() => setConfirmCancel(b)}>{b.pricing_type === "subscription" ? L("Cancel subscription", "Előfizetés lemondása") : L("Cancel booking", "Foglalás lemondása")}</Btn>
               )}
-              {b.status === 4 && !reviewed && <Btn small mint style={{ flex: 1 }} onClick={() => { setReviewing(b); setStars(5); setBody(""); }}>⭐ {L("Rate this clean", "Értékeld a takarítást")}</Btn>}
+              {b.status === 4 && !reviewed && <Btn small mint style={{ flex: 1 }} onClick={() => { setReviewing(b); setStars(5); setBody(""); }}>{L("Rate this clean", "Értékeld a takarítást")}</Btn>}
               {b.status === 4 && reviewed && <Pill style={{ alignSelf: "center" }}>{L("Thanks for your review ⭐", "Köszönjük az értékelést ⭐")}</Pill>}
               {(b.status === 4 || b.status === 8 || b.status === 9) && b.pricing_type !== "subscription" && co && openBooking && (
-                <Btn small ghost style={{ flex: 1 }} onClick={() => openBooking(co)}>🔁 {L("Rebook", "Újrafoglalás")}</Btn>
+                <Btn small ghost style={{ flex: 1 }} onClick={() => openBooking(co)}>{L("Rebook", "Újrafoglalás")}</Btn>
               )}
               {b.status >= 1 && b.status !== 9 && (
-                <Btn small ghost style={{ flex: 1 }} onClick={() => setComplaining(b)}>🛟 {L("Report", "Bejelentés")}</Btn>
+                <Btn small ghost style={{ flex: 1 }} onClick={() => setComplaining(b)}>{L("Report", "Bejelentés")}</Btn>
               )}
               {b.invoice && (
-                <a href={b.invoice.data} download={b.invoice.name} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, padding: "9px 0", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>📄 {L("Invoice", "Számla")}</a>
+                <a href={b.invoice.data} download={b.invoice.name} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, padding: "9px 0", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>{L("Invoice", "Számla")}</a>
               )}
               {isLive && b.payment_status !== "paid" && b.status !== 9 && b.status !== 8 && (
                 <Btn small mint style={{ flex: 1 }} onClick={async () => {
                   const pay = await startPayment(b.id);
                   if (pay?.gatewayUrl) { window.open(pay.gatewayUrl, "_blank"); toast(L("Finish the payment in the opened window, then pull to refresh", "Fejezd be a fizetést a megnyílt ablakban, majd frissíts")); }
                   else toast(pay?.error || L("Payment unavailable right now", "A fizetés most nem elérhető"), "error");
-                }}>💳 {L("Pay now", "Fizetés most")}</Btn>
+                }}>{L("Pay now", "Fizetés most")}</Btn>
               )}
             </div>
           </div>
@@ -2121,10 +2146,10 @@ function CompanyJobs({ openProfile }) {
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
                 {b.invoice ? (
-                  <a href={b.invoice.data} download={b.invoice.name} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>📄 {b.invoice.name.slice(0, 22)}</a>
+                  <a href={b.invoice.data} download={b.invoice.name} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>{b.invoice.name.slice(0, 22)}</a>
                 ) : (
                   <label style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, cursor: "pointer" }}>
-                    📄 Upload invoice
+                    Upload invoice
                     <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => {
                       const file = e.target.files?.[0]; e.target.value = "";
                       if (!file) return;
@@ -2139,7 +2164,7 @@ function CompanyJobs({ openProfile }) {
                   </label>
                 )}
                 <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast("Moved to history (Settings)"); }}
-                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>🗄 Clear</button>
+                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Clear</button>
               </div>
             </div>
           ))}
@@ -3370,7 +3395,7 @@ function Shell() {
         {showProfile && <ProfileSheet close={() => setShowProfile(false)} />}
         <PhoneVerifyGate />
 
-        {(role === "customer" || role === "company") && <NotificationBell />}
+        <NotificationBanner />
         <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: C.navBg, backdropFilter: "blur(20px) saturate(1.4)", WebkitBackdropFilter: "blur(20px) saturate(1.4)", border: `1px solid ${C.line}`, borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 14px 44px rgba(0,0,0,.5)" : "0 14px 44px rgba(16,25,74,.22)" }}>
           {NAVS[role].map((tb) => {
             const active = tab === tb.id;
