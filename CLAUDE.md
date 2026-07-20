@@ -157,3 +157,11 @@ Archives: cleanly-production-vX.zip series in the session outputs. Test admin cr
 only in Musa's head + seed-admin.bat runs.
 
 *Signed over by the previous CTO-Claude. Keep the octopus shipping. 🐙*
+
+## v4.2–4.3 additions (July 2026)
+- **Logos**: official Cleano lockup integrated. `public/logo.png` (navy mark, favicon), `white-logo.png` (white mark), `white-logo-full.png` (splash lockup), `logo-full.png`. All Android mipmaps + splash drawables regenerated from these. Source masters came from user files with baked checkerboard — alpha was reconstructed; regenerate from `public/` PNGs, never from the originals.
+- **Glass bottom nav** + custom minimalist line-icon system: `ICON_PATHS`/`Ic` in App.jsx. Nav, role cards and admin tabs use icon keys, not emoji.
+- **Notifications**: bell removed → top banner (auto-dismiss 6s) + history in Profile with Clear all (`DELETE /api/notifications`).
+- **Admin announcements**: `POST /api/notifications/broadcast` (requireRole admin; title ≤120, body ≤500, audience all|customer|company|employee) + AnnouncementComposer on the admin dashboard. Marketing use. PUSH HOOK: fan out to FCM/OneSignal inside this route when keys arrive.
+- **Multi-language (10)**: en/hu native in code; de,ro,sk,pl,uk,fr,es,it resolve via `src/lib/translations.js` (`EXTRA`, keyed by the exact English source string; `xl()` falls back to English). `L(en,hu)` and `translate()` both pivot through English. Date locales in `LOCALES`. IMPORTANT: if you edit any L("…","…") English string, update the same key in all 8 EXTRA dictionaries or that string silently reverts to English. Translations are machine-drafted — native review recommended before marketing in a new country.
+- e2e now 83 tests (broadcast auth/validation/delivery + clearing). versionCode 9 / 4.3.0.

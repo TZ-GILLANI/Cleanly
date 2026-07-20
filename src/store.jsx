@@ -797,6 +797,16 @@ export function StoreProvider({ children }) {
     try { await api("/notifications/read"); setNotif(n => ({ notifications: n.notifications.map(x => ({ ...x, is_read: true })), unread: 0 })); }
     catch (e) {}
   };
+  const clearNotifications = async () => {
+    if (!isApiMode) return;
+    try { await api("/notifications", { method: "DELETE" }); setNotif({ notifications: [], unread: 0 }); }
+    catch (e) {}
+  };
+  const adminBroadcast = async (title, body, audience) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { return await api("/notifications/broadcast", { method: "POST", body: { title, body, audience } }); }
+    catch (e) { return { error: e.message }; }
+  };
 
   /* employees filtered to current company in demo mode */
   const visibleEmployees = isApiMode ? db.employees : db.employees.filter(e => e.company_id === (session?.companyId || null));
@@ -811,7 +821,7 @@ export function StoreProvider({ children }) {
     updateProfile, changePassword, updateCompany,
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
-    fetchNotifications, markNotificationsRead, notifications: notif.notifications, unreadNotif: notif.unread,
+    fetchNotifications, markNotificationsRead, clearNotifications, adminBroadcast, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,

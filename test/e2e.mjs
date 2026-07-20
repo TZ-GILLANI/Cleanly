@@ -237,5 +237,24 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── admin announcements + notification clearing ──");
+const annaTok = reuse.data.token; // reuse@test.hu — fresh customer, registration returns a token
+const bcastNoAuth = await j("/api/notifications/broadcast", { method: "POST", token: annaTok, body: { title: "Hack", audience: "all" } });
+ok("broadcast rejected for non-admin", bcastNoAuth.status === 403);
+const bcastNoTitle = await j("/api/notifications/broadcast", { method: "POST", token: admTok, body: { title: "  ", audience: "all" } });
+ok("broadcast requires a title", bcastNoTitle.status === 400);
+const bcast = await j("/api/notifications/broadcast", { method: "POST", token: admTok, body: { title: "20% off this week", body: "Book any clean and save.", audience: "customer" } });
+ok("admin broadcast to customers succeeds", bcast.data.ok === true && bcast.data.sent >= 1, JSON.stringify(bcast.data));
+const annaFeed = await j("/api/notifications", { token: annaTok });
+ok("customer received the announcement", (annaFeed.data.notifications || []).some((n) => n.title === "20% off this week" && n.type === "announcement"));
+const bcastAll = await j("/api/notifications/broadcast", { method: "POST", token: admTok, body: { title: "Cleano news", audience: "all" } });
+ok("broadcast to everyone succeeds", bcastAll.data.ok === true && bcastAll.data.sent >= bcast.data.sent);
+const cleared = await j("/api/notifications", { method: "DELETE", token: annaTok });
+ok("user can clear their notifications", cleared.data.ok === true);
+await query("INSERT INTO notifications (user_id, type, title, created_at) VALUES ($1, 'announcement', 'Stale promo', NOW() - INTERVAL '3 days')", [reuse.data.user.id]);
+const emptyFeed = await j("/api/notifications", { token: annaTok });
+ok("notifications auto-expire after 48h", !(emptyFeed.data.notifications || []).some((n) => n.title === "Stale promo"));
+ok("notification history is empty after clearing", (emptyFeed.data.notifications || []).length === 0 && emptyFeed.data.unread === 0);
+
 console.log(`\n════ RESULT: ${passed} passed, ${failed} failed ════`);
 process.exit(failed ? 1 : 0);

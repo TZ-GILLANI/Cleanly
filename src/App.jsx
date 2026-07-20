@@ -493,7 +493,7 @@ function NotificationBanner() {
 }
 
 function NotificationHistory() {
-  const { notifications, isLive } = useStore();
+  const { notifications, isLive, clearNotifications } = useStore();
   const [open, setOpen] = useState(false);
   if (!isLive) return null;
   const list = notifications || [];
@@ -502,6 +502,9 @@ function NotificationHistory() {
       <button onClick={() => setOpen(!open)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
         <span>{L("Notifications", "Értesítések")} ({list.length})</span><span>{open ? "▴" : "▾"}</span>
       </button>
+      {open && list.length > 0 && (
+        <button onClick={clearNotifications} style={{ background: "none", border: "none", padding: "8px 2px 0", fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.coral, cursor: "pointer" }}>{L("Clear all", "Összes törlése")}</button>
+      )}
       {open && (
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 7, maxHeight: 260, overflowY: "auto" }}>
           {list.length === 0 && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, textAlign: "center", padding: 14 }}>{L("Nothing yet.", "Még semmi.")}</div>}
@@ -1280,13 +1283,11 @@ function CityPickerSheet({ close, city, onPick }) {
 function MiniLang({ light }) {
   const { lang, setLang } = useStore();
   return (
-    <div style={{ display: "flex", borderRadius: 99, overflow: "hidden", border: light ? "1px solid rgba(255,255,255,.3)" : `1.5px solid ${C.line}`, flexShrink: 0 }}>
-      {LANGS.map((o) => (
-        <button key={o.id} onClick={() => setLang(o.id)} style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10, padding: "5px 9px",
-          background: lang === o.id ? (light ? "#fff" : C.navy) : "transparent",
-          color: lang === o.id ? (light ? C.navy : "#fff") : (light ? "#C9D2F5" : C.inkSoft) }}>{o.id.toUpperCase()}</button>
-      ))}
-    </div>
+    <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ flexShrink: 0, fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "5px 9px", borderRadius: 99, cursor: "pointer", appearance: "none", WebkitAppearance: "none", outline: "none",
+      border: light ? "1px solid rgba(255,255,255,.3)" : `1.5px solid ${C.line}`,
+      background: light ? "rgba(255,255,255,.14)" : C.bg, color: light ? "#fff" : C.ink }}>
+      {LANGS.map((o) => <option key={o.id} value={o.id} style={{ color: "#1B2A6B" }}>{o.label}</option>)}
+    </select>
   );
 }
 
@@ -2760,6 +2761,51 @@ function CompanySettings() {
    ADMIN
 ════════════════════════════════════════════════════════════ */
 
+function AnnouncementComposer() {
+  const { adminBroadcast } = useStore();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [aud, setAud] = useState("all");
+  const [busy, setBusy] = useState(false);
+  const AUDS = [["all", "Everyone"], ["customer", "Customers"], ["company", "Companies"], ["employee", "Cleaners"]];
+  const send = async () => {
+    if (!title.trim()) return;
+    setBusy(true);
+    const res = await adminBroadcast(title.trim(), body.trim(), aud);
+    setBusy(false);
+    if (res?.error) { toast(res.error); return; }
+    toast(`Announcement sent to ${res.sent} user${res.sent === 1 ? "" : "s"}`);
+    setTitle(""); setBody(""); setOpen(false);
+  };
+  return (
+    <div className="cl-card" style={{ background: C.card, borderRadius: 20, padding: 18, marginBottom: 14 }}>
+      <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", padding: 0, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+        <div style={{ textAlign: "left" }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>Send announcement</div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>Marketing or news — lands as a banner in every user's app. Push to phones activates with Firebase.</div>
+        </div>
+        <span style={{ color: C.inkFaint, fontSize: 15 }}>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            {AUDS.map(([id, label]) => (
+              <button key={id} onClick={() => setAud(id)} style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, background: aud === id ? C.navy : C.bg, color: aud === id ? "#fff" : C.inkSoft }}>{label}</button>
+            ))}
+          </div>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="Title — e.g. 20% off your first clean this week"
+            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", marginBottom: 8 }} />
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} rows={3} placeholder="Message (optional)"
+            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginBottom: 10 }} />
+          <Btn full onClick={send} disabled={busy || !title.trim()}>{busy ? "Sending…" : "Send announcement"}</Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const { adminStats, adminFetchStats, adminRevenue, adminFetchRevenue } = useStore();
   const [busy, setBusy] = useState(false);
@@ -2794,6 +2840,7 @@ function AdminDashboard() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Platform dashboard</div>
+      <AnnouncementComposer />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
         {kpis.map((k) => (

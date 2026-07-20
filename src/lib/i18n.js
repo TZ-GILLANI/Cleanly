@@ -1,9 +1,21 @@
 /* Cleano — lightweight i18n (English + Hungarian) */
 
+import { xl } from "./translations.js";
+
 export const LANGS = [
   { id: "en", label: "EN", name: "English" },
   { id: "hu", label: "HU", name: "Magyar" },
+  { id: "de", label: "DE", name: "Deutsch" },
+  { id: "ro", label: "RO", name: "Rom\u00e2n\u0103" },
+  { id: "sk", label: "SK", name: "Sloven\u010dina" },
+  { id: "pl", label: "PL", name: "Polski" },
+  { id: "uk", label: "UA", name: "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430" },
+  { id: "fr", label: "FR", name: "Fran\u00e7ais" },
+  { id: "es", label: "ES", name: "Espa\u00f1ol" },
+  { id: "it", label: "IT", name: "Italiano" },
 ];
+
+export const LOCALES = { en: "en-GB", hu: "hu-HU", de: "de-DE", ro: "ro-RO", sk: "sk-SK", pl: "pl-PL", uk: "uk-UA", fr: "fr-FR", es: "es-ES", it: "it-IT" };
 
 const DICT = {
   en: {
@@ -129,7 +141,7 @@ export const saveLang = (l) => { try { localStorage.setItem("cleanly-lang", l); 
 
 // t("key", { name: "Musa" }) → string, with {placeholder} interpolation; falls back to EN then the key.
 export const translate = (lang, key, vars) => {
-  let s = (DICT[lang] && DICT[lang][key]) ?? DICT.en[key] ?? key;
+  let s = (DICT[lang] && DICT[lang][key]) ?? xl(lang, DICT.en[key] ?? key);
   if (vars) for (const k in vars) s = s.replace(new RegExp(`\\{${k}\\}`, "g"), vars[k]);
   return s;
 };

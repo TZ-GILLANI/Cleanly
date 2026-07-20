@@ -1,12 +1,15 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
-/* GET /api/notifications — current user's feed + unread count */
+/* GET /api/notifications — current user's feed + unread count.
+   Lazy housekeeping: anything older than 48h is purged on read, so the
+   in-app history never piles up (no cron needed). */
 router.get("/", requireAuth, async (req, res) => {
   try {
+    await query("DELETE FROM notifications WHERE user_id = $1 AND created_at < NOW() - INTERVAL '48 hours'", [req.user.id]);
     const r = await query(
       "SELECT id, type, title, body, booking_id, is_read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50",
       [req.user.id]
@@ -30,6 +33,36 @@ router.put("/:id/read", requireAuth, async (req, res) => {
     await query("UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: "Failed" }); }
+});
+
+/* DELETE /api/notifications — clear the current user's notification history */
+router.delete("/", requireAuth, async (req, res) => {
+  try {
+    await query("DELETE FROM notifications WHERE user_id = $1", [req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: "Could not clear notifications" }); }
+});
+
+/* POST /api/notifications/broadcast — admin announcement to all users or a segment.
+   Body: { title, body, audience: "all" | "customer" | "company" | "employee" }
+   Lands in every target user's in-app feed (top banner + history).
+   PUSH ROADMAP: when FCM/OneSignal keys exist, fan the same payload out to
+   device tokens right here — one hook point, no client changes needed. */
+router.post("/broadcast", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const title = String(req.body?.title || "").trim();
+    const body = String(req.body?.body || "").trim();
+    const audience = ["all", "customer", "company", "employee"].includes(req.body?.audience) ? req.body.audience : "all";
+    if (!title) return res.status(400).json({ error: "Title is required" });
+    if (title.length > 120 || body.length > 500) return res.status(400).json({ error: "Too long" });
+    const r = await query(
+      `INSERT INTO notifications (user_id, type, title, body)
+       SELECT id, 'announcement', $1, $2 FROM users
+       WHERE role != 'admin' AND ($3 = 'all' OR role::text = $3)`,
+      [title, body || null, audience]
+    );
+    res.json({ ok: true, sent: r.rowCount });
+  } catch (e) { res.status(500).json({ error: "Broadcast failed" }); }
 });
 
 export default router;
