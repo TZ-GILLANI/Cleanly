@@ -292,3 +292,6 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS live_lat DOUBLE PRECISION;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS live_lng DOUBLE PRECISION;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS live_at  TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS saved_addresses JSONB NOT NULL DEFAULT '[]';
+
+-- v4.4: company promotional offers ({pct,label,until}), shown to customers and applied at booking
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS promo JSONB;

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useContext, createContext, useCallback } from "react";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
-import { LANGS, getLang } from "./lib/i18n.js";
+import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
+import { xl } from "./lib/translations.js";
 import { API_BASE } from "./lib/api.js";
 
 /* ── Theme: follows the phone's light/dark mode automatically ── */
@@ -71,8 +72,15 @@ const B = `'Inter',system-ui,sans-serif`;
 /* Bilingual helpers for literals living outside the t() dictionary.
    Components re-render on language switch (store subscribers), so these stay in sync. */
 const HUL = () => getLang() === "hu";
-const L = (en, hu) => (HUL() ? hu : en);
-const LOC = () => (HUL() ? "hu-HU" : "en-GB");
+const L = (en, hu) => { const lg = getLang(); return lg === "hu" ? hu : xl(lg, en); };
+const LOC = () => LOCALES[getLang()] || "en-GB";
+// A company's active offer ({pct,label,until}) or null once expired.
+const promoOf = (co) => {
+  const p = co && co.promo;
+  if (!p || !p.pct) return null;
+  if (p.until && new Date(p.until + "T23:59:59") < new Date()) return null;
+  return p;
+};
 const everyP = (per) => (HUL()
   ? ({ weekly: "hetente", biweekly: "kéthetente", monthly: "havonta" }[per] || "havonta")
   : `every ${({ weekly: "week", biweekly: "2 weeks", monthly: "month" }[per] || "month")}`);
@@ -1392,7 +1400,8 @@ function CustomerHome({ openBooking, openProfile }) {
                     {co.name}
                     {co.is_approved !== false && <span title="Documents verified by Cleano" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", background: C.mint, color: C.navyDeep, fontSize: 9.5, fontWeight: 900, flexShrink: 0 }}>✓</span>}
                   </div>
-                  {isStudent && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
+                  {promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{promoOf(co).pct}%{promoOf(co).label ? ` ${promoOf(co).label}` : ""}</Pill>}
+                  {isStudent && !promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
                 </div>
                 {co.tagline && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3 }}>{co.tagline}</div>}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
@@ -1442,7 +1451,9 @@ function BookingFlow({ company, close, onBooked }) {
   const isStudent = session.custType === "student";
   const isHourly = svc?.pricing_type === "hourly";
   const isSub = svc?.pricing_type === "subscription";
-  const stud = (n) => (isStudent ? Math.round((n || 0) * company.student_discount / 100) : 0);
+  const promo = promoOf(company);
+  const discPct = Math.max(promo ? promo.pct : 0, isStudent ? company.student_discount || 0 : 0);
+  const stud = (n) => Math.round((n || 0) * discPct / 100);
   const gross = !svc ? 0 : isHourly ? (svc.hourly_rate_huf || 0) * hours : (svc.price_huf || 0);
   const discount = stud(gross);
   const companyShare = gross - discount;
@@ -1611,9 +1622,9 @@ function BookingFlow({ company, close, onBooked }) {
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.inkSoft }}>
                   <span>{svc.name}{isHourly ? ` · ${hours} ${L("h", "óra")} × ${huf(svc.hourly_rate_huf)}` : isSub ? ` · ${everyP(svc.period)}` : ""}</span><span>{huf(gross)}</span>
                 </div>
-                {isStudent && (
+                {discPct > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.green, fontWeight: 700, marginTop: 7 }}>
-                    <span>{L("Student discount", "Diákkedvezmény")} (−{company.student_discount}%)</span><span>−{huf(discount)}</span>
+                    <span>{promo && promo.pct >= (isStudent ? company.student_discount || 0 : 0) ? `${promo.label || L("Offer", "Akció")} (−${discPct}%)` : `${L("Student discount", "Diákkedvezmény")} (−${discPct}%)`}</span><span>−{huf(discount)}</span>
                   </div>
                 )}
                 {serviceFee > 0 && (
@@ -2649,6 +2660,7 @@ function CompanySettings() {
   const [f, setF] = useState({
     name: co?.name || "", tagline: co?.tagline || "", area: co?.area || "", city: co?.city || "Debrecen",
     emoji: co?.emoji || "🫧", student_discount: co?.student_discount ?? 10,
+    promo_on: !!promoOf(co), promo_pct: promoOf(co)?.pct ?? 10, promo_label: promoOf(co)?.label || "", promo_until: promoOf(co)?.until || "",
     cover: co?.cover || COVER_PRESETS[0], logo_url: co?.logo_url || null,
     tax_id: co?.tax_id || "", reg_number: co?.reg_number || "", contact_phone: co?.contact_phone || "", google_place_id: co?.google_place_id || "",
     documents: co?.documents || [],
@@ -2671,7 +2683,7 @@ function CompanySettings() {
     const disc = parseInt(f.student_discount, 10);
     if (isNaN(disc) || disc < 0 || disc > 50) return toast("Discount must be 0–50%", "error");
     setBusy(true);
-    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents });
+    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else toast("Company profile updated ✓");
@@ -2735,6 +2747,29 @@ function CompanySettings() {
           <span style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.navy, minWidth: 44 }}>{f.student_discount}%</span>
         </div>
         <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5 }}>Students see this as a discount at checkout.</div>
+      </div>
+
+      <div style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>Special offer</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>A discount for all customers — shown on your card and applied at checkout.</div>
+          </div>
+          <button onClick={() => setF({ ...f, promo_on: !f.promo_on })} style={{ width: 46, height: 26, borderRadius: 99, border: "none", cursor: "pointer", background: f.promo_on ? C.green : C.line, position: "relative", transition: "background .2s", flexShrink: 0 }}>
+            <span style={{ position: "absolute", top: 3, left: f.promo_on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,.25)" }} />
+          </button>
+        </div>
+        {f.promo_on && (
+          <div style={{ marginTop: 13 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+              <input type="range" min={5} max={50} step={5} value={f.promo_pct} onChange={set("promo_pct")} style={{ flex: 1, accentColor: C.green }} />
+              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.greenDeep, minWidth: 44 }}>−{f.promo_pct}%</span>
+            </div>
+            <Field label="Offer name (optional)" placeholder="e.g. Spring cleaning week" value={f.promo_label} onChange={set("promo_label")} />
+            <Field label="Ends on (optional — empty = until you turn it off)" type="date" value={f.promo_until} onChange={set("promo_until")} />
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>If a student's discount is higher, they get the better one — never both.</div>
+          </div>
+        )}
       </div>
 
       <Btn full disabled={busy} onClick={save}>{busy ? "Saving…" : "Save company profile"}</Btn>
@@ -2901,12 +2936,30 @@ function AdminCompanies() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Companies ({(adminAllCompanies || []).length})</div>
+      {(() => {
+        const offers = (adminAllCompanies || []).filter((c) => promoOf(c));
+        if (!offers.length) return null;
+        return (
+          <div style={{ background: C.mintSoft, borderRadius: 18, padding: "14px 16px", marginBottom: 14 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.greenDeep, marginBottom: 8 }}>Active offers ({offers.length})</div>
+            {offers.map((c) => {
+              const p = promoOf(c);
+              return (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontFamily: B, fontSize: 12, color: C.ink, padding: "4px 0" }}>
+                  <span style={{ fontWeight: 700 }}>{c.name}</span>
+                  <span style={{ color: C.greenDeep, fontWeight: 700, whiteSpace: "nowrap" }}>−{p.pct}%{p.label ? ` · ${p.label}` : ""}{p.until ? ` · until ${p.until}` : ""}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
       {(adminAllCompanies || []).map((co) => (
         <div key={co.id} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: co.is_approved ? 1 : .65 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <CompanyLogo co={co} size={42} radius={13} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{co.name}</div>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, display: "flex", alignItems: "center", gap: 7 }}>{co.name}{promoOf(co) && <Pill bg={C.mintSoft} color={C.greenDeep}>−{promoOf(co).pct}%</Pill>}</div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
                 ★ {co.rating} · {co.booking_count} bookings · {huf(co.revenue || 0)}
               </div>

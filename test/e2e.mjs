@@ -237,6 +237,24 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── company special offers ──");
+const badPromo = await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { promo: { pct: 95 } } });
+ok("offer above 90% rejected", badPromo.status === 400);
+const setPromo = await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { promo: { pct: 20, label: "Spring cleaning", until: null } } });
+ok("company can set a special offer", setPromo.status === 200 && setPromo.data.company.promo?.pct === 20, JSON.stringify(setPromo.data).slice(0, 200));
+const pubCos = await j("/api/companies");
+const promoCo = (pubCos.data.companies || []).find((c) => c.id === coId);
+ok("offer is visible to customers", promoCo?.promo?.pct === 20 && promoCo.promo.label === "Spring cleaning");
+const promoBooking = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-03-10", scheduledSlot: "10:00", address: "Promo utca 1", paymentMethod: "cash_on_completion" } });
+if (promoBooking.status === 201) {
+  const pb = promoBooking.data.booking;
+  const discounted = Math.round(20000 * 0.8); // 20000 Ft service, −20% offer = 16000
+  ok("booking price applies the offer (company share)", pb.total_huf - pb.service_fee_huf === discounted, JSON.stringify({ total: pb.total_huf, fee: pb.service_fee_huf }));
+  ok("service fee computed on the discounted share", pb.service_fee_huf === Math.round(discounted * 0.1), String(pb.service_fee_huf));
+} else { ok("booking with offer succeeds", false, JSON.stringify(promoBooking.data)); ok("service fee computed on the discounted share", false); }
+const clearPromo = await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { promo: null } });
+ok("company can end the offer", clearPromo.status === 200 && !clearPromo.data.company.promo);
+
 console.log("\n── admin announcements + notification clearing ──");
 const annaTok = reuse.data.token; // reuse@test.hu — fresh customer, registration returns a token
 const bcastNoAuth = await j("/api/notifications/broadcast", { method: "POST", token: annaTok, body: { title: "Hack", audience: "all" } });

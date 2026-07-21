@@ -9,7 +9,7 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, name, emoji, tagline, area, city, google_place_id, student_discount, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
+      "SELECT id, name, emoji, tagline, area, city, google_place_id, student_discount, promo, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
     );
     res.json({ companies: result.rows });
   } catch (err) {
@@ -20,7 +20,7 @@ router.get("/", async (req, res) => {
 /* GET /api/companies/:id — public */
 router.get("/:id", async (req, res) => {
   try {
-    const result = await query("SELECT id, name, emoji, tagline, area, city, google_place_id, student_discount, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE id = $1", [req.params.id]);
+    const result = await query("SELECT id, name, emoji, tagline, area, city, google_place_id, student_discount, promo, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE id = $1", [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Company not found" });
     res.json({ company: result.rows[0] });
   } catch (err) {
@@ -30,7 +30,21 @@ router.get("/:id", async (req, res) => {
 
 /* PUT /api/companies/:id — company owner only */
 router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
-  const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId } = req.body;
+  const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId, promo } = req.body;
+  // promo: null clears it; otherwise { pct 1–90, label ≤60 chars, until YYYY-MM-DD or null }
+  let promoJson;
+  if (promo === null) promoJson = "null";
+  else if (promo !== undefined) {
+    const pct = parseInt(promo.pct, 10);
+    if (!Number.isFinite(pct) || pct < 1 || pct > 90) return res.status(400).json({ error: "Discount must be between 1% and 90%" });
+    const label = String(promo.label || "").trim().slice(0, 60);
+    let until = null;
+    if (promo.until) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(promo.until) || isNaN(Date.parse(promo.until))) return res.status(400).json({ error: "Invalid end date" });
+      until = promo.until;
+    }
+    promoJson = JSON.stringify({ pct, label: label || null, until });
+  }
   if (req.user.companyId !== req.params.id) return res.status(403).json({ error: "Not your company" });
   if (taxId && !huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42." });
   if (regNumber && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid registration number (cégjegyzékszám). Format: 09-09-123456." });
@@ -50,10 +64,11 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         contact_phone = COALESCE($10, contact_phone),
         documents = COALESCE($11, documents),
         city = COALESCE($12, city),
-        google_place_id = COALESCE($13, google_place_id)
+        google_place_id = COALESCE($13, google_place_id),
+        promo = CASE WHEN $15::text IS NULL THEN promo WHEN $15 = 'null' THEN NULL ELSE $15::jsonb END
       WHERE id = $14 RETURNING *`,
       [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber, contactPhone,
-       Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id]
+       Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id, promoJson === undefined ? null : promoJson]
     );
     res.json({ company: result.rows[0] });
   } catch (err) {

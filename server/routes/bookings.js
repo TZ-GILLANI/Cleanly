@@ -96,7 +96,14 @@ router.post("/", requireAuth, async (req, res) => {
     } else {
       gross = svc.price_huf || 0;
     }
-    const discount = customerType === "student" ? Math.round(gross * (co.student_discount || 0) / 100) : 0;
+    const promo = (() => {
+      const p = co.promo;
+      if (!p || !p.pct) return 0;
+      if (p.until && new Date(p.until + "T23:59:59") < new Date()) return 0;
+      return Math.min(Math.max(parseInt(p.pct, 10) || 0, 0), 90);
+    })();
+    const studPct = customerType === "student" ? (co.student_discount || 0) : 0;
+    const discount = Math.round(gross * Math.max(promo, studPct) / 100); // better of the two, never stacked
     const companyShare = gross - discount;
     // Cleano service fee is ADDED ON TOP and shown to the customer:
     // company's listed price stays fully theirs.

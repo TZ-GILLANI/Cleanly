@@ -28,3 +28,23 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false   # set to https://<your-app>.onrender.com after first deploy
+      # ── Phone verification (Twilio Verify) — set these three in the Render
+      #    dashboard to switch SMS/WhatsApp codes on. Never commit real values.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SID
+        sync: false
+      # ── Transactional email (Resend) — approval emails, password reset, email codes
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # ── Payments / platform
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: COMMISSION_PCT
+        value: "10"
