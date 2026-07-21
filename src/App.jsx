@@ -953,13 +953,9 @@ function ProfileSheet({ close }) {
 
       <div style={{ marginBottom: 13 }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.language")}</div>
-        <div style={{ display: "flex", gap: 10 }}>
-          {LANGS.map((o) => (
-            <button key={o.id} onClick={() => setLang(o.id)} style={{ flex: 1, padding: "11px 14px", borderRadius: 14, cursor: "pointer", border: lang === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: lang === o.id ? C.card : C.bg, boxShadow: lang === o.id ? "0 2px 10px rgba(27,42,107,.12)" : "none", fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>
-              {o.label} · {o.name}
-            </button>
-          ))}
-        </div>
+        <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 14, border: `1.5px solid ${C.line}`, background: C.bg, fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, cursor: "pointer", appearance: "none", WebkitAppearance: "none", outline: "none" }}>
+          {LANGS.map((o) => <option key={o.id} value={o.id}>{o.label} · {o.name}</option>)}
+        </select>
       </div>
 
       {!isLive && (
@@ -1057,10 +1053,10 @@ function Auth() {
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: `radial-gradient(130% 100% at 50% 0%, ${C.navyMid}, ${C.navyDeep} 72%)`, padding: "0 26px", position: "relative", overflow: "hidden" }}>
         <div className="cl-bubble" style={{ left: "16%" }} />
         <div className="cl-bubble" style={{ left: "72%", animationDelay: ".9s", width: 13, height: 13 }} />
-        <div style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top))", right: 18, display: "flex", gap: 6, zIndex: 2 }}>
-          {LANGS.map((o) => (
-            <button key={o.id} onClick={() => setLang(o.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "5px 10px", borderRadius: 99, border: "none", cursor: "pointer", background: lang === o.id ? "#fff" : "rgba(255,255,255,.14)", color: lang === o.id ? C.navy : "#C9D2F5" }}>{o.label}</button>
-          ))}
+        <div style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top))", right: 18, zIndex: 2 }}>
+          <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 12px", borderRadius: 99, border: "1px solid rgba(255,255,255,.3)", background: "rgba(255,255,255,.14)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", color: "#fff", cursor: "pointer", appearance: "none", WebkitAppearance: "none", outline: "none" }}>
+            {LANGS.map((o) => <option key={o.id} value={o.id} style={{ color: "#1B2A6B" }}>{o.label} · {o.name}</option>)}
+          </select>
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div className="cl-pop" style={{ margin: "0 auto", display: "flex", justifyContent: "center" }}>
