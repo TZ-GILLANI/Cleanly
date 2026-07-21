@@ -195,8 +195,8 @@ function DocUpload({ docs = [], onChange, label, hint }) {
 
 /* ── Document viewer (admin review) ───────────────────────── */
 function DocViewer({ docs, title, close }) {
-  const { session } = useStore();
-  const canDownload = true; // all admins have full file access; decisions are recorded in the admin log
+  // Every admin (limited or CEO) can view AND download documents; the admin log records decisions.
+  const canDownload = true;
   return (
     <Sheet title={title} close={close}>
       {(!docs || docs.length === 0) && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>No documents uploaded.</div>}
@@ -204,11 +204,12 @@ function DocViewer({ docs, title, close }) {
         <div key={i} style={{ marginBottom: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 6 }}>{doc.name}</div>
           {doc.type?.startsWith("image/")
-            ? <img src={doc.data} alt={doc.name} onContextMenu={(e) => { if (!canDownload) e.preventDefault(); }} draggable={canDownload}
-                style={{ width: "100%", borderRadius: 14, boxShadow: "0 2px 10px rgba(20,28,58,.1)", pointerEvents: canDownload ? "auto" : "none" }} />
-            : canDownload
-              ? <a href={doc.data} download={doc.name} style={{ display: "block", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, borderRadius: 13, padding: "12px 14px", textDecoration: "none", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Download {doc.name}</a>
-              : <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, background: C.bg, borderRadius: 13, padding: "12px 14px" }}>📄 {doc.name} — view only (CEO can download)</div>}
+            ? <>
+                <img src={doc.data} alt={doc.name} onContextMenu={(e) => { if (!canDownload) e.preventDefault(); }} draggable={canDownload}
+                  style={{ width: "100%", borderRadius: 14, boxShadow: "0 2px 10px rgba(20,28,58,.1)", pointerEvents: canDownload ? "auto" : "none" }} />
+                {canDownload && <a href={doc.data} download={doc.name} style={{ display: "inline-block", marginTop: 6, fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft, textDecoration: "none" }}>⬇ Download {doc.name}</a>}
+              </>
+            : <a href={doc.data} download={doc.name} style={{ display: "block", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, borderRadius: 13, padding: "12px 14px", textDecoration: "none", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Download {doc.name}</a>}
         </div>
       ))}
     </Sheet>
@@ -847,7 +848,7 @@ function PhoneVerifyGate() {
   );
 }
 
-/* ── Card payment wait overlay (Barion gateway opened in browser) ── */
+/* ── Card payment wait overlay (payment gateway opened in browser) ── */
 function PaymentWait({ url, check, onPaid, onLater }) {
   const [dots, setDots] = useState("");
   React.useEffect(() => {
@@ -866,7 +867,7 @@ function PaymentWait({ url, check, onPaid, onLater }) {
         <div style={{ fontSize: 44 }}>💳</div>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink, marginTop: 10 }}>{L("Waiting for payment", "Várakozás a fizetésre")}{dots}</div>
         <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 8, lineHeight: 1.6 }}>
-          {L("Finish paying in the secure Barion window that just opened. This screen updates automatically.", "Fejezd be a fizetést a most megnyílt biztonságos Barion ablakban. Ez a képernyő automatikusan frissül.")}
+          {L("Finish paying in the secure payment window that just opened. This screen updates automatically.", "Fejezd be a fizetést a most megnyílt biztonságos fizetési ablakban. Ez a képernyő automatikusan frissül.")}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 20 }}>
           <Btn full onClick={() => window.open(url, "_blank")}>{L("Reopen payment page", "Fizetési oldal újranyitása")}</Btn>
@@ -1672,7 +1673,7 @@ function BookingFlow({ company, close, onBooked }) {
             const row = await createBooking({ companyId: company.id, service: svc, date: day.iso, slot, address: addr, note, total, pricingType: svc.pricing_type, hours: isHourly ? hours : null, period: isSub ? svc.period : null });
             setBusy(false);
             if (!row) { toast(L("Booking failed — try again", "A foglalás nem sikerült — próbáld újra"), "error"); return; }
-            // Card + live backend + one-off booking → Barion checkout in the browser
+            // Card + live backend + one-off booking → provider checkout (Stripe/SimplePay/Barion) in the browser
             if (isLive && !isSub) { // live = card only (no cash handling on the platform)
               const pay = await startPayment(row.id);
               if (pay?.gatewayUrl) {
