@@ -295,3 +295,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS saved_addresses JSONB NOT NULL DEFAUL
 
 -- v4.4: company promotional offers ({pct,label,until}), shown to customers and applied at booking
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS promo JSONB;
+
+-- v4.6: per-service discounts (percent off that one cleaning)
+ALTER TABLE services ADD COLUMN IF NOT EXISTS promo_pct INTEGER;

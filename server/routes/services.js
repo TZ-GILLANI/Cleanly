@@ -32,7 +32,9 @@ router.get("/company/:companyId", requireAuth, requireRole("company"), async (re
 
 /* POST /api/services */
 router.post("/", requireAuth, requireRole("company"), async (req, res) => {
-  const { name, description, icon, priceHuf, minutes, tasks, pricingType, hourlyRateHuf, minHours, maxHours, period } = req.body;
+  const { name, description, icon, priceHuf, minutes, tasks, pricingType, hourlyRateHuf, minHours, maxHours, period, promoPct } = req.body;
+  const promo = promoPct == null || promoPct === 0 || promoPct === "" ? null : parseInt(promoPct, 10);
+  if (promo !== null && (!Number.isFinite(promo) || promo < 1 || promo > 90)) return res.status(400).json({ error: "Discount must be between 1% and 90%" });
   const ptype = pricingType || "flat";
   if (!name) return res.status(400).json({ error: "Name is required" });
   if (ptype === "hourly" && (hourlyRateHuf == null || hourlyRateHuf <= 0)) return res.status(400).json({ error: "Hourly rate is required" });
@@ -42,10 +44,10 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
   try {
     const result = await query(
       `INSERT INTO services
-        (company_id, name, description, icon, price_huf, minutes, tasks, pricing_type, hourly_rate_huf, min_hours, max_hours, period)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        (company_id, name, description, icon, price_huf, minutes, tasks, pricing_type, hourly_rate_huf, min_hours, max_hours, period, promo_pct)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [req.user.companyId, name, description, icon || "🏠", priceHuf || 0, minutes || 120, JSON.stringify(tasks || []),
-       ptype, ptype === "hourly" ? hourlyRateHuf : null, minHours || 2, maxHours || 8, ptype === "subscription" ? period : null]
+       ptype, ptype === "hourly" ? hourlyRateHuf : null, minHours || 2, maxHours || 8, ptype === "subscription" ? period : null, promo]
     );
     res.status(201).json({ service: result.rows[0] });
   } catch (err) {
@@ -56,7 +58,12 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
 
 /* PUT /api/services/:id */
 router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
-  const { name, description, icon, priceHuf, minutes, tasks, isActive, pricingType, hourlyRateHuf, minHours, maxHours, period } = req.body;
+  const { name, description, icon, priceHuf, minutes, tasks, isActive, pricingType, hourlyRateHuf, minHours, maxHours, period, promoPct } = req.body;
+  let promoU;
+  if (promoPct !== undefined) {
+    promoU = promoPct == null || promoPct === 0 || promoPct === "" ? null : parseInt(promoPct, 10);
+    if (promoU !== null && (!Number.isFinite(promoU) || promoU < 1 || promoU > 90)) return res.status(400).json({ error: "Discount must be between 1% and 90%" });
+  }
   try {
     const existing = await query("SELECT company_id FROM services WHERE id = $1", [req.params.id]);
     if (!existing.rows.length) return res.status(404).json({ error: "Service not found" });
@@ -75,10 +82,12 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         hourly_rate_huf = COALESCE($9, hourly_rate_huf),
         min_hours = COALESCE($10, min_hours),
         max_hours = COALESCE($11, max_hours),
-        period = COALESCE($12, period)
+        period = COALESCE($12, period),
+        promo_pct = CASE WHEN $14::int = -1 THEN promo_pct WHEN $14::int = 0 THEN NULL ELSE $14::int END
       WHERE id = $13 RETURNING *`,
       [name, description, icon, priceHuf, minutes, tasks ? JSON.stringify(tasks) : null, isActive,
-       pricingType, hourlyRateHuf, minHours, maxHours, period, req.params.id]
+       pricingType, hourlyRateHuf, minHours, maxHours, period, req.params.id,
+       promoU === undefined ? -1 : (promoU === null ? 0 : promoU)]
     );
     res.json({ service: result.rows[0] });
   } catch (err) {

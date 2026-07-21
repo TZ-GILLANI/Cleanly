@@ -237,6 +237,20 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── per-service discounts + cleaner removal ──");
+const svcPromoSet = await j(`/api/services/${svcId}`, { method: "PUT", token: coTok, body: { promoPct: 30 } });
+ok("company can discount one service", svcPromoSet.status === 200 && svcPromoSet.data.service.promo_pct === 30, JSON.stringify(svcPromoSet.data).slice(0,150));
+const svcPromoBad = await j(`/api/services/${svcId}`, { method: "PUT", token: coTok, body: { promoPct: 95 } });
+ok("service discount above 90% rejected", svcPromoBad.status === 400);
+const spBooking = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-04-01", scheduledSlot: "09:00", address: "Sale utca 2", paymentMethod: "cash_on_completion" } });
+if (spBooking.status === 201) {
+  const b = spBooking.data.booking;
+  const disc = Math.round(20000 * 0.7); // −30% service discount beats everything
+  ok("booking applies the service discount", b.total_huf - b.service_fee_huf === disc, JSON.stringify({ total: b.total_huf, fee: b.service_fee_huf }));
+} else ok("booking with service discount succeeds", false, JSON.stringify(spBooking.data));
+const svcPromoClear = await j(`/api/services/${svcId}`, { method: "PUT", token: coTok, body: { promoPct: 0 } });
+ok("company can clear the service discount", svcPromoClear.status === 200 && !svcPromoClear.data.service.promo_pct);
+
 console.log("\n── security hardening ──");
 const hdr = await fetch(BASE + "/api/health");
 ok("security headers present", hdr.headers.get("x-content-type-options") === "nosniff" && hdr.headers.get("x-frame-options") === "DENY");

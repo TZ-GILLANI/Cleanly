@@ -103,7 +103,8 @@ router.post("/", requireAuth, async (req, res) => {
       return Math.min(Math.max(parseInt(p.pct, 10) || 0, 0), 90);
     })();
     const studPct = customerType === "student" ? (co.student_discount || 0) : 0;
-    const discount = Math.round(gross * Math.max(promo, studPct) / 100); // better of the two, never stacked
+    const svcPromo = Math.min(Math.max(parseInt(svc.promo_pct, 10) || 0, 0), 90);
+    const discount = Math.round(gross * Math.max(promo, studPct, svcPromo) / 100); // best single discount, never stacked
     const companyShare = gross - discount;
     // Cleano service fee is ADDED ON TOP and shown to the customer:
     // company's listed price stays fully theirs.

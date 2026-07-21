@@ -13,10 +13,16 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Branded system bars: navy status + nav bar, light icons — no more gray strip -->
+        <item name="android:statusBarColor">#1B2A6B</item>
+        <item name="android:navigationBarColor">#1B2A6B</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <item name="android:statusBarColor">#1B2A6B</item>
+        <item name="android:navigationBarColor">#1B2A6B</item>
     </style>
 </resources>

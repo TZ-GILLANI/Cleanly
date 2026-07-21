@@ -981,8 +981,8 @@ function ProfileSheet({ close }) {
       <NotificationHistory />
       <ChangePasswordBox />
       <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 14, fontFamily: B, fontSize: 11 }}>
-        <a href={session.role === "company" ? "/partner-terms" : "/terms"} target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Terms", "ÁSZF")}</a>
-        <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Privacy", "Adatkezelés")}</a>
+        <a href={(API_BASE || "") + (session.role === "company" ? "/partner-terms" : "/terms")} target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Terms", "ÁSZF")}</a>
+        <a href={(API_BASE || "") + "/privacy"} target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Privacy", "Adatkezelés")}</a>
       </div>
       <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "20px 0 14px" }} />
       <button onClick={() => setConfirmDelete(true)}
@@ -1239,9 +1239,9 @@ function Auth() {
               <input type="checkbox" checked={f.terms} onChange={(e) => setF({ ...f, terms: e.target.checked })} style={{ marginTop: 3, width: 17, height: 17, accentColor: "#5EE6A8" }} />
               <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.55 }}>
                 {L("I accept the ", "Elfogadom az ")}
-                <a href={role === "company" ? "/partner-terms" : "/terms"} target="_blank" rel="noreferrer" style={{ color: C.navySoft, fontWeight: 700 }}>{role === "company" ? L("Partner Terms", "Partneri ÁSZF-et") : L("Terms of Service", "ÁSZF-et")}</a>
+                <a href={(API_BASE || "") + (role === "company" ? "/partner-terms" : "/terms")} target="_blank" rel="noreferrer" style={{ color: C.navySoft, fontWeight: 700 }}>{role === "company" ? L("Partner Terms", "Partneri ÁSZF-et") : L("Terms of Service", "ÁSZF-et")}</a>
                 {L(" and the ", " és az ")}
-                <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: C.navySoft, fontWeight: 700 }}>{L("Privacy Policy", "Adatkezelési tájékoztatót")}</a>.
+                <a href={(API_BASE || "") + "/privacy"} target="_blank" rel="noreferrer" style={{ color: C.navySoft, fontWeight: 700 }}>{L("Privacy Policy", "Adatkezelési tájékoztatót")}</a>.
               </span>
             </label>
           )}
@@ -1453,7 +1453,8 @@ function BookingFlow({ company, close, onBooked }) {
   const isHourly = svc?.pricing_type === "hourly";
   const isSub = svc?.pricing_type === "subscription";
   const promo = promoOf(company);
-  const discPct = Math.max(promo ? promo.pct : 0, isStudent ? company.student_discount || 0 : 0);
+  const effPct = (s) => Math.max(s && s.promo_pct ? s.promo_pct : 0, promo ? promo.pct : 0, isStudent ? company.student_discount || 0 : 0);
+  const discPct = effPct(svc);
   const stud = (n) => Math.round((n || 0) * discPct / 100);
   const gross = !svc ? 0 : isHourly ? (svc.hourly_rate_huf || 0) * hours : (svc.price_huf || 0);
   const discount = stud(gross);
@@ -1462,7 +1463,7 @@ function BookingFlow({ company, close, onBooked }) {
   const total = companyShare + serviceFee;
   const youPay = (s) => {
     const g = s.pricing_type === "hourly" ? s.hourly_rate_huf : s.price_huf;
-    const d = g - stud(g);
+    const d = g - Math.round((g || 0) * effPct(s) / 100);
     if (s.pricing_type === "hourly") return `${huf(d)}/hr`;
     if (s.pricing_type === "subscription") return `${huf(d)} / ${periodShort(s.period)}`;
     return huf(d);
@@ -1625,7 +1626,7 @@ function BookingFlow({ company, close, onBooked }) {
                 </div>
                 {discPct > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.green, fontWeight: 700, marginTop: 7 }}>
-                    <span>{promo && promo.pct >= (isStudent ? company.student_discount || 0 : 0) ? `${promo.label || L("Offer", "Akció")} (−${discPct}%)` : `${L("Student discount", "Diákkedvezmény")} (−${discPct}%)`}</span><span>−{huf(discount)}</span>
+                    <span>{svc.promo_pct && svc.promo_pct >= discPct ? `${L("Offer", "Akció")} (−${discPct}%)` : promo && promo.pct >= (isStudent ? company.student_discount || 0 : 0) ? `${promo.label || L("Offer", "Akció")} (−${discPct}%)` : `${L("Student discount", "Diákkedvezmény")} (−${discPct}%)`}</span><span>−{huf(discount)}</span>
                   </div>
                 )}
                 {serviceFee > 0 && (
@@ -2379,6 +2380,7 @@ function CompanyServices() {
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{s.description} · ⏱ {s.minutes} min · {(s.tasks || []).length} tasks</div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 <Btn small ghost onClick={() => openEditor(s)}>✏️ Edit</Btn>
+                {s.promo_pct > 0 && <Pill bg={C.mintSoft} color={C.greenDeep}>−{s.promo_pct}%</Pill>}
                 <Btn small ghost onClick={() => { upsertService({ ...s, is_active: !s.is_active }); toast(s.is_active ? "Service hidden" : "Service re-listed"); }} style={{ color: s.is_active ? C.coral : C.green }}>
                   {s.is_active ? "Hide" : "Re-list"}
                 </Btn>
@@ -2397,6 +2399,9 @@ function CompanyServices() {
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Name" placeholder="e.g. Deep clean" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+            </div>
+            <div style={{ width: 110 }}>
+              <Field label="Discount %" type="number" placeholder="0" value={f.promo_pct ?? ""} onChange={(e) => setF({ ...f, promo_pct: e.target.value === "" ? null : Math.min(90, Math.max(0, parseInt(e.target.value, 10) || 0)) })} />
             </div>
           </div>
           <Field label="Description" placeholder="What's included, in one line" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
@@ -2452,7 +2457,8 @@ function CompanyServices() {
 }
 
 function CompanyTeam() {
-  const { employees, invites, bookings, createInvite, deleteInvite, sendNotice, notices, session, deleteNotice } = useStore();
+  const { employees, invites, bookings, createInvite, deleteInvite, sendNotice, notices, session, deleteNotice , removeEmployee } = useStore();
+  const [confirmRm, setConfirmRm] = useState(null);
   const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [showMsg, setShowMsg] = useState(null);
@@ -2496,6 +2502,7 @@ function CompanyTeam() {
           <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
             <Btn small ghost style={{ flex: 1 }} onClick={() => { setShowMsg(m); setMsg(""); }}>💬 Send notice</Btn>
             <Btn small ghost style={{ flex: 1 }}>📋 {bookings.filter((b) => b.assigned_to === m.id && b.status < 4).length} open</Btn>
+            <Btn small ghost style={{ color: C.coral }} onClick={() => setConfirmRm(m)}>Remove</Btn>
           </div>
         </div>
       ))}
@@ -2573,6 +2580,19 @@ function CompanyTeam() {
         );
       })}
 
+      {confirmRm && (
+        <ConfirmDialog
+          title={`Remove ${confirmRm.full_name}?`}
+          body="They lose access to the app, and their unfinished jobs return to the unassigned pool. This cannot be undone."
+          confirmLabel="Remove cleaner"
+          danger
+          onCancel={() => setConfirmRm(null)}
+          onConfirm={async () => {
+            const r = await removeEmployee(confirmRm.id);
+            setConfirmRm(null);
+          }}
+        />
+      )}
       {showMsg && (
         <Sheet title={`Notice to ${showMsg.full_name.split(" ")[0]}`} close={() => setShowMsg(null)}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>

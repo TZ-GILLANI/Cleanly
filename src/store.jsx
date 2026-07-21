@@ -588,10 +588,18 @@ export function StoreProvider({ children }) {
     setDb(d => ({ ...d, notices: [{ id: uid(), company_id: session.companyId, to_employee: employeeId, body, is_read: false, created_at: nowLabel() }, ...d.notices] }));
   };
 
+  const removeEmployee = async (id) => {
+    if (isApiMode) {
+      try { await api("/employees/" + id, { method: "DELETE" }); setDb(d => ({ ...d, employees: d.employees.filter(e => e.id !== id) })); return { ok: true }; }
+      catch (e) { setError(e.message); return { error: e.message }; }
+    }
+    setDb(d => ({ ...d, employees: d.employees.filter(e => e.id !== id) }));
+    return { ok: true };
+  };
   const upsertService = async (svc) => {
     if (isApiMode) {
       try {
-        const body = { name: svc.name, description: svc.description, icon: svc.icon, priceHuf: svc.price_huf, minutes: svc.minutes, tasks: svc.tasks, isActive: svc.is_active, pricingType: svc.pricing_type, hourlyRateHuf: svc.hourly_rate_huf, minHours: svc.min_hours, maxHours: svc.max_hours, period: svc.period };
+        const body = { name: svc.name, description: svc.description, icon: svc.icon, priceHuf: svc.price_huf, minutes: svc.minutes, tasks: svc.tasks, isActive: svc.is_active, pricingType: svc.pricing_type, hourlyRateHuf: svc.hourly_rate_huf, minHours: svc.min_hours, maxHours: svc.max_hours, period: svc.period , promoPct: svc.promo_pct === undefined ? undefined : (svc.promo_pct || 0) };
         if (svc.id) {
           const { service } = await api("/services/" + svc.id, { method: "PUT", body });
           setDb(d => ({ ...d, services: d.services.map(s => s.id === svc.id ? service : s) }));
@@ -833,7 +841,7 @@ export function StoreProvider({ children }) {
     forgotPassword, resetPassword,
     connectStatus, connectOnboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
-    assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService,
+    assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService, removeEmployee,
     adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */

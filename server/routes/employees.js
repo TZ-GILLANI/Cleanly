@@ -76,4 +76,23 @@ router.delete("/invites/:code", requireAuth, requireRole("company"), async (req,
   }
 });
 
+/* DELETE /api/employees/:id — remove a cleaner from the company.
+   Deactivates the account, detaches it from the company, and unassigns
+   any not-yet-completed jobs so they return to the company pool. */
+router.delete("/:id", requireAuth, requireRole("company"), async (req, res) => {
+  try {
+    const emp = await query(
+      "SELECT id, full_name FROM users WHERE id = $1 AND company_id = $2 AND role = 'employee'",
+      [req.params.id, req.user.companyId]
+    );
+    if (!emp.rows.length) return res.status(404).json({ error: "Cleaner not found in your team" });
+    await query("UPDATE bookings SET assigned_to = NULL, status = 0 WHERE assigned_to = $1 AND status IN (1, 2, 3)", [req.params.id]);
+    await query("UPDATE users SET is_active = false, company_id = NULL WHERE id = $1", [req.params.id]);
+    res.json({ ok: true, removed: emp.rows[0].full_name });
+  } catch (err) {
+    console.error("remove employee:", err);
+    res.status(500).json({ error: "Could not remove cleaner" });
+  }
+});
+
 export default router;
