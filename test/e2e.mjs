@@ -295,6 +295,8 @@ const lim2DelCeo = await j(`/api/admin/users/${rootRow.rows[0].id}`, { method: "
 ok("nobody can delete the CEO account", lim2DelCeo.status === 403);
 const lim2Svc = await j(`/api/admin/companies/${coId}/services`, { token: lim2Tok });
 ok("limited admin can view company listings", lim2Svc.status === 200 && Array.isArray(lim2Svc.data.services) && lim2Svc.data.services.length >= 1);
+const roster = await j("/api/admin/users", { token: admTok });
+ok("CEO sees admins in the user list", (roster.data.users || []).some((u) => u.role === "admin" && u.is_super !== true));
 const ceoDelAdmin = await j(`/api/admin/users/${reuse.data.user.id}`, { method: "DELETE", token: admTok });
 ok("CEO can delete an admin account", ceoDelAdmin.data.ok === true);
 

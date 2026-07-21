@@ -3185,6 +3185,7 @@ function AdminUsers() {
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
 
   const filtered = (adminAllUsers || []).filter((u) =>
+    (isCeo || u.role !== "admin") &&
     (u.full_name || "").toLowerCase().includes(q.toLowerCase()) ||
     (u.email || "").toLowerCase().includes(q.toLowerCase())
   );
@@ -3207,7 +3208,9 @@ function AdminUsers() {
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{u.full_name || "—"}</div>
               <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
             </div>
-            <Pill color={roleColor[u.role] || C.navySoft} bg={roleColor[u.role] + "18" || C.navyChip} style={{ textTransform: "capitalize" }}>{u.role}</Pill>
+            {u.role === "admin"
+              ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.navy : C.navyChip}>{u.is_super ? "CEO" : "Admin"}</Pill>
+              : <Pill color={roleColor[u.role] || C.navySoft} bg={roleColor[u.role] + "18" || C.navyChip} style={{ textTransform: "capitalize" }}>{u.role}</Pill>}
           </div>
           {u.company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, marginLeft: 48 }}>🏢 {u.company_name}</div>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
@@ -3235,7 +3238,7 @@ function AdminUsers() {
                 </button>
               </>
             )}
-            {isCeo && ["customer", "employee", "admin"].includes(u.role) && (
+            {isCeo && !u.is_super && ["customer", "employee", "admin"].includes(u.role) && (
               <button onClick={async () => {
                 const res = await adminUpdateUser(u.id, { makeAdmin: u.role !== "admin" });
                 if (res?.error) toast(res.error, "error");
@@ -3244,14 +3247,14 @@ function AdminUsers() {
                 {u.role === "admin" ? "🛡️ Remove admin" : "🛡️ Make admin"}
               </button>
             )}
-            {(u.role !== "admin" || isCeo) && <button onClick={async () => {
+            {(u.role !== "admin" || isCeo) && !u.is_super && <button onClick={async () => {
               const res = await adminUpdateUser(u.id, { is_active: !u.is_active });
               if (res?.error) toast(res.error, "error");
               else { toast(u.is_active === false ? "User activated" : "User deactivated"); adminFetchUsers(); }
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${u.is_active === false ? C.green : C.coral}`, background: C.card, color: u.is_active === false ? C.green : C.coral, cursor: "pointer" }}>
               {u.is_active === false ? "Activate" : "Deactivate"}
             </button>}
-            {(u.role !== "admin" || isCeo) && <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
+            {(u.role !== "admin" || isCeo) && !u.is_super && <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
               🗑️ Delete
             </button>}
           </div>

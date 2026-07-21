@@ -104,12 +104,12 @@ router.put("/companies/:id", ...guard, async (req, res) => {
 router.get("/users", ...guard, async (req, res) => {
   try {
     const result = await query(
-      `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.created_at, u.documents,
+      `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.is_super, u.approval_status, u.created_at, u.documents,
         c.name AS company_name
        FROM users u
        LEFT JOIN companies c ON c.id = u.company_id
-       WHERE u.role != 'admin' AND u.password_hash <> 'account-deleted'
-       ORDER BY u.created_at DESC`
+       WHERE u.password_hash <> 'account-deleted'
+       ORDER BY (u.role = 'admin') DESC, u.created_at DESC`
     );
     res.json({ users: result.rows });
   } catch (err) {
