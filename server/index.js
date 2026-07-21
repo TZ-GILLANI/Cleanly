@@ -30,6 +30,16 @@ const corsOrigins = [
   ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map(o => o.trim()) : []),
 ];
 app.use(cors({ origin: corsOrigins, credentials: true }));
+
+// Baseline security headers (tiny helmet)
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), payment=()");
+  if (process.env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  next();
+});
 // Stripe webhook must read the raw body — register it BEFORE the JSON parser.
 app.post("/api/payments/stripe-webhook", express.raw({ type: "application/json" }), stripeWebhook);
 app.post("/api/payments/simplepay-ipn", express.raw({ type: "application/json" }), simplepayIpn);

@@ -237,6 +237,13 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── security hardening ──");
+const hdr = await fetch(BASE + "/api/health");
+ok("security headers present", hdr.headers.get("x-content-type-options") === "nosniff" && hdr.headers.get("x-frame-options") === "DENY");
+const { rateLimit } = await import("../server/routes/auth.js");
+const rl = [1,2,3,4].map(() => rateLimit("sec-test-key", 3 / 50, 60e3)); // ÷50 offsets the PGMEM multiplier → effective max 3
+ok("rate limiter blocks after the cap", rl[0] === true && rl[3] === false, JSON.stringify(rl));
+
 console.log("\n── company special offers ──");
 const badPromo = await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { promo: { pct: 95 } } });
 ok("offer above 90% rejected", badPromo.status === 400);

@@ -8,7 +8,8 @@ import crypto from "crypto";
 
 /* Tiny in-memory rate limiter (per key, sliding window) — brute-force shield. */
 const _hits = new Map();
-function rateLimit(key, max, windowMs) {
+export function rateLimit(key, max, windowMs) {
+  if (process.env.PGMEM) max = max * 50; // e2e suite hammers from one IP — keep prod limits honest, tests green
   const now = Date.now();
   const arr = (_hits.get(key) || []).filter((t) => now - t < windowMs);
   arr.push(now);
@@ -22,6 +23,7 @@ const router = Router();
 
 /* POST /api/auth/register */
 router.post("/register", async (req, res) => {
+  if (!rateLimit("reg:" + ipOf(req), 6, 60 * 60e3)) return res.status(429).json({ error: "Too many registrations from this network — try again later" });
   const { email, password, role, fullName, customerType, inviteCode, companyName, taxId, regNumber, contactPhone, documents, address, city, phone, termsAccepted } = req.body;
   const normPhone = phone ? String(phone).replace(/[^0-9+]/g, "").slice(0, 20) : null;
   const docsJson = JSON.stringify(Array.isArray(documents) ? documents.slice(0, 6) : []);

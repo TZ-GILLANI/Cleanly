@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { rateLimit } from "./auth.js";
 import { sendEmail, mailerConfigured } from "../lib/mailer.js";
 import crypto from "crypto";
 
@@ -18,6 +19,9 @@ router.get("/config", (req, res) => res.json({ enabled: configured(), emailEnabl
 
 router.post("/start", requireAuth, async (req, res) => {
   if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
+  // SMS costs money — cap sends hard (per user AND per day) against pumping abuse.
+  if (!rateLimit("vstart:" + req.user.id, 3, 10 * 60e3) || !rateLimit("vday:" + req.user.id, 8, 24 * 3600e3))
+    return res.status(429).json({ error: "Too many codes requested — try again later" });
   const { channel } = req.body || {};
   try {
     const me = await query("SELECT phone FROM users WHERE id = $1", [req.user.id]);
@@ -37,6 +41,7 @@ router.post("/start", requireAuth, async (req, res) => {
 });
 
 router.post("/check", requireAuth, async (req, res) => {
+  if (!rateLimit("vcheck:" + req.user.id, 10, 10 * 60e3)) return res.status(429).json({ error: "Too many attempts — try again later" });
   if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
   const { code } = req.body || {};
   if (!code) return res.status(400).json({ error: "Code required" });
@@ -60,6 +65,7 @@ router.post("/check", requireAuth, async (req, res) => {
 
 /* ── Email verification codes (dormant until Resend is configured) ── */
 router.post("/email/start", requireAuth, async (req, res) => {
+  if (!rateLimit("evstart:" + req.user.id, 3, 10 * 60e3)) return res.status(429).json({ error: "Too many codes requested — try again later" });
   if (!mailerConfigured()) return res.status(503).json({ error: "email_not_configured" });
   try {
     const code = String(crypto.randomInt(100000, 999999));
@@ -78,6 +84,7 @@ router.post("/email/start", requireAuth, async (req, res) => {
 });
 
 router.post("/email/check", requireAuth, async (req, res) => {
+  if (!rateLimit("evcheck:" + req.user.id, 10, 10 * 60e3)) return res.status(429).json({ error: "Too many attempts — try again later" });
   const { code } = req.body || {};
   if (!code) return res.status(400).json({ error: "Code required" });
   try {
