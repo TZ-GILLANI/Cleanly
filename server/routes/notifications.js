@@ -49,6 +49,7 @@ router.delete("/", requireAuth, async (req, res) => {
    PUSH ROADMAP: when FCM/OneSignal keys exist, fan the same payload out to
    device tokens right here — one hook point, no client changes needed. */
 router.post("/broadcast", requireAuth, requireRole("admin"), async (req, res) => {
+  if (!req.user.isSuper) return res.status(403).json({ error: "Only the CEO can send announcements" });
   try {
     const title = String(req.body?.title || "").trim();
     const body = String(req.body?.body || "").trim();

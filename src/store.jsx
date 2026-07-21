@@ -802,6 +802,11 @@ export function StoreProvider({ children }) {
     try { await api("/notifications", { method: "DELETE" }); setNotif({ notifications: [], unread: 0 }); }
     catch (e) {}
   };
+  const adminFetchCompanyServices = async (companyId) => {
+    if (!isApiMode) return [];
+    try { const d = await api(`/admin/companies/${companyId}/services`); return d.services || []; }
+    catch (e) { return []; }
+  };
   const adminBroadcast = async (title, body, audience) => {
     if (!isApiMode) return { error: "Live mode only" };
     try { return await api("/notifications/broadcast", { method: "POST", body: { title, body, audience } }); }
@@ -821,7 +826,7 @@ export function StoreProvider({ children }) {
     updateProfile, changePassword, updateCompany,
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
-    fetchNotifications, markNotificationsRead, clearNotifications, adminBroadcast, notifications: notif.notifications, unreadNotif: notif.unread,
+    fetchNotifications, markNotificationsRead, clearNotifications, adminBroadcast, adminFetchCompanyServices, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,

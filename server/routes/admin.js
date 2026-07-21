@@ -39,6 +39,14 @@ router.get("/stats", ...guard, async (req, res) => {
 });
 
 /* GET /api/admin/companies */
+/* GET /api/admin/companies/:id/services — every listing of a company, hidden ones included */
+router.get("/companies/:id/services", ...guard, async (req, res) => {
+  try {
+    const r = await query("SELECT * FROM services WHERE company_id = $1 ORDER BY created_at ASC", [req.params.id]);
+    res.json({ services: r.rows });
+  } catch (err) { res.status(500).json({ error: "Failed to fetch services" }); }
+});
+
 router.get("/companies", ...guard, async (req, res) => {
   try {
     const result = await query(
@@ -130,9 +138,11 @@ router.put("/users/:id", ...guard, async (req, res) => {
       return res.json({ user: u });
     }
     if (makeAdmin !== undefined) {
+      if (!req.user.isSuper) return res.status(403).json({ error: "Only the CEO can grant or remove admin access" });
       if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot change your own admin access" });
-      const target = await query("SELECT role FROM users WHERE id = $1", [req.params.id]);
+      const target = await query("SELECT role, is_super FROM users WHERE id = $1", [req.params.id]);
       if (!target.rows.length) return res.status(404).json({ error: "User not found" });
+      if (target.rows[0].is_super) return res.status(403).json({ error: "The CEO account cannot be modified" });
       if (target.rows[0].role === "company") return res.status(400).json({ error: "Company owners cannot become platform admins" });
       const newRole = makeAdmin ? "admin" : "customer";
       const r = await query("UPDATE users SET role = $1 WHERE id = $2 RETURNING id, role", [newRole, req.params.id]);
@@ -141,6 +151,10 @@ router.put("/users/:id", ...guard, async (req, res) => {
     }
     if (typeof isActive !== "boolean") return res.status(400).json({ error: "isActive must be boolean" });
     if (req.params.id === req.user.id && !isActive) return res.status(400).json({ error: "You cannot deactivate yourself" });
+    const tgt = await query("SELECT role, is_super FROM users WHERE id = $1", [req.params.id]);
+    if (!tgt.rows.length) return res.status(404).json({ error: "User not found" });
+    if (tgt.rows[0].is_super) return res.status(403).json({ error: "The CEO account cannot be deactivated" });
+    if (tgt.rows[0].role === "admin" && !req.user.isSuper) return res.status(403).json({ error: "Only the CEO can deactivate admins" });
     const r = await query("UPDATE users SET is_active = $1 WHERE id = $2 RETURNING id, is_active", [isActive, req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: "User not found" });
     logAdmin(req, isActive ? "user_activated" : "user_deactivated", "user", req.params.id, null);
@@ -190,9 +204,11 @@ router.get("/revenue", ...guard, async (req, res) => {
 router.delete("/users/:id", ...guard, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account here" });
   try {
-    const target = await query("SELECT id, email, full_name, role, company_id FROM users WHERE id = $1", [req.params.id]);
+    const target = await query("SELECT id, email, full_name, role, company_id, is_super FROM users WHERE id = $1", [req.params.id]);
     if (!target.rows.length) return res.status(404).json({ error: "User not found" });
     const u = target.rows[0];
+    if (u.is_super) return res.status(403).json({ error: "The CEO account cannot be deleted from the panel" });
+    if (u.role === "admin" && !req.user.isSuper) return res.status(403).json({ error: "Only the CEO can delete admin accounts" });
     const anonEmail = `deleted-${u.id}-${Date.now()}@deleted.cleanly`;
     await query(
       `UPDATE users SET email = $1, full_name = 'Deleted user', phone = NULL, address = NULL, documents = '[]'::jsonb, password_hash = 'account-deleted', is_active = false WHERE id = $2`,

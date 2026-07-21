@@ -2872,7 +2872,7 @@ function AdminDashboard() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Platform dashboard</div>
-      <AnnouncementComposer />
+      {useStore().session?.isSuper === true && <AnnouncementComposer />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
         {kpis.map((k) => (
@@ -2923,7 +2923,9 @@ function AdminDashboard() {
 }
 
 function AdminCompanies() {
-  const { adminAllCompanies, adminFetchAllCompanies, adminUpdateCompany } = useStore();
+  const { adminAllCompanies, adminFetchAllCompanies, adminUpdateCompany, adminFetchCompanyServices } = useStore();
+  const [svcOpen, setSvcOpen] = useState(null);
+  const openListings = async (co) => setSvcOpen({ name: co.name, list: await adminFetchCompanyServices(co.id) });
   const toast = useToast();
   const [busy, setBusy] = useState(!adminAllCompanies);
   const [viewDocs, setViewDocs] = useState(null);
@@ -2989,6 +2991,9 @@ function AdminCompanies() {
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               {co.is_listed ? "Unlist" : "Re-list"}
             </button>
+            <button onClick={() => openListings(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer", marginRight: 6 }}>
+              Listings
+            </button>
             <button onClick={() => setViewDocs({ title: `${co.name} — documents`, docs: co.documents || [] })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               📄 Docs ({(co.documents || []).length})
             </button>
@@ -2996,6 +3001,22 @@ function AdminCompanies() {
         </div>
       ))}
       {viewDocs && <DocViewer title={viewDocs.title} docs={viewDocs.docs} close={() => setViewDocs(null)} />}
+      {svcOpen && (
+        <Sheet title={`${svcOpen.name} — listings (${svcOpen.list.length})`} close={() => setSvcOpen(null)}>
+          {svcOpen.list.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>This company has no service listings yet.</div>}
+          {svcOpen.list.map((sv) => (
+            <div key={sv.id} style={{ background: C.bg, borderRadius: 14, padding: "12px 14px", marginBottom: 9 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{sv.name}</div>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(sv)}</div>
+              </div>
+              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3 }}>
+                {sv.pricing_type}{sv.is_active ? "" : " · HIDDEN"}{sv.description ? ` · ${String(sv.description).slice(0, 80)}` : ""}
+              </div>
+            </div>
+          ))}
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -3149,7 +3170,8 @@ function AdminComplaints() {
 }
 
 function AdminUsers() {
-  const { adminAllUsers, adminFetchUsers, adminUpdateUser, adminDeleteUser } = useStore();
+  const { adminAllUsers, adminFetchUsers, adminUpdateUser, adminDeleteUser , session } = useStore();
+  const isCeo = session?.isSuper === true;
   const toast = useToast();
   const [busy, setBusy] = useState(!adminAllUsers);
   const [q, setQ] = useState("");
@@ -3213,7 +3235,7 @@ function AdminUsers() {
                 </button>
               </>
             )}
-            {["customer", "employee", "admin"].includes(u.role) && (
+            {isCeo && ["customer", "employee", "admin"].includes(u.role) && (
               <button onClick={async () => {
                 const res = await adminUpdateUser(u.id, { makeAdmin: u.role !== "admin" });
                 if (res?.error) toast(res.error, "error");
@@ -3222,16 +3244,16 @@ function AdminUsers() {
                 {u.role === "admin" ? "🛡️ Remove admin" : "🛡️ Make admin"}
               </button>
             )}
-            <button onClick={async () => {
+            {(u.role !== "admin" || isCeo) && <button onClick={async () => {
               const res = await adminUpdateUser(u.id, { is_active: !u.is_active });
               if (res?.error) toast(res.error, "error");
               else { toast(u.is_active === false ? "User activated" : "User deactivated"); adminFetchUsers(); }
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${u.is_active === false ? C.green : C.coral}`, background: C.card, color: u.is_active === false ? C.green : C.coral, cursor: "pointer" }}>
               {u.is_active === false ? "Activate" : "Deactivate"}
-            </button>
-            <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
+            </button>}
+            {(u.role !== "admin" || isCeo) && <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
               🗑️ Delete
-            </button>
+            </button>}
           </div>
         </div>
       ))}

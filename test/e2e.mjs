@@ -281,5 +281,22 @@ const emptyFeed = await j("/api/notifications", { token: annaTok });
 ok("notifications auto-expire after 48h", !(emptyFeed.data.notifications || []).some((n) => n.title === "Stale promo"));
 ok("notification history is empty after clearing", (emptyFeed.data.notifications || []).length === 0 && emptyFeed.data.unread === 0);
 
+console.log("\n── CEO vs limited admin powers ──");
+const grant = await j(`/api/admin/users/${reuse.data.user.id}`, { method: "PUT", token: admTok, body: { makeAdmin: true } });
+ok("CEO can grant admin", grant.status === 200 && grant.data.user.role === "admin");
+const lim2Login = await j("/api/auth/login", { method: "POST", body: { email: "reuse@test.hu", password: "secret123" } });
+const lim2Tok = lim2Login.data.token;
+const lim2Grant = await j(`/api/admin/users/${pendingUser.rows[0].id}`, { method: "PUT", token: lim2Tok, body: { makeAdmin: true } });
+ok("limited admin cannot grant admin", lim2Grant.status === 403);
+const lim2Bcast = await j("/api/notifications/broadcast", { method: "POST", token: lim2Tok, body: { title: "Sneaky promo", audience: "all" } });
+ok("limited admin cannot send announcements", lim2Bcast.status === 403);
+const rootRow = await query("SELECT id FROM users WHERE email = 'root@cleanly.hu'");
+const lim2DelCeo = await j(`/api/admin/users/${rootRow.rows[0].id}`, { method: "DELETE", token: lim2Tok });
+ok("nobody can delete the CEO account", lim2DelCeo.status === 403);
+const lim2Svc = await j(`/api/admin/companies/${coId}/services`, { token: lim2Tok });
+ok("limited admin can view company listings", lim2Svc.status === 200 && Array.isArray(lim2Svc.data.services) && lim2Svc.data.services.length >= 1);
+const ceoDelAdmin = await j(`/api/admin/users/${reuse.data.user.id}`, { method: "DELETE", token: admTok });
+ok("CEO can delete an admin account", ceoDelAdmin.data.ok === true);
+
 console.log(`\n════ RESULT: ${passed} passed, ${failed} failed ════`);
 process.exit(failed ? 1 : 0);
