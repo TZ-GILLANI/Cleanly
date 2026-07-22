@@ -36,13 +36,9 @@ workflows:
       - name: Archive (automatic signing)
         script: |
           set -e
-          mkdir -p "$HOME/private_keys"
-          KEY="$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
-          # Codemagic may hand us the key raw, with escaped newlines, or base64 — normalise all three
-          printf '%b' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEY"
-          if ! grep -q "BEGIN" "$KEY"; then printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | base64 --decode > "$KEY" 2>/dev/null || true; fi
-          if ! grep -q "BEGIN" "$KEY"; then printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEY"; fi
-          echo "=== key check: $(wc -c < "$KEY") bytes, first line: $(head -1 "$KEY") ==="
+          # Codemagic already placed the API key on disk; the env var is a "@file:<path>" reference
+          KEY="${APP_STORE_CONNECT_PRIVATE_KEY#@file:}"
+          echo "=== using key at: $KEY ($(wc -c < "$KEY" 2>/dev/null) bytes) ==="
           xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
             -archivePath build/App.xcarchive \
             -destination 'generic/platform=iOS' \
@@ -55,7 +51,7 @@ workflows:
             archive
       - name: Export IPA
         script: |
-          KEY="$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
+          KEY="${APP_STORE_CONNECT_PRIVATE_KEY#@file:}"
           mkdir -p build/ios/ipa
           xcodebuild -exportArchive \
             -archivePath build/App.xcarchive \
