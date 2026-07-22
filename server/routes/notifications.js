@@ -35,6 +35,16 @@ router.put("/:id/read", requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed" }); }
 });
 
+/* POST /api/notifications/push-token — device registers for real push */
+router.post("/push-token", requireAuth, async (req, res) => {
+  try {
+    const token = String(req.body?.token || "").slice(0, 512);
+    if (!token) return res.status(400).json({ error: "token required" });
+    await query("UPDATE users SET push_token = $1 WHERE id = $2", [token, req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: "Could not save push token" }); }
+});
+
 /* DELETE /api/notifications — clear the current user's notification history */
 router.delete("/", requireAuth, async (req, res) => {
   try {

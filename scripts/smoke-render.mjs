@@ -16,8 +16,10 @@ global.getComputedStyle = dom.window.getComputedStyle;
 global.CustomEvent = dom.window.CustomEvent;
 window.requestAnimationFrame = global.requestAnimationFrame;
 process.on("uncaughtException", (e) => { console.log("CRASH:", e.message); console.log((e.stack||"").split("\n").slice(0,4).join("\n")); process.exit(1); });
-const file = fs.readdirSync("dist/assets").find(f => f.endsWith(".js"));
-await import(process.cwd() + "/dist/assets/" + file);
+// The bundle is code-split (Capacitor push chunks) — load the REAL entry from index.html, like a browser.
+const htmlSrc = fs.readFileSync("dist/index.html", "utf8");
+const entry = (htmlSrc.match(/src="\/assets\/([^"]+\.js)"/) || [])[1] || fs.readdirSync("dist/assets").find(f => f.startsWith("index-") && f.endsWith(".js"));
+await import(process.cwd() + "/dist/assets/" + entry);
 await new Promise(r => setTimeout(r, 500));
 const html = document.getElementById("root").innerHTML;
 console.log(html ? "RENDERED OK — " + html.replace(/<[^>]+>/g, " ").trim().slice(0, 120) : "EMPTY ROOT = white page reproduced");

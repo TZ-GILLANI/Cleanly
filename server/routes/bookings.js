@@ -3,6 +3,7 @@ import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { refundBookingPayment } from "./payments.js";
 import { notify } from "../lib/notify.js";
+import { sendEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -127,6 +128,21 @@ router.post("/", requireAuth, async (req, res) => {
       [req.user.id, companyId, serviceId, JSON.stringify(snapshot), scheduledDate, scheduledSlot, address, note || null,
        customerType, total, serviceFee, svc.pricing_type, effHours, svc.pricing_type === "subscription" ? svc.period : null, orderNo]
     );
+    const nb = result.rows[0];
+    // Tell the company immediately: in-app banner + email (works while app is closed)
+    (async () => {
+      try {
+        const oc = await query("SELECT u.id AS owner_id, u.email, c.name FROM companies c JOIN users u ON u.id = c.owner_id WHERE c.id = $1", [companyId]);
+        if (oc.rows[0]) {
+          await notify(oc.rows[0].owner_id, "booking", `New booking #${orderNo} 🧹`, `${svc.name} · ${scheduledDate} ${scheduledSlot} · ${huf(total)} Ft`, nb.id);
+          sendEmail(oc.rows[0].email, `New Cleano booking #${orderNo} — ${svc.name}`,
+            `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">New booking! 🐙</h2>
+             <p><b>${svc.name}</b><br/>${scheduledDate} at ${scheduledSlot}<br/>${String(address).slice(0, 120)}</p>
+             <p>Total to you: <b>${huf(total - serviceFee)} Ft</b></p>
+             <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Cleano and assign a cleaner</a></p></div>`);
+        }
+      } catch (e) { console.error("booking notify:", e.message); }
+    })();
     res.status(201).json({ booking: result.rows[0] });
   } catch (err) {
     console.error(err);
@@ -149,6 +165,7 @@ function nextOccurrence(dateStr, period) {
   return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
 }
 
+const huf = (n) => new Intl.NumberFormat("hu-HU").format(Math.round(n || 0));
 const VALID_STATUSES = [0, 1, 2, 3, 4, 8, 9];
 
 /* PUT /api/bookings/:id/status */
@@ -255,6 +272,20 @@ router.put("/:id/assign", requireAuth, async (req, res) => {
       "UPDATE bookings SET assigned_to = $1, status = $2 WHERE id = $3 RETURNING *",
       [employeeId, newStatus, req.params.id]
     );
+    const ab = result.rows[0];
+    if (employeeId) {
+      const when = `${ab.scheduled_date instanceof Date ? ab.scheduled_date.toISOString().slice(0, 10) : ab.scheduled_date} ${ab.scheduled_slot}`;
+      notify(employeeId, "assigned", "New job for you 🧹", `${ab.service_snapshot?.name || "Cleaning"} · ${when}`, ab.id).catch(() => {});
+      (async () => {
+        try {
+          const emp = await query("SELECT email, full_name FROM users WHERE id = $1", [employeeId]);
+          if (emp.rows[0]) sendEmail(emp.rows[0].email, `New Cleano job — ${when}`,
+            `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">You have a new job, ${emp.rows[0].full_name}! 🧹</h2>
+             <p><b>${ab.service_snapshot?.name || "Cleaning"}</b><br/>${when}<br/>${String(ab.address || "").slice(0, 120)}</p>
+             <p><a href="${process.env.PUBLIC_BASE_URL || "https://cleanly-2x9z.onrender.com"}" style="background:#1B2A6B;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Cleano — see the details</a></p></div>`);
+        } catch (e) { console.error("assign email:", e.message); }
+      })();
+    }
     res.json({ booking: result.rows[0] });
   } catch (err) {
     console.error(err);

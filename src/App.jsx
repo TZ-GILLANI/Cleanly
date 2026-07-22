@@ -2,7 +2,8 @@ import React, { useState, useMemo, useContext, createContext, useCallback } from
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
 import { xl } from "./lib/translations.js";
-import { API_BASE } from "./lib/api.js";
+import { initPush } from "./lib/push.js";
+import { API_BASE, getToken } from "./lib/api.js";
 
 /* ── Theme: follows the phone's light/dark mode automatically ── */
 const LIGHT = {
@@ -3497,6 +3498,11 @@ function Shell() {
   }, []);
   applyTheme(dark);
   React.useEffect(() => { document.body.style.background = C.shell; }, [dark]);
+  // 🔔 register this device for real push notifications once logged in (native app only)
+  React.useEffect(() => {
+    const tok = getToken();
+    if (session && tok) initPush(tok);
+  }, [session?.userId]);
   const [tab, setTab] = useState("home");
   const [bookingCo, setBookingCo] = useState(null);
   const [justBooked, setJustBooked] = useState(false);

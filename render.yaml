@@ -48,3 +48,6 @@ services:
         sync: false
       - key: COMMISSION_PCT
         value: "10"
+      # ── Real push notifications (Firebase) — base64 of the service-account JSON
+      - key: FIREBASE_SERVICE_ACCOUNT_B64
+        sync: false

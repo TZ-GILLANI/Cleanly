@@ -237,6 +237,18 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── push token registry ──");
+const ptSave = await j("/api/notifications/push-token", { method: "POST", token: coTok, body: { token: "fcm-test-token-abc123" } });
+ok("device can register its push token", ptSave.data.ok === true);
+const ptRow = await query("SELECT push_token FROM users WHERE id = (SELECT owner_id FROM companies WHERE id = $1)", [coId]);
+ok("push token stored on the user", ptRow.rows[0].push_token === "fcm-test-token-abc123");
+const ptEmpty = await j("/api/notifications/push-token", { method: "POST", token: coTok, body: {} });
+ok("empty token rejected", ptEmpty.status === 400);
+
+console.log("\n── booking alerts to company ──");
+const coFeed = await j("/api/notifications", { token: coTok });
+ok("company got a new-booking notification", (coFeed.data.notifications || []).some((n) => n.type === "booking" && /New booking #/.test(n.title)), JSON.stringify((coFeed.data.notifications || []).slice(0,2)));
+
 console.log("\n── student-switch fraud protection ──");
 const sneaky = await j("/api/auth/profile", { method: "PUT", token: reuse.data.token, body: { customerType: "student" } });
 ok("switching to student without a card is rejected", sneaky.status === 400);

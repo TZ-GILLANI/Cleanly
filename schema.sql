@@ -301,3 +301,6 @@ ALTER TABLE services ADD COLUMN IF NOT EXISTS promo_pct INTEGER;
 
 -- v4.6.1: resident→student switch requires card verification (no self-service discount)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS student_upgrade BOOLEAN NOT NULL DEFAULT false;
+
+-- v4.7: FCM device token for real phone push notifications
+ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;
