@@ -33,34 +33,19 @@ workflows:
           cp ios-config/App.entitlements ios/App/App/App.entitlements
       - name: Install CocoaPods
         script: cd ios/App && pod install
-      - name: Archive (automatic signing)
+      - name: Build & sign IPA (App Store distribution)
         script: |
           set -e
-          # Codemagic already placed the API key on disk; the env var is a "@file:<path>" reference
-          KEY="${APP_STORE_CONNECT_PRIVATE_KEY#@file:}"
-          echo "=== using key at: $KEY ($(wc -c < "$KEY" 2>/dev/null) bytes) ==="
-          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
-            -archivePath build/App.xcarchive \
-            -destination 'generic/platform=iOS' \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$KEY" \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM=DAS6RZC3A8 \
-            CODE_SIGN_STYLE=Automatic \
-            archive
-      - name: Export IPA
-        script: |
-          KEY="${APP_STORE_CONNECT_PRIVATE_KEY#@file:}"
-          mkdir -p build/ios/ipa
-          xcodebuild -exportArchive \
-            -archivePath build/App.xcarchive \
-            -exportOptionsPlist ios-config/ExportOptions.plist \
-            -exportPath build/ios/ipa \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$KEY" \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          keychain initialize
+          # create the App Store DISTRIBUTION certificate + profile (no devices needed) using the ASC key
+          app-store-connect fetch-signing-files "com.cleano.app" \
+            --type IOS_APP_STORE \
+            --create \
+            --verbose
+          keychain add-certificates
+          # apply the distribution profile to the project, then archive + export in the same shell
+          xcode-project use-profiles --verbose
+          xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
