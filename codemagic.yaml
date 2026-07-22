@@ -36,7 +36,13 @@ workflows:
       - name: Write App Store Connect API key for Xcode
         script: |
           mkdir -p "$HOME/private_keys"
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
+          KEYFILE="$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
+          # write the PEM key; convert any escaped \\n into real newlines so Xcode can parse it
+          printf '%b' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEYFILE"
+          if ! head -1 "$KEYFILE" | grep -q "BEGIN"; then
+            printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEYFILE"
+          fi
+          echo "key bytes: $(wc -c < "$KEYFILE") | first line: $(head -1 "$KEYFILE")"
       - name: Archive (automatic signing — Xcode creates cert + profile)
         script: |
           KEY="$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
