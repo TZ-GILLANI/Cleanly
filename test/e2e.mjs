@@ -237,6 +237,20 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── student-switch fraud protection ──");
+const sneaky = await j("/api/auth/profile", { method: "PUT", token: reuse.data.token, body: { customerType: "student" } });
+ok("switching to student without a card is rejected", sneaky.status === 400);
+const withCard = await j("/api/auth/profile", { method: "PUT", token: reuse.data.token, body: { customerType: "student", documents: [{ name: "card.jpg", type: "image/jpeg", data: "data:image/jpeg;base64,x" }] } });
+ok("switch with card accepted as a REQUEST", withCard.status === 200);
+const afterReq = await query("SELECT customer_type, student_upgrade FROM users WHERE id = $1", [reuse.data.user.id]);
+ok("still resident until admin approves", afterReq.rows[0].customer_type === "resident" && afterReq.rows[0].student_upgrade === true, JSON.stringify(afterReq.rows[0]));
+const upDecide = await j(`/api/admin/users/${reuse.data.user.id}`, { method: "PUT", token: admTok, body: { upgradeDecision: "approve" } });
+ok("admin approves the upgrade", upDecide.status === 200);
+const afterOk = await query("SELECT customer_type, student_upgrade FROM users WHERE id = $1", [reuse.data.user.id]);
+ok("now a verified student", afterOk.rows[0].customer_type === "student" && afterOk.rows[0].student_upgrade === false);
+const downgrade = await j("/api/auth/profile", { method: "PUT", token: reuse.data.token, body: { customerType: "resident" } });
+ok("downgrade to resident is instant (no fraud risk)", downgrade.status === 200);
+
 console.log("\n── per-service discounts + cleaner removal ──");
 const svcPromoSet = await j(`/api/services/${svcId}`, { method: "PUT", token: coTok, body: { promoPct: 30 } });
 ok("company can discount one service", svcPromoSet.status === 200 && svcPromoSet.data.service.promo_pct === 30, JSON.stringify(svcPromoSet.data).slice(0,150));

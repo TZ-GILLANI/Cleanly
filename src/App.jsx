@@ -884,12 +884,16 @@ function ProfileSheet({ close }) {
   const { session, updateProfile, deleteAccount, logout, t, lang, setLang } = useStore();
   const toast = useToast();
   const [f, setF] = useState({ name: session.name || "", phone: session.phone || "", custType: session.custType || "student", address: session.address || "", paymentMethod: session.paymentMethod || "cash", documents: session.documents || [] });
+  const wantsUpgrade = session.role === "customer" && session.custType !== "student" && f.custType === "student";
+  const [upgradeDocs, setUpgradeDocs] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
-    const res = await updateProfile({ full_name: f.name, phone: f.phone, ...(session.role === "customer" ? { customer_type: f.custType, address: f.address, payment_method: f.paymentMethod } : {}), ...(session.role === "employee" ? { documents: f.documents } : {}) });
+    if (wantsUpgrade && upgradeDocs.length === 0) { toast(L("Upload your student card photo first", "Előbb töltsd fel a diákigazolvány fotóját"), "error"); return; }
+    const res = await updateProfile({ full_name: f.name, phone: f.phone, ...(session.role === "customer" ? { customer_type: f.custType, address: f.address, payment_method: f.paymentMethod, ...(wantsUpgrade ? { documents: upgradeDocs } : {}) } : {}), ...(session.role === "employee" ? { documents: f.documents } : {}) });
+    if (!res?.error && wantsUpgrade) { toast(L("Card sent for verification — discount activates once approved 🎓", "Igazolvány beküldve — a kedvezmény jóváhagyás után aktiválódik 🎓")); }
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else { toast(t("profile.updated")); close(); }
@@ -924,6 +928,13 @@ function ProfileSheet({ close }) {
               </button>
             ))}
           </div>
+          {wantsUpgrade && (
+            <div style={{ marginTop: 10, background: C.amberSoft, borderRadius: 14, padding: "12px 14px" }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 6 }}>{L("Student card photo required", "Diákigazolvány fotó szükséges")}</div>
+              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>{L("Our team verifies it — the discount activates after approval.", "Csapatunk ellenőrzi — a kedvezmény jóváhagyás után aktiválódik.")}</div>
+              <DocUpload docs={upgradeDocs} onChange={setUpgradeDocs} label={L("Student card", "Diákigazolvány")} />
+            </div>
+          )}
         </div>
       )}
 
@@ -3238,6 +3249,25 @@ function AdminUsers() {
               <button onClick={() => setViewDocs({ title: `${u.full_name} — documents`, docs: u.documents })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
                 🪪 Docs ({u.documents.length})
               </button>
+            )}
+            {u.student_upgrade && (
+              <>
+                <Pill bg={C.amberSoft} color={C.amber}>🎓 Upgrade requested</Pill>
+                <button onClick={async () => {
+                  const res = await adminUpdateUser(u.id, { upgradeDecision: "approve" });
+                  if (res?.error) toast(res.error, "error");
+                  else { toast("Student discount activated for them 🎓"); adminFetchUsers(); }
+                }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.green}`, background: C.card, color: C.green, cursor: "pointer" }}>
+                  ✓ Approve card
+                </button>
+                <button onClick={async () => {
+                  const res = await adminUpdateUser(u.id, { upgradeDecision: "reject" });
+                  if (res?.error) toast(res.error, "error");
+                  else { toast("Upgrade declined"); adminFetchUsers(); }
+                }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.card, color: C.coral, cursor: "pointer" }}>
+                  ✕ Decline
+                </button>
+              </>
             )}
             {u.approval_status === "pending" && (
               <>

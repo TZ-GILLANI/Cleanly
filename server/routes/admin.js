@@ -104,7 +104,7 @@ router.put("/companies/:id", ...guard, async (req, res) => {
 router.get("/users", ...guard, async (req, res) => {
   try {
     const result = await query(
-      `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.is_super, u.approval_status, u.created_at, u.documents,
+      `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.is_super, u.approval_status, u.student_upgrade, u.customer_type, u.created_at, u.documents,
         c.name AS company_name
        FROM users u
        LEFT JOIN companies c ON c.id = u.company_id
@@ -119,7 +119,27 @@ router.get("/users", ...guard, async (req, res) => {
 
 /* PUT /api/admin/users/:id */
 router.put("/users/:id", ...guard, async (req, res) => {
-  const { isActive, makeAdmin, approvalStatus } = req.body || {};
+  const { isActive, makeAdmin, approvalStatus, upgradeDecision } = req.body || {};
+  try {
+    if (upgradeDecision !== undefined) {
+      if (!["approve", "reject"].includes(upgradeDecision)) return res.status(400).json({ error: "Invalid decision" });
+      const r = await query(
+        upgradeDecision === "approve"
+          ? "UPDATE users SET customer_type = 'student', student_upgrade = false WHERE id = $1 AND student_upgrade = true RETURNING id, email, full_name"
+          : "UPDATE users SET student_upgrade = false WHERE id = $1 AND student_upgrade = true RETURNING id, email, full_name",
+        [req.params.id]
+      );
+      if (!r.rows.length) return res.status(404).json({ error: "No upgrade request on this user" });
+      const u = r.rows[0];
+      logAdmin(req, upgradeDecision === "approve" ? "student_upgrade_approved" : "student_upgrade_rejected", "user", u.id, `${u.full_name} (${u.email})`);
+      notify(u.id, "approval", upgradeDecision === "approve" ? "Student discount activated 🎓" : "Student verification declined",
+        upgradeDecision === "approve" ? "Your student card is verified — student pricing is now live on your account. Log out and back in to see it." : "We could not verify your student card. You can try again with a clearer photo.", null);
+      if (upgradeDecision === "approve") sendEmail(u.email, "Your Cleano student discount is active 🎓",
+        `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">Verified, ${u.full_name}! 🐙</h2><p>Your student card checked out — student pricing is now active. Log out and back in, then book away.</p></div>`);
+      return res.json({ user: u });
+    }
+  } catch (err) { console.error(err); return res.status(500).json({ error: "Failed to update user" }); }
+
   try {
     if (approvalStatus !== undefined) {
       if (!["approved", "rejected", "pending"].includes(approvalStatus)) return res.status(400).json({ error: "Invalid approval status" });

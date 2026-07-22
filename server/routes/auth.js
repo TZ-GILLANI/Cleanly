@@ -157,6 +157,19 @@ router.get("/me", requireAuth, async (req, res) => {
 /* PUT /api/auth/profile */
 router.put("/profile", requireAuth, async (req, res) => {
   const { fullName, phone, customerType, address, paymentMethod, lang, documents, savedAddresses } = req.body;
+  // SECURITY: nobody self-upgrades to the student discount. Switching to
+  // student stores the card + flags the account for admin review instead.
+  let custTypeParam = customerType;
+  let upgradeRequested = false;
+  if (customerType === "student") {
+    const cur = await query("SELECT customer_type FROM users WHERE id = $1", [req.user.id]);
+    if (cur.rows[0]?.customer_type !== "student") {
+      if (!(Array.isArray(documents) && documents.length >= 1))
+        return res.status(400).json({ error: "Upload a photo of your student card — our team verifies it before the discount activates." });
+      custTypeParam = null; // stay resident until approved
+      upgradeRequested = true;
+    }
+  }
   try {
     if (phone) {
       const np = String(phone).replace(/[^0-9+]/g, "").slice(0, 20);
@@ -174,10 +187,12 @@ router.put("/profile", requireAuth, async (req, res) => {
         documents = COALESCE($7, documents),
         saved_addresses = COALESCE($9, saved_addresses)
       WHERE id = $8 RETURNING *`,
-      [fullName, phone, customerType, address, paymentMethod, lang,
+      [fullName, phone, custTypeParam, address, paymentMethod, lang,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, req.user.id,
        Array.isArray(savedAddresses) ? JSON.stringify(savedAddresses.slice(0, 12)) : null]
     );
+    if (upgradeRequested) await query("UPDATE users SET student_upgrade = true WHERE id = $1", [req.user.id]);
+    if (customerType === "resident") await query("UPDATE users SET student_upgrade = false WHERE id = $1", [req.user.id]);
     res.json({ user: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: "Failed to update profile" });
