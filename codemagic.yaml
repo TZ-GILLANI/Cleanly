@@ -50,7 +50,7 @@ workflows:
             --certificate-key @file:/tmp/dist_key.pem \
             --create \
             --verbose
-          keychain add-certificates --certificate-key @file:/tmp/dist_key.pem
+          keychain add-certificates
           xcode-project use-profiles --verbose
           xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
     artifacts:
