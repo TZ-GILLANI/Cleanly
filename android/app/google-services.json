@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "571157047307",
+    "project_id": "cleano-234b5",
+    "storage_bucket": "cleano-234b5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:571157047307:android:de1377b238241e0102ff0e",
+        "android_client_info": {
+          "package_name": "com.cleano.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD-NzAxF3ZcXWFdO2q8FAXx9zvOg4f_O2w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
