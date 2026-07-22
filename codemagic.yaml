@@ -33,17 +33,7 @@ workflows:
           plutil -replace NSLocationWhenInUseUsageDescription -string "Cleano uses your location to fill in your address when booking a cleaning." ios/App/App/Info.plist
       - name: Enable push notifications capability
         script: |
-          # add aps-environment to the app entitlements so iOS push works
-          ENT=ios/App/App/App.entitlements
-          if [ ! -f "$ENT" ]; then
-            cat > "$ENT" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>aps-environment</key><string>production</string>
-</dict></plist>
-PLIST
-          fi
+          cp ios-config/App.entitlements ios/App/App/App.entitlements
       - name: Set up code signing
         script: xcode-project use-profiles
       - name: Build IPA
