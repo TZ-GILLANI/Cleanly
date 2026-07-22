@@ -28,6 +28,8 @@ workflows:
       - name: iOS permission strings
         script: |
           plutil -replace NSLocationWhenInUseUsageDescription -string "Cleano uses your location to fill in your address when booking a cleaning." ios/App/App/Info.plist
+          # Apple requires an encryption-usage declaration for every upload; Cleano uses only standard HTTPS (exempt)
+          plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
       - name: Enable push notifications capability
         script: |
           cp ios-config/App.entitlements ios/App/App/App.entitlements
