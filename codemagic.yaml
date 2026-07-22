@@ -13,6 +13,9 @@ workflows:
       node: 20
       xcode: latest
       cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.cleano.app
     scripts:
       - name: Install dependencies
         script: npm ci || npm install
@@ -31,21 +34,16 @@ workflows:
       - name: Enable push notifications capability
         script: |
           cp ios-config/App.entitlements ios/App/App/App.entitlements
+      - name: Ensure signing files exist
+        script: |
+          # create the distribution certificate + App Store profile if they don't exist yet
+          app-store-connect fetch-signing-files "com.cleano.app" --type IOS_APP_STORE --create
       - name: Install CocoaPods
-        script: |
-          cd ios/App && pod install
-      - name: Build & sign IPA
-        script: |
-          keychain initialize
-          # create (or fetch) the distribution certificate + App Store profile for this app
-          app-store-connect fetch-signing-files "com.cleano.app" \
-            --type IOS_APP_STORE \
-            --create \
-            --verbose
-          keychain add-certificates
-          # apply the profile to the Xcode project, then archive — same step so nothing resets
-          xcode-project use-profiles --verbose
-          xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
+        script: cd ios/App && pod install
+      - name: Apply signing to Xcode project
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
