@@ -13,9 +13,6 @@ workflows:
       node: 20
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cleano.app
     scripts:
       - name: Install dependencies
         script: npm ci || npm install
@@ -34,16 +31,37 @@ workflows:
       - name: Enable push notifications capability
         script: |
           cp ios-config/App.entitlements ios/App/App/App.entitlements
-      - name: Ensure signing files exist
-        script: |
-          # create the distribution certificate + App Store profile if they don't exist yet
-          app-store-connect fetch-signing-files "com.cleano.app" --type IOS_APP_STORE --create
       - name: Install CocoaPods
         script: cd ios/App && pod install
-      - name: Apply signing to Xcode project
-        script: xcode-project use-profiles
-      - name: Build IPA
-        script: xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
+      - name: Write App Store Connect API key for Xcode
+        script: |
+          mkdir -p "$HOME/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
+      - name: Archive (automatic signing — Xcode creates cert + profile)
+        script: |
+          KEY="$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
+            -archivePath build/App.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM=DAS6RZC3A8 \
+            CODE_SIGN_STYLE=Automatic \
+            archive
+      - name: Export IPA
+        script: |
+          KEY="$HOME/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_IDENTIFIER.p8"
+          mkdir -p build/ios/ipa
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportOptionsPlist ios-config/ExportOptions.plist \
+            -exportPath build/ios/ipa \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
