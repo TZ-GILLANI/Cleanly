@@ -31,17 +31,21 @@ workflows:
       - name: Enable push notifications capability
         script: |
           cp ios-config/App.entitlements ios/App/App/App.entitlements
-      - name: Set up code signing
+      - name: Install CocoaPods
+        script: |
+          cd ios/App && pod install
+      - name: Build & sign IPA
         script: |
           keychain initialize
-          # create the distribution certificate + App Store provisioning profile automatically
+          # create (or fetch) the distribution certificate + App Store profile for this app
           app-store-connect fetch-signing-files "com.cleano.app" \
             --type IOS_APP_STORE \
-            --create
+            --create \
+            --verbose
           keychain add-certificates
-          xcode-project use-profiles
-      - name: Build IPA
-        script: xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
+          # apply the profile to the Xcode project, then archive — same step so nothing resets
+          xcode-project use-profiles --verbose
+          xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
