@@ -4,7 +4,7 @@
 # (Teams → Integrations → App Store Connect; Code signing identities).
 workflows:
   ios-appstore:
-    name: Cleanly iOS (App Store)
+    name: Cleano iOS (App Store)
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
@@ -15,7 +15,7 @@ workflows:
       cocoapods: default
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.cleanly.app
+        bundle_identifier: com.cleano.app
     scripts:
       - name: Install dependencies
         script: npm ci || npm install
@@ -25,9 +25,25 @@ workflows:
         script: |
           npx cap add ios || true
           npx cap sync ios
+      - name: Firebase iOS config
+        script: |
+          cp ios-config/GoogleService-Info.plist ios/App/App/GoogleService-Info.plist
       - name: iOS permission strings
         script: |
-          plutil -replace NSLocationWhenInUseUsageDescription -string "Cleanly uses your location to fill in your address when booking a cleaning." ios/App/App/Info.plist
+          plutil -replace NSLocationWhenInUseUsageDescription -string "Cleano uses your location to fill in your address when booking a cleaning." ios/App/App/Info.plist
+      - name: Enable push notifications capability
+        script: |
+          # add aps-environment to the app entitlements so iOS push works
+          ENT=ios/App/App/App.entitlements
+          if [ ! -f "$ENT" ]; then
+            cat > "$ENT" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>aps-environment</key><string>production</string>
+</dict></plist>
+PLIST
+          fi
       - name: Set up code signing
         script: xcode-project use-profiles
       - name: Build IPA
@@ -40,7 +56,7 @@ workflows:
         submit_to_testflight: true
 
   android-playstore:
-    name: Cleanly Android (Play Store bundle)
+    name: Cleano Android (Play Store bundle)
     instance_type: linux_x2
     max_build_duration: 60
     environment:

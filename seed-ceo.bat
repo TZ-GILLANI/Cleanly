@@ -12,7 +12,7 @@ echo  Paste the Supabase connection string (URI with your password in it):
 set /p DATABASE_URL=  DATABASE_URL:
 set ADMIN_EMAIL=musagillani@tzmanufacturing.com
 set /p ADMIN_PASSWORD=  Choose CEO password (min 10 chars):
-if not exist node_modules call npm install --no-audit --no-fund
+call npm install --no-audit --no-fund
 node server/seed-prod.js
 echo.
 echo  Done. Log in at https://cleanly-2x9z.onrender.com with the email above.

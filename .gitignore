@@ -7,3 +7,4 @@ android/.gradle/
 ios/App/Pods/
 .idea/
 *.iml
+ios-config/secret/

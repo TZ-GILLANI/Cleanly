@@ -22,7 +22,7 @@ echo  Using JAVA_HOME=%JAVA_HOME%
 set "SDKP=%LOCALAPPDATA:\=/%/Android/Sdk"
 if exist "%LOCALAPPDATA%\Android\Sdk" echo sdk.dir=%SDKP%> android\local.properties
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-if not exist node_modules call npm install --no-audit --no-fund
+call npm install --no-audit --no-fund
 call npm run build || (echo Build failed & pause & exit /b 1)
 call npx cap sync android || (echo Sync failed & pause & exit /b 1)
 cd android
