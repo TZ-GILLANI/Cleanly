@@ -13,9 +13,6 @@ workflows:
       node: 20
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cleano.app
     scripts:
       - name: Install dependencies
         script: npm ci || npm install
@@ -37,8 +34,10 @@ workflows:
       - name: Set up code signing
         script: |
           keychain initialize
-          # auto-create the distribution certificate + provisioning profile for this app
-          app-store-connect fetch-signing-files "com.cleano.app" --type IOS_APP_STORE --create
+          # create the distribution certificate + App Store provisioning profile automatically
+          app-store-connect fetch-signing-files "com.cleano.app" \
+            --type IOS_APP_STORE \
+            --create
           keychain add-certificates
           xcode-project use-profiles
       - name: Build IPA
