@@ -54,6 +54,14 @@ workflows:
           ruby -e "require 'xcodeproj'; pr=Xcodeproj::Project.open('ios/App/App.xcodeproj'); pr.targets.each{|t| next unless t.name=='App'; t.build_configurations.each{|c| c.build_settings['CODE_SIGN_ENTITLEMENTS']='App/App.entitlements'}}; pr.save; puts 'entitlements linked'"
       - name: Install CocoaPods
         script: cd ios/App && pod install
+      - name: Set a fresh build number
+        script: |
+          # every App Store upload needs a higher build number than the last one
+          LATEST=$(app-store-connect get-latest-testflight-build-number 6793626875 2>/dev/null || echo 0)
+          case "$LATEST" in ''|*[!0-9]*) LATEST=0 ;; esac
+          NEXT=$((LATEST + 1))
+          cd ios/App && agvtool new-version -all "$NEXT"
+          echo "Build number set to $NEXT"
       - name: Build & sign IPA (App Store distribution)
         script: |
           set -e
