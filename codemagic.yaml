@@ -61,10 +61,13 @@ workflows:
           # Generate our OWN signing private key, so the certificate can be created AND saved
           # (fixes "Cannot save Signing Certificates without certificate private key").
           openssl genrsa -out /tmp/dist_key.pem 2048
-          # Free up a slot if the account already holds distribution certificates (best effort)
+          # Free the slot: Apple caps distribution certs at 2, so delete every existing one
+          # (they are orphans from earlier CI runs — we hold no usable private key for them).
           for cid in $(app-store-connect certificates list --type IOS_DISTRIBUTION --json 2>/dev/null | python3 -c "import sys,json;print(' '.join(c.get('id','') for c in json.load(sys.stdin)))" 2>/dev/null); do
-            app-store-connect certificates delete "$cid" 2>/dev/null || true
+            echo "Deleting distribution certificate $cid"
+            app-store-connect certificates delete "$cid" --yes || true
           done
+          sleep 3
           # Create the distribution certificate (with our key) + App Store profile
           app-store-connect fetch-signing-files "com.cleano.app" \
             --type IOS_APP_STORE \
