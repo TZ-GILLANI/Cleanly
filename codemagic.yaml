@@ -51,7 +51,7 @@ workflows:
           plutil -replace UIBackgroundModes -json '["remote-notification"]' ios/App/App/Info.plist || plutil -insert UIBackgroundModes -json '["remote-notification"]' ios/App/App/Info.plist
           # c) link the push entitlements file into the App target build settings
           gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
-          ruby -e "require 'xcodeproj'; pr=Xcodeproj::Project.open('ios/App/App.xcodeproj'); pr.targets.each{|t| next unless t.name=='App'; t.build_configurations.each{|c| c.build_settings['CODE_SIGN_ENTITLEMENTS']='App/App.entitlements'}}; pr.save; puts 'entitlements linked'"
+          ruby -e "require 'xcodeproj'; pr=Xcodeproj::Project.open('ios/App/App.xcodeproj'); app=pr.targets.find{|t| t.name=='App'}; app.build_configurations.each{|c| c.build_settings['CODE_SIGN_ENTITLEMENTS']='App/App.entitlements'}; grp=pr.main_group.find_subpath('App', true); unless app.resources_build_phase.files_references.any?{|f| f.display_name=='GoogleService-Info.plist'}; ref=grp.new_reference('GoogleService-Info.plist'); app.add_resources([ref]); end; pr.save; puts 'entitlements + GoogleService-Info.plist wired into bundle'"
       - name: Install CocoaPods
         script: cd ios/App && pod install
       - name: Set a fresh build number
