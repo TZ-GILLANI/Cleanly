@@ -1,28 +1,26 @@
-/* Cleano — real push notifications (Firebase Cloud Messaging via Capacitor).
-   Fully dormant on the web and until google-services.json + the server's
-   FIREBASE_SERVICE_ACCOUNT_B64 exist. Safe to call anytime. */
+/* Cleano — real push notifications via Firebase Cloud Messaging.
+   Unified FCM tokens on iOS AND Android. Dormant on web and until the
+   Firebase config files + server FIREBASE_SERVICE_ACCOUNT_B64 exist. */
 import { API_BASE } from "./api.js";
 
 export async function initPush(authToken) {
   try {
     const { Capacitor } = await import("@capacitor/core");
-    if (!Capacitor.isNativePlatform()) return; // web build: do nothing
-    const { PushNotifications } = await import("@capacitor/push-notifications");
+    if (!Capacitor.isNativePlatform()) return; // web: do nothing
+    const { FirebaseMessaging } = await import("@capacitor-firebase/messaging");
 
-    let perm = await PushNotifications.checkPermissions();
-    if (perm.receive === "prompt") perm = await PushNotifications.requestPermissions();
+    let perm = await FirebaseMessaging.checkPermissions();
+    if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") {
+      perm = await FirebaseMessaging.requestPermissions();
+    }
     if (perm.receive !== "granted") return;
 
-    await PushNotifications.removeAllListeners();
-    PushNotifications.addListener("registration", async (t) => {
-      try {
-        await fetch((API_BASE || "") + "/api/notifications/push-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
-          body: JSON.stringify({ token: t.value, platform: Capacitor.getPlatform() }),
-        });
-      } catch {}
+    const { token } = await FirebaseMessaging.getToken();
+    if (!token) return;
+    await fetch((API_BASE || "") + "/api/notifications/push-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+      body: JSON.stringify({ token, platform: Capacitor.getPlatform() }),
     });
-    await PushNotifications.register();
-  } catch {} // plugin missing / not synced yet — silently skip
+  } catch (e) { /* plugin not synced yet — silently skip */ }
 }
