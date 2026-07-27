@@ -853,6 +853,10 @@ export function StoreProvider({ children }) {
     if (!isApiMode) return { registered: false };
     try { return await api("/notifications/push-status"); } catch { return { registered: false, unreachable: true }; }
   };
+  const pushTest = async () => {
+    if (!isApiMode) return { sent: false, reason: "demo" };
+    try { return await api("/notifications/push-test", { method: "POST" }); } catch (e) { return { sent: false, reason: "unreachable", detail: e.message }; }
+  };
   const clearNotifications = async () => {
     if (!isApiMode) return;
     try { await api("/notifications", { method: "DELETE" }); setNotif({ notifications: [], unread: 0 }); }
@@ -882,7 +886,7 @@ export function StoreProvider({ children }) {
     updateProfile, changePassword, updateCompany,
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
-    fetchNotifications, markNotificationsRead, clearNotifications, pushStatus, adminBroadcast, adminFetchCompanyServices, notifications: notif.notifications, unreadNotif: notif.unread,
+    fetchNotifications, markNotificationsRead, clearNotifications, pushStatus, pushTest, adminBroadcast, adminFetchCompanyServices, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,

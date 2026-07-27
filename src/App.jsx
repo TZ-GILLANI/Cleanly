@@ -650,9 +650,24 @@ function NotificationBanner() {
 }
 
 function PushDiagnostic() {
-  const { pushStatus, isLive } = useStore();
+  const { pushStatus, pushTest, isLive } = useStore();
   const [st, setSt] = React.useState(null);
   const [checking, setChecking] = React.useState(false);
+  const [testRes, setTestRes] = React.useState(null);
+  const [testing, setTesting] = React.useState(false);
+  const explain = (r) => {
+    if (!r) return "";
+    if (r.sent) return L("Sent! It should buzz within seconds (close the app to see the banner).", "Elküldve! Másodperceken belül rezegnie kell.");
+    const map = {
+      "firebase-not-configured": L("Server is missing the Firebase key (Render env FIREBASE_SERVICE_ACCOUNT_B64).", "A szerveren hiányzik a Firebase kulcs."),
+      "no-token": L("No device registered on this account.", "Ehhez a fiókhoz nincs regisztrált eszköz."),
+      "auth-failed": L("Google rejected the server's Firebase key — re-upload it to Render.", "A Google elutasította a Firebase kulcsot."),
+      "token-expired": L("Device token expired — open the app on your phone, then test again.", "Az eszköz tokenje lejárt — nyisd meg az appot, majd próbáld újra."),
+      "demo": L("Live mode only.", "Csak élő módban."),
+      "unreachable": L("Could not reach the server.", "A szerver nem elérhető."),
+    };
+    return (map[r.reason] || (r.reason || "") + (r.detail ? " — " + r.detail : "")) + (r.hint && !map[r.reason] ? " · " + r.hint : "");
+  };
   const check = async () => { setChecking(true); setSt(await pushStatus()); setChecking(false); };
   React.useEffect(() => { if (isLive) check(); }, [isLive]);
   if (!isLive) return null;
@@ -684,6 +699,20 @@ function PushDiagnostic() {
           {checking ? "…" : L("Retry", "Újra")}
         </button>
       </div>
+      {ok && (
+        <div style={{ marginTop: 9 }}>
+          <button onClick={async () => { setTesting(true); setTestRes(null); setTestRes(await pushTest()); setTesting(false); }}
+            disabled={testing}
+            style={{ width: "100%", fontFamily: F, fontWeight: 700, fontSize: 12, padding: "10px 12px", borderRadius: 12, border: "none", cursor: "pointer", background: C.navy, color: "#fff" }}>
+            {testing ? "…" : L("Send a test notification to this phone", "Teszt értesítés küldése erre a telefonra")}
+          </button>
+          {testRes && (
+            <div style={{ fontFamily: B, fontSize: 11, color: testRes.sent ? C.greenDeep : C.coral, marginTop: 6, lineHeight: 1.5 }}>
+              {explain(testRes)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

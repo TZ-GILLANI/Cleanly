@@ -31,6 +31,35 @@ async function fcmAccessToken() {
   fcmCache.token = d.access_token; fcmCache.exp = Date.now() + (d.expires_in || 3600) * 1000;
   return fcmCache.token;
 }
+export async function sendPushDetailed(userId, title, body) {
+  const sa = serviceAccount();
+  if (!sa) return { sent: false, reason: "firebase-not-configured", hint: "FIREBASE_SERVICE_ACCOUNT_B64 missing or unreadable in Render" };
+  const u = await query("SELECT push_token FROM users WHERE id = $1", [userId]);
+  const token = u.rows[0]?.push_token;
+  if (!token) return { sent: false, reason: "no-token", hint: "This account has no registered device" };
+  const access = await fcmAccessToken();
+  if (!access) return { sent: false, reason: "auth-failed", hint: "Could not get an access token from Google — service account may be wrong" };
+  const r = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+    method: "POST", headers: { Authorization: "Bearer " + access, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: {
+        token,
+        notification: { title, body: body || "" },
+        apns: { headers: { "apns-priority": "10", "apns-push-type": "alert" },
+                payload: { aps: { alert: { title, body: body || "" }, sound: "default", badge: 1 } } },
+        android: { priority: "high" },
+      },
+    }),
+  });
+  const txt = await r.text().catch(() => "");
+  if (r.ok) return { sent: true, fcm: "accepted" };
+  if (r.status === 404 || r.status === 410) {
+    await query("UPDATE users SET push_token = NULL WHERE id = $1", [userId]);
+    return { sent: false, reason: "token-expired", hint: "Reopen the app to re-register, then test again" };
+  }
+  return { sent: false, reason: "fcm-" + r.status, detail: txt.slice(0, 400) };
+}
+
 async function sendPush(userId, title, body) {
   try {
     const sa = serviceAccount();

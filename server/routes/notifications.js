@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { query } from "../db.js";
+import { sendPushDetailed } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { rateLimit } from "./auth.js";
 
@@ -57,6 +58,16 @@ router.post("/push-token", requireAuth, async (req, res) => {
     await query("UPDATE users SET push_token = $1 WHERE id = $2", [token, req.user.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: "Could not save push token" }); }
+});
+
+/* POST /api/notifications/push-test — fire a real push at YOUR OWN device and
+   return Firebase's exact verdict, so delivery problems explain themselves. */
+router.post("/push-test", requireAuth, async (req, res) => {
+  if (!rateLimit("ptest:" + req.user.id, 6, 10 * 60e3)) return res.status(429).json({ error: "Too many tests — wait a few minutes" });
+  try {
+    const out = await sendPushDetailed(req.user.id, "Cleano test 🔔", "If you can read this on your phone, push works.");
+    res.json(out);
+  } catch (e) { res.json({ sent: false, reason: "server-error", detail: String(e.message || e).slice(0, 200) }); }
 });
 
 /* DELETE /api/notifications — clear the current user's notification history */
