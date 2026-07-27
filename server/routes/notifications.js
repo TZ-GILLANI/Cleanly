@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { sendPushDetailed } from "../lib/notify.js";
+import { sendPushDetailed, pushToMany } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { rateLimit } from "./auth.js";
 
@@ -97,6 +97,12 @@ router.post("/broadcast", requireAuth, requireRole("admin"), async (req, res) =>
        WHERE role != 'admin' AND ($3 = 'all' OR role::text = $3)`,
       [title, body || null, audience]
     );
+    // The bulk insert covers the in-app feed; phones need the push fan-out too.
+    query(
+      `SELECT id FROM users
+       WHERE role != 'admin' AND ($1 = 'all' OR role::text = $1) AND push_token IS NOT NULL`,
+      [audience]
+    ).then((t) => pushToMany(t.rows.map((x) => x.id), title, body || "")).catch((e) => console.error("broadcast push:", e.message));
     res.json({ ok: true, sent: r.rowCount });
   } catch (e) { res.status(500).json({ error: "Broadcast failed" }); }
 });

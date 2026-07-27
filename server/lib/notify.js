@@ -60,6 +60,14 @@ export async function sendPushDetailed(userId, title, body) {
   return { sent: false, reason: "fcm-" + r.status, detail: txt.slice(0, 400) };
 }
 
+/* Fan a push out to many users (fire-and-forget, gently throttled). */
+export async function pushToMany(userIds, title, body) {
+  for (const id of userIds || []) {
+    try { await sendPush(id, title, body); } catch {}
+    await new Promise((r) => setTimeout(r, 50)); // ~20/sec — kind to FCM
+  }
+}
+
 async function sendPush(userId, title, body) {
   try {
     const sa = serviceAccount();
