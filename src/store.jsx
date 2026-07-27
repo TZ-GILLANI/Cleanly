@@ -355,6 +355,9 @@ export function StoreProvider({ children }) {
   };
 
   const logout = () => {
+    // stop pushes for this account on this phone, and let the next login re-register
+    if (isApiMode) { try { api("/notifications/push-token", { method: "DELETE" }).catch(() => {}); } catch {} }
+    try { import("./lib/push.js").then((p) => p.forgetPushToken()).catch(() => {}); } catch {}
     setToken(null);
     setSession(null);
     setDb(isApiMode ? EMPTY_DB : loadDemo());
@@ -849,14 +852,6 @@ export function StoreProvider({ children }) {
     try { await api("/notifications/read"); setNotif(n => ({ notifications: n.notifications.map(x => ({ ...x, is_read: true })), unread: 0 })); }
     catch (e) {}
   };
-  const pushStatus = async () => {
-    if (!isApiMode) return { registered: false };
-    try { return await api("/notifications/push-status"); } catch { return { registered: false, unreachable: true }; }
-  };
-  const pushTest = async () => {
-    if (!isApiMode) return { sent: false, reason: "demo" };
-    try { return await api("/notifications/push-test", { method: "POST" }); } catch (e) { return { sent: false, reason: "unreachable", detail: e.message }; }
-  };
   const clearNotifications = async () => {
     if (!isApiMode) return;
     try { await api("/notifications", { method: "DELETE" }); setNotif({ notifications: [], unread: 0 }); }
@@ -886,7 +881,7 @@ export function StoreProvider({ children }) {
     updateProfile, changePassword, updateCompany,
     createBooking, cancelBooking, addReview, declineBooking,
     startPayment, getPaymentStatus, deleteAccount,
-    fetchNotifications, markNotificationsRead, clearNotifications, pushStatus, pushTest, adminBroadcast, adminFetchCompanyServices, notifications: notif.notifications, unreadNotif: notif.unread,
+    fetchNotifications, markNotificationsRead, clearNotifications, adminBroadcast, adminFetchCompanyServices, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,

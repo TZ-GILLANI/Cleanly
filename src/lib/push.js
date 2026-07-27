@@ -9,20 +9,22 @@ const FirebaseMessaging = registerPlugin("FirebaseMessaging");
 /* Remember the last token we sent so we don't re-post it on every launch. */
 const LAST_KEY = "cleanly_push_token";
 
-async function sendToken(token, authToken) {
+async function sendToken(token, authToken, userId) {
   if (!token) return;
-  try { if (localStorage.getItem(LAST_KEY) === token) return; } catch {}
+  // Cache per ACCOUNT — two people sharing a phone must each register.
+  const cacheVal = String(userId || "") + ":" + token;
+  try { if (localStorage.getItem(LAST_KEY) === cacheVal) return; } catch {}
   try {
     const res = await fetch((API_BASE || "") + "/api/notifications/push-token", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
       body: JSON.stringify({ token, platform: Capacitor.getPlatform() }),
     });
-    if (res.ok) { try { localStorage.setItem(LAST_KEY, token); } catch {} }
+    if (res.ok) { try { localStorage.setItem(LAST_KEY, cacheVal); } catch {} }
   } catch {}
 }
 
-export async function initPush(authToken) {
+export async function initPush(authToken, userId) {
   try {
     if (!Capacitor.isNativePlatform()) return;   // website: nothing to do
 
@@ -37,7 +39,7 @@ export async function initPush(authToken) {
     try { await FirebaseMessaging.removeAllListeners(); } catch {}
 
     // Firebase can rotate the token at any time — always re-register it.
-    FirebaseMessaging.addListener("tokenReceived", (e) => sendToken(e && e.token, authToken));
+    FirebaseMessaging.addListener("tokenReceived", (e) => sendToken(e && e.token, authToken, userId));
 
     // With the app open, iOS suppresses the system banner — show our own.
     FirebaseMessaging.addListener("notificationReceived", (e) => {
@@ -48,7 +50,7 @@ export async function initPush(authToken) {
 
     // 3. register this device
     const res = await FirebaseMessaging.getToken();
-    await sendToken(res && res.token, authToken);
+    await sendToken(res && res.token, authToken, userId);
   } catch (e) {
     // plugin missing (web build) or Firebase not configured yet — stay silent
   }

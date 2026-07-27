@@ -70,6 +70,13 @@ router.post("/push-test", requireAuth, async (req, res) => {
   } catch (e) { res.json({ sent: false, reason: "server-error", detail: String(e.message || e).slice(0, 200) }); }
 });
 
+/* DELETE /api/notifications/push-token — this account stops receiving pushes
+   on the current device (called at logout). */
+router.delete("/push-token", requireAuth, async (req, res) => {
+  try { await query("UPDATE users SET push_token = NULL WHERE id = $1", [req.user.id]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: "Could not unregister" }); }
+});
+
 /* DELETE /api/notifications — clear the current user's notification history */
 router.delete("/", requireAuth, async (req, res) => {
   try {

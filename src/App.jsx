@@ -649,74 +649,6 @@ function NotificationBanner() {
   );
 }
 
-function PushDiagnostic() {
-  const { pushStatus, pushTest, isLive } = useStore();
-  const [st, setSt] = React.useState(null);
-  const [checking, setChecking] = React.useState(false);
-  const [testRes, setTestRes] = React.useState(null);
-  const [testing, setTesting] = React.useState(false);
-  const explain = (r) => {
-    if (!r) return "";
-    if (r.sent) return L("Sent! It should buzz within seconds (close the app to see the banner).", "Elküldve! Másodperceken belül rezegnie kell.");
-    const map = {
-      "firebase-not-configured": L("Server is missing the Firebase key (Render env FIREBASE_SERVICE_ACCOUNT_B64).", "A szerveren hiányzik a Firebase kulcs."),
-      "no-token": L("No device registered on this account.", "Ehhez a fiókhoz nincs regisztrált eszköz."),
-      "auth-failed": L("Google rejected the server's Firebase key — re-upload it to Render.", "A Google elutasította a Firebase kulcsot."),
-      "token-expired": L("Device token expired — open the app on your phone, then test again.", "Az eszköz tokenje lejárt — nyisd meg az appot, majd próbáld újra."),
-      "demo": L("Live mode only.", "Csak élő módban."),
-      "unreachable": L("Could not reach the server.", "A szerver nem elérhető."),
-    };
-    return (map[r.reason] || (r.reason || "") + (r.detail ? " — " + r.detail : "")) + (r.hint && !map[r.reason] ? " · " + r.hint : "");
-  };
-  const check = async () => { setChecking(true); setSt(await pushStatus()); setChecking(false); };
-  React.useEffect(() => { if (isLive) check(); }, [isLive]);
-  if (!isLive) return null;
-  const native = typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
-  const ok = st && st.registered;
-  return (
-    <div style={{ background: ok ? C.mintSoft : C.bg, borderRadius: 15, padding: "12px 14px", marginTop: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>
-            {L("Phone notifications", "Telefonos értesítések")}
-          </div>
-          <div style={{ fontFamily: B, fontSize: 11, color: ok ? C.greenDeep : C.inkSoft, marginTop: 2, lineHeight: 1.5 }}>
-            {!st ? "…"
-              : st.schemaMissing ? L("Server not ready — the database update hasn't been run yet.", "A szerver még nincs kész — az adatbázis-frissítés hiányzik.")
-              : ok ? L("This device is registered — you'll get alerts when the app is closed.", "Ez az eszköz regisztrálva van.")
-              : !native ? L("Open the phone app to receive push notifications.", "Nyisd meg a telefonos appot a push értesítésekhez.")
-              : L("Not registered yet. Make sure notifications are allowed in your phone settings, then tap Retry.", "Még nincs regisztrálva. Engedélyezd az értesítéseket a telefon beállításaiban, majd nyomd meg az Újrapróbálást.")}
-          </div>
-        </div>
-        <button onClick={async () => {
-          try {
-            const { initPush } = await import("./lib/push.js");
-            const { getToken } = await import("./lib/api.js");
-            await initPush(getToken());
-          } catch {}
-          check();
-        }} disabled={checking} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
-          {checking ? "…" : L("Retry", "Újra")}
-        </button>
-      </div>
-      {ok && (
-        <div style={{ marginTop: 9 }}>
-          <button onClick={async () => { setTesting(true); setTestRes(null); setTestRes(await pushTest()); setTesting(false); }}
-            disabled={testing}
-            style={{ width: "100%", fontFamily: F, fontWeight: 700, fontSize: 12, padding: "10px 12px", borderRadius: 12, border: "none", cursor: "pointer", background: C.navy, color: "#fff" }}>
-            {testing ? "…" : L("Send a test notification to this phone", "Teszt értesítés küldése erre a telefonra")}
-          </button>
-          {testRes && (
-            <div style={{ fontFamily: B, fontSize: 11, color: testRes.sent ? C.greenDeep : C.coral, marginTop: 6, lineHeight: 1.5 }}>
-              {explain(testRes)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function NotificationHistory() {
   const { notifications, isLive, clearNotifications } = useStore();
   const [open, setOpen] = useState(false);
@@ -1215,7 +1147,6 @@ function ProfileSheet({ close }) {
         <Btn ghost full onClick={() => { close(); logout(); }}>{t("common.logout")}</Btn>
       </div>
 
-      <PushDiagnostic />
       <NotificationHistory />
       <ChangePasswordBox />
       <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 14, fontFamily: B, fontSize: 11 }}>
@@ -3936,7 +3867,7 @@ function Shell() {
   // 🔔 register this device for real push notifications once logged in (native app only)
   React.useEffect(() => {
     const tok = getToken();
-    if (session && tok) initPush(tok);
+    if (session && tok) initPush(tok, session.userId);
   }, [session?.userId]);
   const [tab, setTab] = useState("home");
   const [bookingCo, setBookingCo] = useState(null);

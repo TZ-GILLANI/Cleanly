@@ -265,6 +265,12 @@ const ptSave = await j("/api/notifications/push-token", { method: "POST", token:
 ok("device can register its push token", ptSave.data.ok === true);
 const ptRow = await query("SELECT push_token FROM users WHERE id = (SELECT owner_id FROM companies WHERE id = $1)", [coId]);
 ok("push token stored on the user", ptRow.rows[0].push_token === "fcm-test-token-abc123");
+const ptDel = await j("/api/notifications/push-token", { method: "DELETE", token: coTok });
+ok("logout can unregister the device", ptDel.data.ok === true);
+const ptGone = await query("SELECT push_token FROM users WHERE id = (SELECT owner_id FROM companies WHERE id = $1)", [coId]);
+ok("push token cleared after unregister", ptGone.rows[0].push_token === null);
+const ptReadd = await j("/api/notifications/push-token", { method: "POST", token: coTok, body: { token: "fcm-test-token-abc123" } });
+ok("re-login re-registers", ptReadd.data.ok === true);
 const ptEmpty = await j("/api/notifications/push-token", { method: "POST", token: coTok, body: {} });
 ok("empty token rejected", ptEmpty.status === 400);
 
