@@ -2864,7 +2864,7 @@ function JobHistory() {
 
 /* ── Company payout onboarding (Stripe Connect) ── */
 function PayoutSetup() {
-  const { connectStatus, connectOnboard, isLive, dataVersion } = useStore();
+  const { connectStatus, connectOnboard, connectDashboard, isLive, dataVersion } = useStore();
   const toast = useToast();
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -2895,6 +2895,15 @@ function PayoutSetup() {
             if (r?.url) window.open(r.url, "_blank");
             else toast(r?.error || "Could not start onboarding", "error");
           }}>{st.connected ? "Continue" : "Connect"}</Btn>
+        )}
+        {ready && (
+          <Btn small ghost disabled={busy} onClick={async () => {
+            setBusy(true);
+            const r = await connectDashboard();
+            setBusy(false);
+            if (r?.url) window.open(r.url, "_blank");
+            else toast(r?.error || "Could not open payouts", "error");
+          }}>{L("View payouts", "Kifizetések")}</Btn>
         )}
       </div>
     </div>

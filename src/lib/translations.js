@@ -6,6 +6,7 @@
 
 export const EXTRA = {
   de: {
+    "View payouts": "Auszahlungen ansehen",
     "Approve": "Genehmigen",
     "Bell / entrance / other details (optional)": "Klingel / Eingang / weitere Details (optional)",
     "By cleaner": "Nach Reinigungskraft",
@@ -257,6 +258,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Blick ins Admin-Panel der Plattform →",
   },
   ro: {
+    "View payouts": "Vezi plățile",
     "Approve": "Aprobă",
     "Bell / entrance / other details (optional)": "Sonerie / intrare / alte detalii (opțional)",
     "By cleaner": "Pe curățător",
@@ -508,6 +510,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Aruncă o privire în panoul de admin →",
   },
   sk: {
+    "View payouts": "Zobraziť výplaty",
     "Approve": "Schváliť",
     "Bell / entrance / other details (optional)": "Zvonček / vchod / ďalšie údaje (voliteľné)",
     "By cleaner": "Podľa upratovača",
@@ -759,6 +762,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Nahliadnite do admin panela →",
   },
   pl: {
+    "View payouts": "Zobacz wypłaty",
     "Approve": "Zatwierdź",
     "Bell / entrance / other details (optional)": "Dzwonek / wejście / inne szczegóły (opcjonalnie)",
     "By cleaner": "Wg sprzątacza",
@@ -1010,6 +1014,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Zajrzyj do panelu administratora →",
   },
   uk: {
+    "View payouts": "Переглянути виплати",
     "Approve": "Схвалити",
     "Bell / entrance / other details (optional)": "Дзвінок / під'їзд / інші деталі (необов'язково)",
     "By cleaner": "За клінером",
@@ -1261,6 +1266,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Зазирнути в адмін-панель →",
   },
   fr: {
+    "View payouts": "Voir les paiements",
     "Approve": "Approuver",
     "Bell / entrance / other details (optional)": "Sonnette / entrée / autres détails (facultatif)",
     "By cleaner": "Par agent",
@@ -1512,6 +1518,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Jetez un œil au panneau admin →",
   },
   es: {
+    "View payouts": "Ver pagos",
     "Approve": "Aprobar",
     "Bell / entrance / other details (optional)": "Timbre / portal / otros detalles (opcional)",
     "By cleaner": "Por limpiador",
@@ -1763,6 +1770,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Echa un vistazo al panel de administración →",
   },
   it: {
+    "View payouts": "Vedi pagamenti",
     "Approve": "Approva",
     "Bell / entrance / other details (optional)": "Campanello / ingresso / altri dettagli (facoltativo)",
     "By cleaner": "Per addetto",

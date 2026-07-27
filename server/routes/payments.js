@@ -363,6 +363,20 @@ router.post("/connect/onboard", requireAuth, requireRole("company"), async (req,
   }
 });
 
+/* GET /api/payments/connect/dashboard — one-tap login link to the company's own
+   Stripe Express dashboard (their payments, balance and payout dates). */
+router.get("/connect/dashboard", requireAuth, requireRole("company"), async (req, res) => {
+  if (!stripeConfigured()) return res.status(503).json({ error: "Payments not configured" });
+  try {
+    const co = await query("SELECT stripe_account_id FROM companies WHERE id = $1", [req.user.companyId]);
+    const acctId = co.rows[0]?.stripe_account_id;
+    if (!acctId) return res.status(400).json({ error: "Connect payouts first" });
+    const stripe = await getStripe();
+    const link = await stripe.accounts.createLoginLink(acctId);
+    res.json({ url: link.url });
+  } catch (e) { console.error("dashboard link:", e.message); res.status(500).json({ error: "Could not open the payout dashboard" }); }
+});
+
 router.get("/connect/status", requireAuth, requireRole("company"), async (req, res) => {
   if (!stripeConfigured()) return res.json({ available: false });
   try {

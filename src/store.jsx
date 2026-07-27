@@ -776,6 +776,10 @@ export function StoreProvider({ children }) {
   };
 
   /* ── Stripe Connect (company payouts) ── */
+  const connectDashboard = async () => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { return await api("/payments/connect/dashboard"); } catch (e) { return { error: e.message }; }
+  };
   const connectStatus = async () => {
     if (!isApiMode) return { available: false };
     try { return await api("/payments/connect/status"); } catch { return { available: false }; }
@@ -886,7 +890,7 @@ export function StoreProvider({ children }) {
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
     forgotPassword, resetPassword,
-    connectStatus, connectOnboard,
+    connectStatus, connectOnboard, connectDashboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService, removeEmployee, fetchPendingCleaners, decideCleaner, setComplaintHandler, setCompanyAction, fetchCompanyReviews, hideDeletedIdentity,
     adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
