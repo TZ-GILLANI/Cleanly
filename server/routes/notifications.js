@@ -35,6 +35,18 @@ router.put("/:id/read", requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed" }); }
 });
 
+/* GET /api/notifications/push-status — did this account register a device? */
+router.get("/push-status", requireAuth, async (req, res) => {
+  try {
+    const r = await query("SELECT push_token FROM users WHERE id = $1", [req.user.id]);
+    const t = r.rows[0]?.push_token || null;
+    res.json({ registered: !!t, preview: t ? String(t).slice(0, 12) + "…" : null });
+  } catch (e) {
+    // column missing => schema.sql has not been run yet
+    res.json({ registered: false, schemaMissing: /push_token/.test(e.message || "") });
+  }
+});
+
 /* POST /api/notifications/push-token — device registers for real push */
 router.post("/push-token", requireAuth, async (req, res) => {
   try {

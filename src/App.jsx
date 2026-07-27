@@ -649,6 +649,45 @@ function NotificationBanner() {
   );
 }
 
+function PushDiagnostic() {
+  const { pushStatus, isLive } = useStore();
+  const [st, setSt] = React.useState(null);
+  const [checking, setChecking] = React.useState(false);
+  const check = async () => { setChecking(true); setSt(await pushStatus()); setChecking(false); };
+  React.useEffect(() => { if (isLive) check(); }, [isLive]);
+  if (!isLive) return null;
+  const native = typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
+  const ok = st && st.registered;
+  return (
+    <div style={{ background: ok ? C.mintSoft : C.bg, borderRadius: 15, padding: "12px 14px", marginTop: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+            {L("Phone notifications", "Telefonos értesítések")}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11, color: ok ? C.greenDeep : C.inkSoft, marginTop: 2, lineHeight: 1.5 }}>
+            {!st ? "…"
+              : st.schemaMissing ? L("Server not ready — the database update hasn't been run yet.", "A szerver még nincs kész — az adatbázis-frissítés hiányzik.")
+              : ok ? L("This device is registered — you'll get alerts when the app is closed.", "Ez az eszköz regisztrálva van.")
+              : !native ? L("Open the phone app to receive push notifications.", "Nyisd meg a telefonos appot a push értesítésekhez.")
+              : L("Not registered yet. Make sure notifications are allowed in your phone settings, then tap Retry.", "Még nincs regisztrálva. Engedélyezd az értesítéseket a telefon beállításaiban, majd nyomd meg az Újrapróbálást.")}
+          </div>
+        </div>
+        <button onClick={async () => {
+          try {
+            const { initPush } = await import("./lib/push.js");
+            const { getToken } = await import("./lib/api.js");
+            await initPush(getToken());
+          } catch {}
+          check();
+        }} disabled={checking} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
+          {checking ? "…" : L("Retry", "Újra")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function NotificationHistory() {
   const { notifications, isLive, clearNotifications } = useStore();
   const [open, setOpen] = useState(false);
@@ -1147,6 +1186,7 @@ function ProfileSheet({ close }) {
         <Btn ghost full onClick={() => { close(); logout(); }}>{t("common.logout")}</Btn>
       </div>
 
+      <PushDiagnostic />
       <NotificationHistory />
       <ChangePasswordBox />
       <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 14, fontFamily: B, fontSize: 11 }}>
