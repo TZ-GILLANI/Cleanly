@@ -3,6 +3,7 @@ import { logAdmin } from "../lib/adminlog.js";
 import { notify } from "../lib/notify.js";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { rateLimit } from "./auth.js";
 
 const router = Router();
 
@@ -21,6 +22,7 @@ async function access(req, complaintId) {
 
 /* POST /api/complaints — any signed-in user files a report */
 router.post("/", requireAuth, async (req, res) => {
+  if (!rateLimit("complaint:" + req.user.id, 5, 60 * 60e3)) return res.status(429).json({ error: "Too many reports — try again later" });
   const { bookingId, subject, body } = req.body || {};
   if (!subject || !String(subject).trim()) return res.status(400).json({ error: "Subject is required" });
   try {
@@ -71,6 +73,7 @@ router.get("/:id/messages", requireAuth, async (req, res) => {
 
 /* POST /api/complaints/:id/messages — reply on the thread */
 router.post("/:id/messages", requireAuth, async (req, res) => {
+  if (!rateLimit("cmsg:" + req.user.id, 30, 10 * 60e3)) return res.status(429).json({ error: "Slow down a little — try again in a few minutes" });
   const { body } = req.body || {};
   if (!body || !String(body).trim()) return res.status(400).json({ error: "Message required" });
   const a = await access(req, req.params.id);

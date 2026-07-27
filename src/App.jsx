@@ -3854,6 +3854,7 @@ const css = `
   @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   body.cl-modal-open .cl-nav { display: none !important; }
+  .cl-nav::-webkit-scrollbar { display: none; }
   .cl-btn:active { transform: scale(.97); } .cl-btn { transition: transform .12s; }
   .cl-card { transition: transform .18s; } .cl-card:active { transform: scale(.985); }
   .cl-noscroll::-webkit-scrollbar { display: none; } .cl-noscroll { scrollbar-width: none; }
@@ -4000,12 +4001,12 @@ function Shell() {
         <PhoneVerifyGate />
 
         <NotificationBanner />
-        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: dark ? "rgba(23,30,58,.55)" : "rgba(255,255,255,.55)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
+        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: dark ? "rgba(23,30,58,.55)" : "rgba(255,255,255,.55)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
           {NAVS[role].map((tb) => {
             const active = tab === tb.id;
             return (
-              <button key={tb.id} onClick={() => { setTab(tb.id); setBookingCo(null); }}
-                style={{ flex: active ? 1.9 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: 24, padding: "11px 0", position: "relative", background: active ? `linear-gradient(135deg, ${C.navy}, ${C.navyMid})` : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
+              <button key={tb.id} onClick={(e) => { setTab(tb.id); setBookingCo(null); try { e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {} }}
+                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: 24, padding: "11px 8px", position: "relative", background: active ? `linear-gradient(135deg, ${C.navy}, ${C.navyMid})` : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
                 <Ic name={tb.icon} size={19} sw={active ? 2 : 1.7} color={active ? "#fff" : C.inkSoft} style={{ opacity: active ? 1 : .8 }} />
                 {active && <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap" }}>{tb.label}</span>}
                 {tb.badge > 0 && <span style={{ position: "absolute", top: 4, right: active ? 8 : "50%", marginRight: active ? 0 : -18, width: 16, height: 16, borderRadius: "50%", background: C.coral, color: "#fff", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: B }}>{tb.badge}</span>}

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { rateLimit } from "./auth.js";
 
 const router = Router();
 
@@ -19,6 +20,7 @@ router.get("/", async (req, res) => {
 /* POST /api/reviews */
 router.post("/", requireAuth, async (req, res) => {
   if (req.user.role !== "customer") return res.status(403).json({ error: "Customers only" });
+  if (!rateLimit("review:" + req.user.id, 5, 60 * 60e3)) return res.status(429).json({ error: "Too many reviews — try again later" });
   const { bookingId, stars, body } = req.body;
   if (!bookingId || !stars) return res.status(400).json({ error: "Missing fields" });
   if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ error: "Stars must be 1-5" });
@@ -48,14 +50,14 @@ router.post("/", requireAuth, async (req, res) => {
 router.get("/company", requireAuth, requireRole("company"), async (req, res) => {
   try {
     const rows = await query(
-      `SELECT rv.id, rv.rating, rv.comment, rv.created_at,
+      `SELECT rv.id, rv.stars AS rating, rv.body AS comment, rv.created_at,
               cu.full_name AS customer_name,
               b.scheduled_date, b.service_snapshot,
               b.assigned_to AS cleaner_id,
               cl.full_name AS cleaner_name
        FROM reviews rv
        LEFT JOIN bookings b ON b.id = rv.booking_id
-       LEFT JOIN users cu ON cu.id = rv.user_id
+       LEFT JOIN users cu ON cu.id = rv.customer_id
        LEFT JOIN users cl ON cl.id = b.assigned_to
        WHERE rv.company_id = $1
        ORDER BY rv.created_at DESC`,

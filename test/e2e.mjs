@@ -237,6 +237,11 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── company reviews endpoint ──");
+const crev = await j("/api/reviews/company", { token: coTok });
+ok("company reviews endpoint returns data", crev.status === 200 && Array.isArray(crev.data.reviews) && Array.isArray(crev.data.cleaners), JSON.stringify(crev.data).slice(0, 120));
+ok("review fields mapped (rating/comment present)", (crev.data.reviews.length === 0) || ("rating" in crev.data.reviews[0]));
+
 console.log("\n── complaint routing (admin ↔ company) ──");
 const rcomp = await j("/api/complaints", { method: "POST", token: reuse.data.token, body: { subject: "Routing test", body: "please help" } });
 const rcId = rcomp.data.complaint?.id;

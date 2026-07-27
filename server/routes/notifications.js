@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { rateLimit } from "./auth.js";
 
 const router = Router();
 
@@ -49,6 +50,7 @@ router.get("/push-status", requireAuth, async (req, res) => {
 
 /* POST /api/notifications/push-token — device registers for real push */
 router.post("/push-token", requireAuth, async (req, res) => {
+  if (!rateLimit("ptok:" + req.user.id, 10, 10 * 60e3)) return res.status(429).json({ error: "Too many attempts" });
   try {
     const token = String(req.body?.token || "").slice(0, 512);
     if (!token) return res.status(400).json({ error: "token required" });
