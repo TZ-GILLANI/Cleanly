@@ -102,6 +102,11 @@ workflows:
     environment:
       node: 20
       java: 17
+      # Play Store only accepts SIGNED bundles. Create/generate a keystore in
+      # Codemagic → Teams → Code signing identities → Android keystores and give
+      # it exactly this reference name.
+      android_signing:
+        - cleano_keystore
     scripts:
       - name: Install dependencies
         script: npm ci || npm install
@@ -110,6 +115,9 @@ workflows:
       - name: Sync Android
         script: npx cap sync android
       - name: Build release bundle
-        script: cd android && chmod +x gradlew && ./gradlew bundleRelease
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease
     artifacts:
       - android/app/build/outputs/**/*.aab

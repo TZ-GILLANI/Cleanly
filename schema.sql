@@ -333,3 +333,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS card_last4 TEXT;
 
 -- v5.2: cleaner gets a 40-min heads-up too
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_cleaner_at TIMESTAMPTZ;
+
+-- v5.5: company availability — working hours per weekday, days off, and a
+-- "fully booked / paused" switch. Shape:
+--   { "paused": false,
+--     "days": { "1": {"on":true,"from":"08:00","to":"18:00"}, ... "0": {"on":false} },
+--     "closed": ["2026-08-20", "2026-12-24"] }
+-- Weekday keys are JS getDay(): 0=Sunday … 6=Saturday.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS availability JSONB;

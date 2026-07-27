@@ -88,6 +88,31 @@ const everyP = (per) => (HUL()
 const huf = (n) => (n ?? 0).toLocaleString("hu-HU") + " Ft";
 const stageList = () => (HUL() ? ["Új", "Kiosztva", "Úton", "Takarítás", "Kész ✨"] : ["New", "Assigned", "On the way", "Cleaning", "Done ✨"]);
 const SLOTS = ["08:00", "09:30", "11:00", "13:00", "15:00", "17:00", "18:30"];
+/* ── Company availability ─────────────────────────────────────────
+   { paused, days: { "0".."6": {on,from,to} }, closed: ["YYYY-MM-DD"] }   */
+const DEFAULT_AVAIL = {
+  paused: false,
+  days: { "0": { on: false, from: "08:00", to: "18:00" }, "1": { on: true, from: "08:00", to: "18:00" },
+          "2": { on: true, from: "08:00", to: "18:00" }, "3": { on: true, from: "08:00", to: "18:00" },
+          "4": { on: true, from: "08:00", to: "18:00" }, "5": { on: true, from: "08:00", to: "18:00" },
+          "6": { on: true, from: "09:00", to: "14:00" } },
+  closed: [],
+};
+const availOf = (co) => (co && co.availability) ? co.availability : null;
+const dayRule = (av, iso) => {
+  if (!av) return { open: true };
+  if (av.paused) return { open: false, why: "paused" };
+  if (Array.isArray(av.closed) && av.closed.includes(String(iso).slice(0, 10))) return { open: false, why: "closed" };
+  const d = (av.days || {})[String(new Date(String(iso).slice(0, 10) + "T12:00:00Z").getUTCDay())];
+  if (d && d.on === false) return { open: false, why: "weekday" };
+  return { open: true, from: (d && d.from) || "00:00", to: (d && d.to) || "23:59" };
+};
+const slotOpen = (av, iso, slot) => {
+  const r = dayRule(av, iso);
+  if (!r.open) return false;
+  const t = String(slot).slice(0, 5);
+  return t >= (r.from || "00:00") && t < (r.to || "23:59");
+};
 const COVER_PRESETS = [
   "linear-gradient(135deg,#22B573,#7BD96A)",
   "linear-gradient(135deg,#3D7BF5,#2BB8E8)",
@@ -1599,6 +1624,7 @@ function CustomerHome({ openBooking, openProfile }) {
                     {co.name}
                     {co.is_approved !== false && <span title="Documents verified by Cleano" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", background: C.mint, color: C.navyDeep, fontSize: 9.5, fontWeight: 900, flexShrink: 0 }}>✓</span>}
                   </div>
+                  {availOf(co)?.paused && <Pill bg={C.amberSoft} color={C.amber}>{L("Fully booked", "Betelt")}</Pill>}
                   {promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{promoOf(co).pct}%{promoOf(co).label ? ` ${promoOf(co).label}` : ""}</Pill>}
                   {isStudent && !promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
                 </div>
@@ -1797,7 +1823,7 @@ function BookingFlow({ company, close, onBooked }) {
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "16px 0 10px" }}>{L("Time", "Időpont")}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
                 {SLOTS.map((s) => (
-                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.mint : C.card, color: slot === s ? "#10194A" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(94,230,168,.45)" : "0 1px 5px rgba(20,28,58,.06)" }}>{s}</button>
+                  <button key={s} disabled={!slotOpen(availOf(company), day, s)} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", opacity: slotOpen(availOf(company), day, s) ? 1 : .35, cursor: slotOpen(availOf(company), day, s) ? "pointer" : "not-allowed", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.mint : C.card, color: slot === s ? "#10194A" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(94,230,168,.45)" : "0 1px 5px rgba(20,28,58,.06)" }}>{s}</button>
                 ))}
               </div>
 
@@ -3034,6 +3060,15 @@ function CompanySettings() {
     tax_id: co?.tax_id || "", reg_number: co?.reg_number || "", contact_phone: co?.contact_phone || "", google_place_id: co?.google_place_id || "",
     documents: co?.documents || [],
   });
+  const [avail, setAvail] = React.useState(() => {
+    const a = co?.availability;
+    if (!a) return JSON.parse(JSON.stringify(DEFAULT_AVAIL));
+    return { paused: !!a.paused, days: { ...DEFAULT_AVAIL.days, ...(a.days || {}) }, closed: Array.isArray(a.closed) ? a.closed : [] };
+  });
+  const [closedDate, setClosedDate] = React.useState("");
+  const DAY_NAMES = HUL()
+    ? ["Vasárnap", "Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat"]
+    : [L("Sunday","Vasárnap"), L("Monday","Hétfő"), L("Tuesday","Kedd"), L("Wednesday","Szerda"), L("Thursday","Csütörtök"), L("Friday","Péntek"), L("Saturday","Szombat")];
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
@@ -3052,7 +3087,7 @@ function CompanySettings() {
     const disc = parseInt(f.student_discount, 10);
     if (isNaN(disc) || disc < 0 || disc > 50) return toast("Discount must be 0–50%", "error");
     setBusy(true);
-    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents });
+    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents, availability: avail });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else toast("Company profile updated ✓");
@@ -3139,6 +3174,74 @@ function CompanySettings() {
             <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>If a student's discount is higher, they get the better one — never both.</div>
           </div>
         )}
+      </div>
+
+      <div style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Availability", "Elérhetőség")}</div>
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2, marginBottom: 12, lineHeight: 1.5 }}>
+          {L("Customers can only book inside these hours. Days you switch off are hidden completely.", "Az ügyfelek csak ezekben az időpontokban tudnak foglalni. A kikapcsolt napok nem foglalhatók.")}
+        </div>
+
+        {/* fully booked / paused */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: avail.paused ? C.amberSoft : C.bg, borderRadius: 14, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ flex: 1, paddingRight: 10 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{L("Fully booked — pause new bookings", "Betelt — foglalások szüneteltetése")}</div>
+            <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>{L("You stay listed, but nobody can book until you switch this off.", "A profilod látható marad, de nem lehet foglalni.")}</div>
+          </div>
+          <button onClick={() => setAvail({ ...avail, paused: !avail.paused })}
+            style={{ width: 46, height: 26, borderRadius: 99, border: "none", cursor: "pointer", background: avail.paused ? C.amber : C.line, position: "relative", flexShrink: 0 }}>
+            <span style={{ position: "absolute", top: 3, left: avail.paused ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,.25)" }} />
+          </button>
+        </div>
+
+        {/* per-weekday hours */}
+        {["1","2","3","4","5","6","0"].map((k) => {
+          const d = avail.days[k] || { on: false, from: "08:00", to: "18:00" };
+          const setDay = (patch) => setAvail({ ...avail, days: { ...avail.days, [k]: { ...d, ...patch } } });
+          return (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: `1px solid ${C.line}55` }}>
+              <button onClick={() => setDay({ on: !d.on })}
+                style={{ width: 38, height: 22, borderRadius: 99, border: "none", cursor: "pointer", background: d.on ? C.green : C.line, position: "relative", flexShrink: 0 }}>
+                <span style={{ position: "absolute", top: 3, left: d.on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+              </button>
+              <span style={{ flex: 1, fontFamily: B, fontWeight: 700, fontSize: 12, color: d.on ? C.ink : C.inkFaint }}>{DAY_NAMES[Number(k)]}</span>
+              {d.on ? (
+                <>
+                  <input type="time" value={d.from} onChange={(e) => setDay({ from: e.target.value })}
+                    style={{ border: `1.5px solid ${C.line}`, borderRadius: 10, padding: "5px 7px", fontFamily: B, fontSize: 11.5, background: C.bg, color: C.ink, outline: "none" }} />
+                  <span style={{ fontFamily: B, fontSize: 11, color: C.inkFaint }}>–</span>
+                  <input type="time" value={d.to} onChange={(e) => setDay({ to: e.target.value })}
+                    style={{ border: `1.5px solid ${C.line}`, borderRadius: 10, padding: "5px 7px", fontFamily: B, fontSize: 11.5, background: C.bg, color: C.ink, outline: "none" }} />
+                </>
+              ) : (
+                <span style={{ fontFamily: B, fontSize: 11, color: C.inkFaint }}>{L("Closed", "Zárva")}</span>
+              )}
+            </div>
+          );
+        })}
+
+        {/* specific days off (holidays, etc.) */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{L("Days off", "Szabadnapok")}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input type="date" value={closedDate} onChange={(e) => setClosedDate(e.target.value)}
+              style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none" }} />
+            <Btn small disabled={!closedDate} onClick={() => {
+              if (!closedDate || avail.closed.includes(closedDate)) return;
+              setAvail({ ...avail, closed: [...avail.closed, closedDate].sort() });
+              setClosedDate("");
+            }}>{L("Add", "Hozzáad")}</Btn>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {avail.closed.length === 0 && <span style={{ fontFamily: B, fontSize: 11, color: C.inkFaint }}>{L("No days off set.", "Nincs beállított szabadnap.")}</span>}
+            {avail.closed.map((dt) => (
+              <button key={dt} onClick={() => setAvail({ ...avail, closed: avail.closed.filter((x) => x !== dt) })}
+                style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 10px", borderRadius: 99, border: "none", background: C.bg, color: C.inkSoft, cursor: "pointer" }}>
+                {dt} ✕
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <Btn full disabled={busy} onClick={save}>{busy ? "Saving…" : "Save company profile"}</Btn>

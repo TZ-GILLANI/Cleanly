@@ -237,6 +237,27 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── company availability ──");
+const avSet = await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: {
+  paused: false,
+  days: { "0": { on: false }, "1": { on: true, from: "09:00", to: "17:00" }, "2": { on: true, from: "09:00", to: "17:00" },
+          "3": { on: true, from: "09:00", to: "17:00" }, "4": { on: true, from: "09:00", to: "17:00" },
+          "5": { on: true, from: "09:00", to: "17:00" }, "6": { on: false } },
+  closed: ["2027-05-03"] } } });
+ok("company can save availability", avSet.status === 200 && avSet.data.company.availability?.days?.["1"]?.from === "09:00", JSON.stringify(avSet.data.company?.availability || {}).slice(0, 120));
+const bkSunday = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-02", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
+ok("booking on a closed weekday is refused", bkSunday.status === 400, JSON.stringify(bkSunday.data));
+const bkClosed = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-03", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
+ok("booking on a day-off date is refused", bkClosed.status === 400);
+const bkEarly = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-04", scheduledSlot: "08:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
+ok("booking outside working hours is refused", bkEarly.status === 400);
+const bkOk = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-04", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
+ok("booking inside working hours succeeds", bkOk.status === 201, JSON.stringify(bkOk.data).slice(0, 120));
+await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: { paused: true, days: {}, closed: [] } } });
+const bkPaused = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-05", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
+ok("paused company cannot be booked", bkPaused.status === 400);
+await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: { paused: false, days: { "0": {on:true,from:"00:00",to:"23:59"},"1": {on:true,from:"00:00",to:"23:59"},"2": {on:true,from:"00:00",to:"23:59"},"3": {on:true,from:"00:00",to:"23:59"},"4": {on:true,from:"00:00",to:"23:59"},"5": {on:true,from:"00:00",to:"23:59"},"6": {on:true,from:"00:00",to:"23:59"} }, closed: [] } } });
+
 console.log("\n── company reviews endpoint ──");
 const crev = await j("/api/reviews/company", { token: coTok });
 ok("company reviews endpoint returns data", crev.status === 200 && Array.isArray(crev.data.reviews) && Array.isArray(crev.data.cleaners), JSON.stringify(crev.data).slice(0, 120));
@@ -305,6 +326,14 @@ if (spBooking.status === 201) {
 } else ok("booking with service discount succeeds", false, JSON.stringify(spBooking.data));
 const svcPromoClear = await j(`/api/services/${svcId}`, { method: "PUT", token: coTok, body: { promoPct: 0 } });
 ok("company can clear the service discount", svcPromoClear.status === 200 && !svcPromoClear.data.service.promo_pct);
+
+console.log("\n── no password hashes leave the server ──");
+const leakReg = await j("/api/auth/register", { method: "POST", body: { email: "leak@test.hu", password: "secret123", role: "customer", fullName: "Leak", customerType: "resident", address: "L utca 1", phone: "+36309998887", termsAccepted: true } });
+ok("register response has no password_hash", !JSON.stringify(leakReg.data).includes("password_hash"), JSON.stringify(leakReg.data).slice(0, 120));
+const leakLogin = await j("/api/auth/login", { method: "POST", body: { email: "leak@test.hu", password: "secret123" } });
+ok("login response has no password_hash", !JSON.stringify(leakLogin.data).includes("password_hash"));
+const leakProf = await j("/api/auth/profile", { method: "PUT", token: leakLogin.data.token, body: { fullName: "Leak Two" } });
+ok("profile response has no password_hash", !JSON.stringify(leakProf.data).includes("password_hash"));
 
 console.log("\n── security hardening ──");
 const hdr = await fetch(BASE + "/api/health");

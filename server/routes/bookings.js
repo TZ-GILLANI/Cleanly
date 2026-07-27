@@ -78,6 +78,25 @@ router.post("/", requireAuth, async (req, res) => {
     if (!coRes.rows.length) return res.status(400).json({ error: "Company is not currently accepting bookings" });
     const co = coRes.rows[0];
 
+    // ── Respect the company's availability (server-side, so a stale app can't
+    //    slip a booking into a day/time they are closed) ──
+    const av = co.availability;
+    if (av) {
+      if (av.paused) return res.status(400).json({ error: "This company is not taking new bookings right now." });
+      const dstr = String(scheduledDate).slice(0, 10);
+      if (Array.isArray(av.closed) && av.closed.includes(dstr))
+        return res.status(400).json({ error: "The company is closed on that date — please pick another day." });
+      const dow = String(new Date(dstr + "T12:00:00Z").getUTCDay());
+      const rule = (av.days || {})[dow];
+      if (rule && rule.on === false)
+        return res.status(400).json({ error: "The company doesn't work on that weekday — please pick another day." });
+      if (rule && rule.on && scheduledSlot) {
+        const t = String(scheduledSlot).slice(0, 5);
+        if (t < String(rule.from || "00:00") || t >= String(rule.to || "23:59"))
+          return res.status(400).json({ error: `That time is outside the company's hours (${rule.from}–${rule.to}).` });
+      }
+    }
+
     // One active subscription chain per customer per service — prevents double-charging chains.
     if (svc.pricing_type === "subscription") {
       const dup = await query(

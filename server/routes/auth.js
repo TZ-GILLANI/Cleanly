@@ -22,6 +22,14 @@ const ipOf = (req) => req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || r
 
 const router = Router();
 
+/* Strip everything the client must never see from a user row. */
+function safeUser(u) {
+  if (!u) return u;
+  const { password_hash, email_code, email_code_expires, push_token, stripe_customer_id, default_payment_method, ...rest } = u;
+  return rest;
+}
+
+
 /* POST /api/auth/register */
 router.post("/register", async (req, res) => {
   if (!rateLimit("reg:" + ipOf(req), 6, 60 * 60e3)) return res.status(429).json({ error: "Too many registrations from this network — try again later" });
@@ -112,7 +120,7 @@ router.post("/register", async (req, res) => {
     // Student accounts wait for admin review of the card photo — no session yet.
     if (isStudent) return res.status(201).json({ pendingApproval: true });
     const token = signToken({ id: user.id, role: "customer", companyId: null });
-    return res.status(201).json({ token, user });
+    return res.status(201).json({ token, user: safeUser(user) });
   } catch (err) {
     console.error("register error:", err);
     res.status(500).json({ error: "Registration failed" });
@@ -143,7 +151,7 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({ error: "Your student verification was declined. Register as a resident, or contact support." });
 
     const token = signToken({ id: user.id, role: user.role, companyId: user.company_id, isSuper: user.is_super === true });
-    res.json({ token, user });
+    res.json({ token, user: safeUser(user) });
   } catch (err) {
     console.error("login error:", err);
     res.status(500).json({ error: "Login failed" });
@@ -155,7 +163,7 @@ router.get("/me", requireAuth, async (req, res) => {
   try {
     const result = await query("SELECT * FROM users WHERE id = $1", [req.user.id]);
     if (!result.rows.length) return res.status(404).json({ error: "User not found" });
-    res.json({ user: result.rows[0] });
+    res.json({ user: safeUser(result.rows[0]) });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch user" });
   }
@@ -206,7 +214,7 @@ router.put("/profile", requireAuth, async (req, res) => {
     );
     if (upgradeRequested) await query("UPDATE users SET student_upgrade = true WHERE id = $1", [req.user.id]);
     if (customerType === "resident") await query("UPDATE users SET student_upgrade = false WHERE id = $1", [req.user.id]);
-    res.json({ user: result.rows[0] });
+    res.json({ user: safeUser(result.rows[0]) });
   } catch (err) {
     res.status(500).json({ error: "Failed to update profile" });
   }
