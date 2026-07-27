@@ -42,10 +42,27 @@ async function sendPush(userId, title, body) {
     if (!access) return;
     const r = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
       method: "POST", headers: { Authorization: "Bearer " + access, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { token, notification: { title, body: body || "" } } }),
+      body: JSON.stringify({
+        message: {
+          token,
+          notification: { title, body: body || "" },
+          // iOS needs an explicit APNs payload or the phone stays silent when
+          // the app is closed; sound+badge also make it behave like a real app.
+          apns: {
+            headers: { "apns-priority": "10", "apns-push-type": "alert" },
+            payload: { aps: { alert: { title, body: body || "" }, sound: "default", badge: 1, "content-available": 1 } },
+          },
+          android: { priority: "high", notification: { sound: "default", default_sound: true } },
+        },
+      }),
     });
-    if (r.status === 404 || r.status === 410) // token dead — clean it up
+    if (r.status === 404 || r.status === 410) { // token dead — clean it up
       await query("UPDATE users SET push_token = NULL WHERE id = $1", [userId]);
+      console.warn("push: token expired, cleared for user", userId);
+    } else if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      console.error("push send failed", r.status, txt.slice(0, 300));
+    }
   } catch (e) { console.error("push failed:", e.message); }
 }
 

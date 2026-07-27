@@ -212,6 +212,8 @@ export function StoreProvider({ children }) {
   }, [session?.lang]);
 
   /* ── API mode: restore session from saved token ─────────── */
+  const loadAllDataRef = React.useRef(null);
+  const [dataVersion, setDataVersion] = useState(0);
   const loadFromApi = useCallback(async () => {
     if (!getToken()) { setLoading(false); return; }
     setLoading(true);
@@ -240,6 +242,13 @@ export function StoreProvider({ children }) {
     documents: user.documents || [],
     savedAddresses: user.saved_addresses || [],
   });
+
+  // Re-pull everything for the signed-in session (used by the app's live refresh).
+  const refreshData = useCallback(async () => {
+    if (!isApiMode || !session) return;
+    try { await loadAllDataRef.current?.(session); } catch (e) { /* silent: background refresh */ }
+    setDataVersion((v) => v + 1);   // screens with their own fetches re-run on this
+  }, [session]);
 
   const loadFee = async () => {
     try { const c = await api("/payments/config"); if (c && c.feePct != null) setFeePct(Number(c.feePct)); } catch {}
@@ -290,6 +299,7 @@ export function StoreProvider({ children }) {
     }
     setDb(next);
   }, []);
+  loadAllDataRef.current = loadAllData;
 
   const patchBooking = (id, patch) =>
     setDb(d => ({ ...d, bookings: d.bookings.map(b => b.id === id ? { ...b, ...patch } : b) }));
@@ -588,6 +598,40 @@ export function StoreProvider({ children }) {
     setDb(d => ({ ...d, notices: [{ id: uid(), company_id: session.companyId, to_employee: employeeId, body, is_read: false, created_at: nowLabel() }, ...d.notices] }));
   };
 
+  /* Cleaners waiting for this company's approval */
+  /* CEO/admin: keep the conversation in-house, or hand it to the company */
+  const setComplaintHandler = async (id, handledBy) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { const r = await api("/complaints/" + id + "/handling", { method: "PUT", body: { handledBy } }); await refreshData(); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+  /* Company: solve it in chat, or call the customer back */
+  const setCompanyAction = async (id, action, note) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { const r = await api("/complaints/" + id + "/company-action", { method: "PUT", body: { action, note } }); await refreshData(); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+
+  const fetchPendingCleaners = async () => {
+    if (!isApiMode) return [];
+    try { const d = await api("/employees/pending"); return d.pending || []; } catch { return []; }
+  };
+  const decideCleaner = async (id, decision) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { const r = await api("/employees/" + id + "/approval", { method: "PUT", body: { decision } }); await refreshData(); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+  /* All reviews for my company + per-cleaner breakdown */
+  const fetchCompanyReviews = async () => {
+    if (!isApiMode) return { reviews: [], cleaners: [] };
+    try { return await api("/reviews/company"); } catch { return { reviews: [], cleaners: [] }; }
+  };
+  /* Clear the "Deleted user (…)" note from one booking */
+  const hideDeletedIdentity = async (bookingId) => {
+    if (!isApiMode) return;
+    try { await api("/bookings/" + bookingId + "/hide-identity", { method: "PUT" }); await refreshData(); } catch {}
+  };
+
   const removeEmployee = async (id) => {
     if (isApiMode) {
       try { await api("/employees/" + id, { method: "DELETE" }); setDb(d => ({ ...d, employees: d.employees.filter(e => e.id !== id) })); return { ok: true }; }
@@ -827,7 +871,7 @@ export function StoreProvider({ children }) {
   const value = {
     isLive: isApiMode, session, loading, error, clearError: () => setError(null),
     feePct,
-    lang, setLang, t,
+    lang, setLang, t, refreshData, dataVersion,
     companies: db.companies, services: db.services, employees: visibleEmployees, allEmployees: db.employees,
     bookings: db.bookings, notices: db.notices, invites: db.invites, reviews: db.reviews,
     signupCustomer, signupCompany, signupEmployee, login, logout,
@@ -841,7 +885,7 @@ export function StoreProvider({ children }) {
     forgotPassword, resetPassword,
     connectStatus, connectOnboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
-    assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService, removeEmployee,
+    assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService, removeEmployee, fetchPendingCleaners, decideCleaner, setComplaintHandler, setCompanyAction, fetchCompanyReviews, hideDeletedIdentity,
     adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */

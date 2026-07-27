@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -42,6 +42,35 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to submit review" });
   }
+});
+
+/* GET /api/reviews/company — every review for my company, with the cleaner who did the job */
+router.get("/company", requireAuth, requireRole("company"), async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT rv.id, rv.rating, rv.comment, rv.created_at,
+              cu.full_name AS customer_name,
+              b.scheduled_date, b.service_snapshot,
+              b.assigned_to AS cleaner_id,
+              cl.full_name AS cleaner_name
+       FROM reviews rv
+       LEFT JOIN bookings b ON b.id = rv.booking_id
+       LEFT JOIN users cu ON cu.id = rv.user_id
+       LEFT JOIN users cl ON cl.id = b.assigned_to
+       WHERE rv.company_id = $1
+       ORDER BY rv.created_at DESC`,
+      [req.user.companyId]
+    );
+    const byCleaner = {};
+    for (const x of rows.rows) {
+      const k = x.cleaner_id || "unassigned";
+      if (!byCleaner[k]) byCleaner[k] = { cleanerId: x.cleaner_id, name: x.cleaner_name || "Not assigned", count: 0, total: 0 };
+      byCleaner[k].count++; byCleaner[k].total += Number(x.rating) || 0;
+    }
+    const cleaners = Object.values(byCleaner).map((c) => ({ ...c, average: c.count ? Math.round((c.total / c.count) * 10) / 10 : 0 }))
+      .sort((a, b2) => b2.count - a.count);
+    res.json({ reviews: rows.rows, cleaners });
+  } catch (e) { console.error("company reviews:", e.message); res.status(500).json({ error: "Failed to load reviews" }); }
 });
 
 export default router;

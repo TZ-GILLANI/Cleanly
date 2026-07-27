@@ -304,3 +304,29 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS student_upgrade BOOLEAN NOT NULL DEFA
 
 -- v4.7: FCM device token for real phone push notifications
 ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;
+
+-- v4.9: keep a record of who a deleted account was, for the company's and admin's
+-- booking history only (accounting). Clearable per booking.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_name  TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_email TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS hide_deleted_identity BOOLEAN NOT NULL DEFAULT false;
+
+-- v4.9: day-of reminders (customer ~40min before, company at each booking time)
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_customer_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_company_at  TIMESTAMPTZ;
+
+-- v5.0: complaint routing — who is talking to the customer right now, and how
+-- the company chose to handle it (solve in chat, or call the customer back).
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS handled_by TEXT NOT NULL DEFAULT 'admin'
+  CHECK (handled_by IS NULL OR handled_by IN ('admin','company'));
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS company_action TEXT
+  CHECK (company_action IS NULL OR company_action IN ('chat','callback'));
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS callback_note TEXT;
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS callback_at TIMESTAMPTZ;
+
+-- v5.0: saved card for recurring plans — the customer approves it once at the
+-- first payment, then each renewal is charged automatically (off-session).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_payment_method TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS card_brand TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS card_last4 TEXT;

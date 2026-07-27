@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db.js";
+import { notify } from "../lib/notify.js";
 import { signToken, requireAuth } from "../middleware/auth.js";
 import { huTaxIdValid, huRegNumberValid, formatTaxId } from "../lib/validate.js";
 import { sendEmail, mailerConfigured } from "../lib/mailer.js";
@@ -78,7 +79,7 @@ router.post("/register", async (req, res) => {
 
       const companyId = invite.rows[0].company_id;
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id",
+        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone, approval_status, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW()) RETURNING id",
         [email.toLowerCase(), hash, "employee", fullName, companyId, docsJson, address ? String(address).slice(0, 300) : null, normPhone]
       );
       const userId = userRes.rows[0].id;
@@ -92,9 +93,13 @@ router.post("/register", async (req, res) => {
         return res.status(400).json({ error: "Invite code was just used by someone else" });
       }
 
-      const user = (await query("SELECT * FROM users WHERE id = $1", [userId])).rows[0];
-      const token = signToken({ id: userId, role: "employee", companyId });
-      return res.status(201).json({ token, user });
+      // The company owner must approve the cleaner before they can sign in.
+      try {
+        const owner = await query("SELECT owner_id FROM companies WHERE id = $1", [companyId]);
+        if (owner.rows[0]) await notify(owner.rows[0].owner_id, "cleaner_pending", "New cleaner waiting for approval",
+          `${fullName} used your invite code. Approve them in the Team tab.`, null);
+      } catch (e) { console.error("cleaner-pending notify:", e.message); }
+      return res.status(201).json({ pendingApproval: true });
     }
 
     // customer
@@ -131,6 +136,8 @@ router.post("/login", async (req, res) => {
     if (user.approval_status === "pending")
       return res.status(403).json({ error: user.role === "company"
         ? "Your company is being reviewed — we'll email you the moment it's approved."
+        : user.role === "employee"
+        ? "Your company hasn't approved your account yet — ask them to approve you in the Team tab."
         : "Your student account is waiting for approval — we'll email you as soon as it's ready." });
     if (user.approval_status === "rejected")
       return res.status(403).json({ error: "Your student verification was declined. Register as a resident, or contact support." });
@@ -227,6 +234,8 @@ router.delete("/me", requireAuth, async (req, res) => {
     await query(
       `UPDATE users SET
          email = $1,
+         deleted_name = COALESCE(deleted_name, full_name),
+         deleted_email = COALESCE(deleted_email, email),
          full_name = 'Deleted user',
          phone = NULL,
          address = NULL,

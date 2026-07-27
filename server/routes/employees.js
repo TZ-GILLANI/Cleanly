@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { query } from "../db.js";
+import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
@@ -8,7 +9,7 @@ const router = Router();
 router.get("/", requireAuth, requireRole("company"), async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, full_name, phone, is_active, company_id, created_at FROM users WHERE company_id = $1 AND role = 'employee' ORDER BY full_name ASC",
+      "SELECT id, full_name, phone, is_active, company_id, created_at FROM users WHERE company_id = $1 AND role = 'employee' AND approval_status = 'approved' ORDER BY full_name ASC",
       [req.user.companyId]
     );
     res.json({ employees: result.rows });
@@ -93,6 +94,35 @@ router.delete("/:id", requireAuth, requireRole("company"), async (req, res) => {
     console.error("remove employee:", err);
     res.status(500).json({ error: "Could not remove cleaner" });
   }
+});
+
+/* GET /api/employees/pending — cleaners who used our invite code, awaiting approval */
+router.get("/pending", requireAuth, requireRole("company"), async (req, res) => {
+  try {
+    const r = await query(
+      "SELECT id, full_name, email, phone, documents, created_at FROM users WHERE company_id = $1 AND role = 'employee' AND approval_status = 'pending' ORDER BY created_at DESC",
+      [req.user.companyId]
+    );
+    res.json({ pending: r.rows });
+  } catch (e) { res.status(500).json({ error: "Failed to load pending cleaners" }); }
+});
+
+/* PUT /api/employees/:id/approval — company approves or rejects a cleaner */
+router.put("/:id/approval", requireAuth, requireRole("company"), async (req, res) => {
+  const decision = req.body?.decision;
+  if (!["approved", "rejected"].includes(decision)) return res.status(400).json({ error: "Invalid decision" });
+  try {
+    const r = await query(
+      "UPDATE users SET approval_status = $1 WHERE id = $2 AND company_id = $3 AND role = 'employee' RETURNING id, full_name",
+      [decision, req.params.id, req.user.companyId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Cleaner not found in your team" });
+    notify(r.rows[0].id, "approval",
+      decision === "approved" ? "You're approved" : "Application declined",
+      decision === "approved" ? "Your company approved you — log in to see your jobs." : "Your company declined your application.",
+      null).catch(() => {});
+    res.json({ ok: true, employee: r.rows[0] });
+  } catch (e) { res.status(500).json({ error: "Could not update cleaner" }); }
 });
 
 export default router;

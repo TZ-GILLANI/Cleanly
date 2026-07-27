@@ -135,4 +135,70 @@ router.put("/:id", requireAuth, async (req, res) => {
   }
 });
 
+/* PUT /api/complaints/:id/handling — CEO/admin decides who speaks to the customer:
+   keep it in-house ("admin") or hand the conversation to the company. */
+router.put("/:id/handling", requireAuth, requireRole("admin"), async (req, res) => {
+  const to = req.body?.handledBy;
+  if (!["admin", "company"].includes(to)) return res.status(400).json({ error: "Invalid handler" });
+  try {
+    const cur = await query("SELECT assigned_company_id, user_id FROM complaints WHERE id = $1", [req.params.id]);
+    if (!cur.rows.length) return res.status(404).json({ error: "Not found" });
+    if (to === "company" && !cur.rows[0].assigned_company_id)
+      return res.status(400).json({ error: "Assign a company first, then hand the chat over." });
+
+    const r = await query(
+      `UPDATE complaints SET handled_by = $1,
+              company_action = CASE WHEN $1 = 'admin' THEN NULL ELSE company_action END,
+              status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
+       WHERE id = $2 RETURNING *`,
+      [to, req.params.id]
+    );
+    // tell whoever now owns the conversation
+    if (to === "company") {
+      const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [cur.rows[0].assigned_company_id]);
+      if (oc.rows[0]) notify(oc.rows[0].owner_id, "complaint", "A report was handed to you",
+        "Cleano passed a customer report to your company — open Issues to reply or call them back.", null).catch(() => {});
+    }
+    notify(cur.rows[0].user_id, "complaint",
+      to === "company" ? "Your report was passed to the company" : "Cleano is handling your report",
+      to === "company" ? "The cleaning company will reply to you here." : "Our team is looking after this personally.",
+      null).catch(() => {});
+    logAdmin(req, to === "company" ? "complaint_to_company" : "complaint_to_admin", "complaint", req.params.id, null);
+    res.json({ complaint: r.rows[0] });
+  } catch (e) { console.error("handling:", e.message); res.status(500).json({ error: "Could not change handler" }); }
+});
+
+/* PUT /api/complaints/:id/company-action — the company chooses how to handle it:
+   solve it right here in chat, or call the customer back and report afterwards. */
+router.put("/:id/company-action", requireAuth, requireRole("company"), async (req, res) => {
+  const action = req.body?.action;
+  const note = String(req.body?.note || "").slice(0, 1000);
+  if (!["chat", "callback"].includes(action)) return res.status(400).json({ error: "Invalid action" });
+  try {
+    const cur = await query("SELECT assigned_company_id, user_id FROM complaints WHERE id = $1", [req.params.id]);
+    if (!cur.rows.length) return res.status(404).json({ error: "Not found" });
+    if (cur.rows[0].assigned_company_id !== req.user.companyId) return res.status(403).json({ error: "Not your report" });
+
+    const r = await query(
+      `UPDATE complaints SET company_action = $1, callback_note = $2,
+              callback_at = CASE WHEN $1 = 'callback' THEN NOW() ELSE callback_at END
+       WHERE id = $3 RETURNING *`,
+      [action, note || null, req.params.id]
+    );
+    // the customer always hears what is happening
+    await query(
+      "INSERT INTO complaint_messages (complaint_id, sender_id, sender_role, body) VALUES ($1,$2,'company',$3)",
+      [req.params.id, req.user.id,
+       action === "callback"
+         ? "We'll call you back about this shortly." + (note ? " " + note : "")
+         : "We're looking into this and will reply here." + (note ? " " + note : "")]
+    );
+    notify(cur.rows[0].user_id, "complaint",
+      action === "callback" ? "The company will call you" : "The company replied",
+      action === "callback" ? "They'll phone you about your report shortly." : "Open your report to read their message.",
+      null).catch(() => {});
+    res.json({ complaint: r.rows[0] });
+  } catch (e) { console.error("company-action:", e.message); res.status(500).json({ error: "Could not update" }); }
+});
+
 export default router;

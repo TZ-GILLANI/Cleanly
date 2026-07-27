@@ -237,6 +237,24 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
+console.log("\n── complaint routing (admin ↔ company) ──");
+const rcomp = await j("/api/complaints", { method: "POST", token: reuse.data.token, body: { subject: "Routing test", body: "please help" } });
+const rcId = rcomp.data.complaint?.id;
+ok("complaint created for routing test", !!rcId);
+const handOffNoCo = await j(`/api/complaints/${rcId}/handling`, { method: "PUT", token: admTok, body: { handledBy: "company" } });
+ok("cannot hand over before assigning a company", handOffNoCo.status === 400);
+await j(`/api/complaints/${rcId}/assign`, { method: "PUT", token: admTok, body: { companyId: coId } });
+const handOff = await j(`/api/complaints/${rcId}/handling`, { method: "PUT", token: admTok, body: { handledBy: "company" } });
+ok("CEO hands the chat to the company", handOff.status === 200 && handOff.data.complaint.handled_by === "company");
+const coChoice = await j(`/api/complaints/${rcId}/company-action`, { method: "PUT", token: coTok, body: { action: "callback", note: "calling in 10 min" } });
+ok("company chooses to call back", coChoice.status === 200 && coChoice.data.complaint.company_action === "callback");
+const routeThread = await j(`/api/complaints/${rcId}/messages`, { token: reuse.data.token });
+ok("customer sees the company's callback message", (routeThread.data.messages || []).some((m) => /call you back/i.test(m.body || "")));
+const backToAdmin = await j(`/api/complaints/${rcId}/handling`, { method: "PUT", token: admTok, body: { handledBy: "admin" } });
+ok("CEO can take the chat back", backToAdmin.data.complaint.handled_by === "admin" && !backToAdmin.data.complaint.company_action);
+const notMine = await j(`/api/complaints/${rcId}/company-action`, { method: "PUT", token: reuse.data.token, body: { action: "chat" } });
+ok("customers cannot set the company action", notMine.status === 403);
+
 console.log("\n── push token registry ──");
 const ptSave = await j("/api/notifications/push-token", { method: "POST", token: coTok, body: { token: "fcm-test-token-abc123" } });
 ok("device can register its push token", ptSave.data.ok === true);

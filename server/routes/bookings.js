@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { refundBookingPayment } from "./payments.js";
+import { refundBookingPayment, chargeSavedCard } from "./payments.js";
 import { notify } from "../lib/notify.js";
 import { sendEmail } from "../lib/mailer.js";
 
@@ -31,7 +31,12 @@ router.get("/", requireAuth, async (req, res) => {
       );
     } else if (req.user.role === "company") {
       result = await query(
-        `SELECT b.*, u.full_name AS assigned_name, cu.full_name AS customer_name, cu.customer_type AS customer_kind, cu.phone AS customer_phone
+        `SELECT b.*, u.full_name AS assigned_name,
+                CASE WHEN cu.deleted_name IS NOT NULL AND NOT b.hide_deleted_identity
+                     THEN 'Deleted user (' || cu.deleted_name || ' · ' || COALESCE(cu.deleted_email,'') || ')'
+                     ELSE cu.full_name END AS customer_name,
+                (cu.deleted_name IS NOT NULL) AS customer_deleted,
+                cu.customer_type AS customer_kind, cu.phone AS customer_phone
          FROM bookings b
          LEFT JOIN users u ON u.id = b.assigned_to
          LEFT JOIN users cu ON cu.id = b.customer_id
@@ -242,6 +247,19 @@ router.put("/:id/status", requireAuth, async (req, res) => {
          b.assigned_to, b.assigned_to ? 1 : 0, onq2.rows[0].n]
       );
       next = nextRes.rows[0];
+      // Recurring plan: charge the card the customer approved on the first visit,
+      // so they never have to pay manually again. Falls back silently to
+      // "waiting for payment" if no card is saved.
+      if (next && next.pricing_type === "subscription") {
+        chargeSavedCard(next)
+          .then((r) => {
+            if (r.charged) notify(next.customer_id, "payment_confirmed", "Next visit paid automatically 💳",
+              "We charged your saved card for the next cleaning.", next.id).catch(() => {});
+            else notify(next.customer_id, "status", "Next visit scheduled",
+              "Open Bookings to pay for your next cleaning.", next.id).catch(() => {});
+          })
+          .catch(() => {});
+      }
     }
 
     res.json({ booking: updated, next });
@@ -367,6 +385,19 @@ router.get("/:id/location", requireAuth, async (req, res) => {
     if (!allowed) return res.status(403).json({ error: "Forbidden" });
     res.json({ lat: row.live_lat, lng: row.live_lng, at: row.live_at, status: row.status, address: row.address });
   } catch (err) { res.status(500).json({ error: "Failed to fetch location" }); }
+});
+
+/* PUT /api/bookings/:id/hide-identity — company/admin removes the deleted-user
+   name shown on this booking (kept for accounting until they clear it). */
+router.put("/:id/hide-identity", requireAuth, async (req, res) => {
+  try {
+    const r = await query("SELECT company_id FROM bookings WHERE id = $1", [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "Not found" });
+    const allowed = req.user.role === "admin" || (req.user.role === "company" && r.rows[0].company_id === req.user.companyId);
+    if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    await query("UPDATE bookings SET hide_deleted_identity = true WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: "Could not update booking" }); }
 });
 
 export default router;

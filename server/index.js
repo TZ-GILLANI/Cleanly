@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { startReminders } from "./lib/reminders.js";
 import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "url";
@@ -92,4 +93,6 @@ app.listen(PORT, () => {
   console.log(`   Mode: ${process.env.NODE_ENV || "development"}`);
   if (!process.env.DATABASE_URL) console.warn("   ⚠️  DATABASE_URL not set — set it in .env");
   if (process.env.JWT_SECRET === undefined) console.warn("   ⚠️  JWT_SECRET not set — using insecure default");
+  // Day-of reminders (customer ~40min before, company at each booking time).
+  if (!process.env.PGMEM) startReminders();
 });

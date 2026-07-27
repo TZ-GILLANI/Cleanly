@@ -104,7 +104,7 @@ router.put("/companies/:id", ...guard, async (req, res) => {
 router.get("/users", ...guard, async (req, res) => {
   try {
     const result = await query(
-      `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.is_super, u.approval_status, u.student_upgrade, u.customer_type, u.created_at, u.documents,
+      `SELECT u.id, u.email, u.role, u.full_name, u.is_active, u.is_super, u.approval_status, u.student_upgrade, u.customer_type, u.phone, u.address, u.email_verified, u.phone_verified, u.deleted_name, u.deleted_email, u.created_at, u.documents,
         c.name AS company_name
        FROM users u
        LEFT JOIN companies c ON c.id = u.company_id
@@ -231,7 +231,7 @@ router.delete("/users/:id", ...guard, async (req, res) => {
     if (u.role === "admin" && !req.user.isSuper) return res.status(403).json({ error: "Only the CEO can delete admin accounts" });
     const anonEmail = `deleted-${u.id}-${Date.now()}@deleted.cleanly`;
     await query(
-      `UPDATE users SET email = $1, full_name = 'Deleted user', phone = NULL, address = NULL, documents = '[]'::jsonb, password_hash = 'account-deleted', is_active = false WHERE id = $2`,
+      `UPDATE users SET deleted_name = COALESCE(deleted_name, full_name), deleted_email = COALESCE(deleted_email, email), email = $1, full_name = 'Deleted user', phone = NULL, address = NULL, documents = '[]'::jsonb, password_hash = 'account-deleted', is_active = false WHERE id = $2`,
       [anonEmail, u.id]
     );
     if (u.role === "company" && u.company_id) await query("UPDATE companies SET is_listed = false WHERE id = $1", [u.company_id]);

@@ -73,6 +73,54 @@ export async function refundBookingPayment(booking) {
   }
 }
 
+/* Charge a subscription renewal with the customer's saved card (off-session).
+   Returns {charged:true} when Stripe took the money, otherwise a reason so the
+   booking simply waits for the customer to pay manually. */
+export async function chargeSavedCard(booking) {
+  try {
+    if (!stripeConfigured()) return { charged: false, reason: "stripe-off" };
+    const u = await query("SELECT stripe_customer_id, default_payment_method FROM users WHERE id = $1", [booking.customer_id]);
+    const cust = u.rows[0]?.stripe_customer_id, pm = u.rows[0]?.default_payment_method;
+    if (!cust || !pm) return { charged: false, reason: "no-saved-card" };
+
+    const stripe = await getStripe();
+    const amount = Number(booking.total_huf) || 0;
+    if (amount <= 0) return { charged: false, reason: "zero" };
+    const feeHuf = Number(booking.service_fee_huf) || 0;
+
+    // keep the marketplace split on renewals too
+    let split = {};
+    const co = await query("SELECT stripe_account_id FROM companies WHERE id = $1", [booking.company_id]);
+    const acctId = co.rows[0]?.stripe_account_id;
+    if (acctId) {
+      try {
+        const acct = await stripe.accounts.retrieve(acctId);
+        if (acct.charges_enabled) split = { application_fee_amount: feeHuf * 100, transfer_data: { destination: acctId } };
+      } catch {}
+    }
+
+    const pi = await stripe.paymentIntents.create({
+      amount: amount * 100,
+      currency: "huf",
+      customer: cust,
+      payment_method: pm,
+      off_session: true,
+      confirm: true,
+      description: `Cleano renewal · ${(booking.service_snapshot && booking.service_snapshot.name) || "cleaning"}`,
+      metadata: { booking_id: booking.id, renewal: "1" },
+      ...split,
+    });
+    if (pi.status === "succeeded") {
+      await query("UPDATE bookings SET payment_status = 'paid', barion_payment_id = $1 WHERE id = $2", ["stripe_pi:" + pi.id, booking.id]);
+      return { charged: true };
+    }
+    return { charged: false, reason: pi.status };
+  } catch (e) {
+    console.warn("renewal charge failed:", e.message);
+    return { charged: false, reason: e.message };
+  }
+}
+
 /* POST /api/payments/start { bookingId } — customer only */
 router.post("/start", requireAuth, requireRole("customer"), async (req, res) => {
   if (!configured()) {
@@ -148,10 +196,29 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
           }
         } catch (e) { console.warn("connect account check failed:", e.message); }
       }
+      // Recurring plans: reuse (or create) a Stripe Customer and ask Stripe to
+      // keep the card on file, so later visits can be charged automatically.
+      const isSub = booking.pricing_type === "subscription";
+      let customerId = null;
+      if (isSub) {
+        const u = await query("SELECT stripe_customer_id, email, full_name FROM users WHERE id = $1", [req.user.id]);
+        customerId = u.rows[0]?.stripe_customer_id || null;
+        if (!customerId) {
+          const cust = await stripe.customers.create({
+            email: u.rows[0]?.email || undefined,
+            name: u.rows[0]?.full_name || undefined,
+            metadata: { cleano_user: req.user.id },
+          });
+          customerId = cust.id;
+          await query("UPDATE users SET stripe_customer_id = $1 WHERE id = $2", [customerId, req.user.id]);
+        }
+      }
+      const piData = { ...(split || {}), ...(isSub ? { setup_future_usage: "off_session" } : {}) };
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         locale: "hu",
-        ...(split ? { payment_intent_data: split } : {}),
+        ...(customerId ? { customer: customerId } : {}),
+        ...(Object.keys(piData).length ? { payment_intent_data: piData } : {}),
         line_items: [{
           price_data: {
             currency: "huf",
@@ -327,6 +394,22 @@ export async function stripeWebhook(req, res) {
       const bookingId = sess.metadata?.booking_id;
       if (bookingId) {
         await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [bookingId]);
+        // Recurring plan: remember the card the customer just approved so the
+        // next visit can be charged automatically without asking again.
+        try {
+          if (sess.customer && sess.payment_intent) {
+            const stripe2 = await getStripe();
+            const pi = await stripe2.paymentIntents.retrieve(String(sess.payment_intent));
+            const pmId = pi.payment_method;
+            if (pmId) {
+              const pm = await stripe2.paymentMethods.retrieve(String(pmId));
+              await query(
+                "UPDATE users SET stripe_customer_id = $1, default_payment_method = $2, card_brand = $3, card_last4 = $4 WHERE stripe_customer_id = $1 OR id = (SELECT customer_id FROM bookings WHERE id = $5)",
+                [String(sess.customer), String(pmId), pm.card?.brand || null, pm.card?.last4 || null, bookingId]
+              );
+            }
+          }
+        } catch (e) { console.warn("save card:", e.message); }
         try {
           const bq = await query("SELECT b.customer_id, b.service_snapshot, c.owner_id, c.name AS company_name FROM bookings b JOIN companies c ON c.id = b.company_id WHERE b.id = $1", [bookingId]);
           const bn = bq.rows[0];

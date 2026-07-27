@@ -195,6 +195,26 @@ function DocUpload({ docs = [], onChange, label, hint }) {
 }
 
 /* ── Document viewer (admin review) ───────────────────────── */
+/* Opens a stored document. Data-URL "download" links are blocked inside the
+   phone app, so we turn it into a blob URL and open it in the system viewer —
+   from there the user can save or share it. */
+function openDoc(doc) {
+  try {
+    const [meta, b64] = String(doc.data || "").split(",");
+    if (!b64) { window.open(doc.data, "_blank"); return; }
+    const mime = (meta.match(/data:([^;]+)/) || [])[1] || "application/octet-stream";
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url; a.target = "_blank"; a.rel = "noreferrer";
+    a.download = doc.name || "document";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch { try { window.open(doc.data, "_blank"); } catch {} }
+}
+
 function DocViewer({ docs, title, close }) {
   // Every admin (limited or CEO) can view AND download documents; the admin log records decisions.
   const canDownload = true;
@@ -208,9 +228,9 @@ function DocViewer({ docs, title, close }) {
             ? <>
                 <img src={doc.data} alt={doc.name} onContextMenu={(e) => { if (!canDownload) e.preventDefault(); }} draggable={canDownload}
                   style={{ width: "100%", borderRadius: 14, boxShadow: "0 2px 10px rgba(20,28,58,.1)", pointerEvents: canDownload ? "auto" : "none" }} />
-                {canDownload && <a href={doc.data} download={doc.name} style={{ display: "inline-block", marginTop: 6, fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft, textDecoration: "none" }}>⬇ Download {doc.name}</a>}
+                {canDownload && <button onClick={() => openDoc(doc)} style={{ marginTop: 6, background: "none", border: "none", padding: 0, fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft, cursor: "pointer" }}>⬇ Open / download {doc.name}</button>}
               </>
-            : <a href={doc.data} download={doc.name} style={{ display: "block", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, borderRadius: 13, padding: "12px 14px", textDecoration: "none", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Download {doc.name}</a>}
+            : <button onClick={() => openDoc(doc)} style={{ display: "block", width: "100%", textAlign: "left", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, border: "none", borderRadius: 13, padding: "12px 14px", cursor: "pointer", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Open / download {doc.name}</button>}
         </div>
       ))}
     </Sheet>
@@ -263,8 +283,16 @@ export const useToast = () => useContext(ToastCtx);
 
 function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const recent = React.useRef(new Map());
   const toast = useCallback((msg, type = "success") => {
-    const id = Date.now() + Math.random();
+    // De-duplicate: the same message fired again within 4s is ignored, so a
+    // single failure can never show as two or three stacked messages.
+    const key = String(msg);
+    const now = Date.now();
+    const last = recent.current.get(key) || 0;
+    if (now - last < 4000) return;
+    recent.current.set(key, now);
+    const id = now + Math.random();
     setToasts((t) => [...t, { id, msg, type }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
@@ -409,30 +437,92 @@ const Progress = ({ done, total }) => (
     <div style={{ height: "100%", borderRadius: 9, width: `${total ? (done / total) * 100 : 0}%`, background: C.mint, transition: "width .3s" }} />
   </div>
 );
-function LiveMap({ lat, lng }) {
+/* Dark navy live map: the cleaner shows as the Cleano octopus, the destination
+   as a mint pin, and the real driving route between them is drawn as a path so
+   the cleaner can follow it too. */
+function LiveMap({ lat, lng, destLat, destLng, height = 320 }) {
   const ref = React.useRef(null);
   const mapRef = React.useRef(null);
-  const markerRef = React.useRef(null);
+  const meRef = React.useRef(null);
+  const destRef = React.useRef(null);
+  const lineRef = React.useRef(null);
+  const routedFor = React.useRef("");
+
   React.useEffect(() => {
     if (!window.L || !ref.current) return;
+    const L = window.L;
     if (!mapRef.current) {
-      mapRef.current = window.L.map(ref.current).setView([lat || 47.53, lng || 21.63], 14);
-      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapRef.current);
+      mapRef.current = L.map(ref.current, { zoomControl: false, attributionControl: false })
+        .setView([lat || 47.53, lng || 21.63], 14);
+      // dark basemap — matches the app's navy palette
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 20, subdomains: "abcd" })
+        .addTo(mapRef.current);
+      L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
     }
+    const map = mapRef.current;
+
+    // cleaner = Cleano octopus in a glowing navy disc
     if (lat && lng) {
-      if (!markerRef.current) markerRef.current = window.L.marker([lat, lng]).addTo(mapRef.current);
-      else markerRef.current.setLatLng([lat, lng]);
-      mapRef.current.setView([lat, lng], mapRef.current.getZoom());
+      const html = `<div style="width:46px;height:46px;border-radius:50%;background:${C.navy};border:2.5px solid ${C.mint};box-shadow:0 0 0 6px rgba(94,230,168,.22),0 6px 18px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="/white-logo.png" style="width:32px;height:32px;object-fit:contain" alt=""/></div>`;
+      const icon = L.divIcon({ html, className: "", iconSize: [46, 46], iconAnchor: [23, 23] });
+      if (!meRef.current) meRef.current = L.marker([lat, lng], { icon }).addTo(map);
+      else { meRef.current.setLatLng([lat, lng]); meRef.current.setIcon(icon); }
     }
-  }, [lat, lng]);
+
+    // destination = mint pin
+    if (destLat && destLng) {
+      const dhtml = `<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${C.mint};border:2px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,.45)"></div>`;
+      const dicon = L.divIcon({ html: dhtml, className: "", iconSize: [22, 22], iconAnchor: [11, 22] });
+      if (!destRef.current) destRef.current = L.marker([destLat, destLng], { icon: dicon }).addTo(map);
+      else { destRef.current.setLatLng([destLat, destLng]); destRef.current.setIcon(dicon); }
+    }
+
+    // route path (real roads via OSRM; falls back to a straight line)
+    if (lat && lng && destLat && destLng) {
+      const key = [lat.toFixed(4), lng.toFixed(4), destLat.toFixed(4), destLng.toFixed(4)].join();
+      if (routedFor.current !== key) {
+        routedFor.current = key;
+        const draw = (pts) => {
+          if (lineRef.current) { map.removeLayer(lineRef.current); lineRef.current = null; }
+          lineRef.current = L.polyline(pts, { color: C.mint, weight: 4, opacity: .9, lineJoin: "round" }).addTo(map);
+          try { map.fitBounds(lineRef.current.getBounds(), { padding: [40, 40], maxZoom: 16 }); } catch {}
+        };
+        fetch(`https://router.project-osrm.org/route/v1/driving/${lng},${lat};${destLng},${destLat}?overview=full&geometries=geojson`)
+          .then((r) => r.json())
+          .then((d) => {
+            const c = d?.routes?.[0]?.geometry?.coordinates;
+            draw(c && c.length ? c.map(([x, y]) => [y, x]) : [[lat, lng], [destLat, destLng]]);
+          })
+          .catch(() => draw([[lat, lng], [destLat, destLng]]));
+      }
+    } else if (lat && lng) {
+      map.setView([lat, lng], map.getZoom());
+    }
+  }, [lat, lng, destLat, destLng]);
+
   React.useEffect(() => () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } }, []);
   if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>Map unavailable offline.</div>;
-  return <div ref={ref} style={{ width: "100%", height: 300, borderRadius: 16, overflow: "hidden", zIndex: 0 }} />;
+  return <div ref={ref} style={{ width: "100%", height, borderRadius: 18, overflow: "hidden", zIndex: 0, background: C.navyDeep }} />;
 }
 
-function TrackSheet({ bookingId, close }) {
-  const { fetchLocation } = useStore();
+/* Turn a written address into coordinates (cached per address). */
+const geoCache = {};
+async function geocodeAddress(addr) {
+  if (!addr) return null;
+  if (geoCache[addr] !== undefined) return geoCache[addr];
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addr)}`);
+    const d = await r.json();
+    const hit = d && d[0] ? { lat: Number(d[0].lat), lng: Number(d[0].lon) } : null;
+    geoCache[addr] = hit;
+    return hit;
+  } catch { geoCache[addr] = null; return null; }
+}
+
+function TrackSheet({ bookingId, close, booking }) {
+  const { fetchLocation, session } = useStore();
   const [loc, setLoc] = React.useState(null);
+  const [dest, setDest] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
     const load = () => fetchLocation(bookingId).then((d) => { if (alive) setLoc(d); });
@@ -440,16 +530,60 @@ function TrackSheet({ bookingId, close }) {
     const t = setInterval(load, 15000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  const ago = (at) => { if (!at) return ""; const s = Math.round((Date.now() - new Date(at).getTime()) / 1000); return s < 60 ? "just now" : Math.round(s / 60) + " min ago"; };
+  // geocode the destination so we can draw the route to it
+  React.useEffect(() => {
+    const addr = loc?.address || booking?.address;
+    if (!addr) return;
+    let alive = true;
+    geocodeAddress(addr).then((p) => { if (alive && p) setDest(p); });
+    return () => { alive = false; };
+  }, [loc?.address, booking?.address]);
+
+  const ago = (at) => { if (!at) return ""; const s = Math.round((Date.now() - new Date(at).getTime()) / 1000); return s < 60 ? L("just now", "épp most") : Math.round(s / 60) + " min"; };
+  const addr = loc?.address || booking?.address || "";
+  const isCleaner = session?.role === "employee";
   return (
-    <Sheet title={L("Track your cleaner", "Takarító követése")} close={close}>
+    <Sheet title={isCleaner ? L("Route to the job", "Útvonal a munkához") : L("Track your cleaner", "Takarító követése")} close={close}>
       {loc && loc.lat ? (
         <>
-          <LiveMap lat={loc.lat} lng={loc.lng} />
-          <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", marginTop: 10 }}>{L("Location updated", "Pozíció frissítve")} {ago(loc.at)}</div>
+          <LiveMap lat={loc.lat} lng={loc.lng} destLat={dest?.lat} destLng={dest?.lng} />
+          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: C.navy, border: `2px solid ${C.mint}`, marginRight: 5 }} />{L("Cleaner", "Takarító")}</span>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: C.mint, marginRight: 5 }} />{L("Destination", "Cél")}</span>
+            <span>{L("Updated", "Frissítve")} {ago(loc.at)}</span>
+          </div>
         </>
       ) : (
-        <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 30, lineHeight: 1.6 }}>{L("Waiting for the cleaner to start sharing their location. This appears once they are on the way.", "Várakozás a takarító pozíciójára. Akkor jelenik meg, amikor úton van.")}</div>
+        <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 30, lineHeight: 1.6 }}>
+          {L("Waiting for the cleaner to start sharing their location. This appears once they are on the way.", "Várakozás a takarító pozíciójára. Akkor jelenik meg, amikor úton van.")}
+        </div>
+      )}
+
+      {/* who + where — the cleaner needs this on the way, the customer likes seeing it */}
+      {(addr || booking) && (
+        <div style={{ background: C.card, borderRadius: 16, padding: 14, marginTop: 12 }}>
+          {booking?.customer_name && isCleaner && (
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginBottom: 4 }}>{booking.customer_name}</div>
+          )}
+          {booking?.service_snapshot?.name && (
+            <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft }}>{booking.service_snapshot.name}{booking.scheduled_slot ? ` · ${booking.scheduled_slot}` : ""}</div>
+          )}
+          {addr && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 6, lineHeight: 1.5 }}>{addr}</div>}
+          {booking?.note && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 6, fontStyle: "italic" }}>“{booking.note}”</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            {addr && (
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`} target="_blank" rel="noreferrer"
+                style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, color: C.navySoft, background: C.bg, borderRadius: 12, padding: "10px 12px", textDecoration: "none" }}>
+                {L("Open in Maps", "Megnyitás a Térképen")}
+              </a>
+            )}
+            {isCleaner && booking?.customer_phone && (
+              <a href={`tel:${booking.customer_phone}`} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, color: C.greenDeep, background: C.mintSoft, borderRadius: 12, padding: "10px 12px", textDecoration: "none" }}>
+                {L("Call", "Hívás")}
+              </a>
+            )}
+          </div>
+        </div>
       )}
     </Sheet>
   );
@@ -481,6 +615,19 @@ function NotificationBanner() {
     fetchNotifications();
     const t = setInterval(fetchNotifications, 30000);
     return () => clearInterval(t);
+  }, []);
+  // A push that arrives while the app is open shows as our own banner
+  // (iOS hides the system banner in the foreground).
+  React.useEffect(() => {
+    const onPush = (e) => {
+      const d = (e && e.detail) || {};
+      if (!d.title) return;
+      setShow({ id: "push-" + Date.now(), title: d.title, body: d.body });
+      setTimeout(() => setShow(null), 6000);
+      fetchNotifications();
+    };
+    window.addEventListener("cleano-push", onPush);
+    return () => window.removeEventListener("cleano-push", onPush);
   }, []);
   React.useEffect(() => {
     const fresh = (notifications || []).find((n) => !n.is_read && !seenRef.current.has(n.id));
@@ -623,6 +770,7 @@ function AddressPicker({ value, onChange }) {
   const [sugs, setSugs] = useState([]);
   const [houseNo, setHouseNo] = useState("");
   const [floor, setFloor] = useState("");
+  const [extra, setExtra] = useState("");
   const [saveAs, setSaveAs] = useState("");
   const debounceRef = React.useRef(null);
   const saved = session.savedAddresses || [];
@@ -664,8 +812,14 @@ function AddressPicker({ value, onChange }) {
         const city = a.city || a.town || a.village || getCity();
         const label = road ? `${road}${num}, ${city}` : (j.display_name || "").split(",").slice(0, 3).join(",");
         if (!label) throw new Error("empty");
-        onChange(label); applyCityFrom(label);
-        setAdding(false);
+        applyCityFrom(label);
+        // Prefill the editable fields so the customer can correct the street and
+        // add house number, bell, floor — GPS rarely knows those.
+        setStreet(road || label.split(",")[0] || "");
+        setStreetPicked(road ? { street: road, city } : null);
+        setHouseNo(a.house_number ? String(a.house_number) : "");
+        setAdding(true);
+        toast(L("Location found — add your house and bell number", "Helyzet megvan — add meg a házszámot és a csengőt"));
       } catch {
         toast(L("Couldn't read your location — add the address instead", "Nem sikerült beolvasni a helyzeted — add meg a címet"), "error");
       } finally { setLocBusy(false); }
@@ -757,6 +911,9 @@ function AddressPicker({ value, onChange }) {
             <div style={{ flex: 1 }}><Field label={L("House no.", "Házszám")} placeholder="26" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} /></div>
             <div style={{ flex: 1.4 }}><Field label={L("Floor / door (optional)", "Emelet / ajtó (opcionális)")} placeholder="3/12" value={floor} onChange={(e) => setFloor(e.target.value)} /></div>
           </div>
+          <Field label={L("Bell / entrance / other details (optional)", "Csengő / bejárat / egyéb (opcionális)")}
+            placeholder={L("e.g. bell 12, second entrance, gate code 1234", "pl. 12-es csengő, második bejárat, kapukód 1234")}
+            value={extra} onChange={(e) => setExtra(e.target.value)} />
           {canSave && <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, margin: "2px 0 7px" }}>{L("Save this address as (optional)", "Cím mentése mint (opcionális)")}</div>}
           {canSave && <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             {[L("Home", "Otthon"), L("Office", "Iroda")].map((lbl) => (
@@ -771,7 +928,7 @@ function AddressPicker({ value, onChange }) {
           <Btn small full disabled={!(streetPicked || street.trim().length >= 3) || !houseNo.trim()} onClick={async () => {
             const st = streetPicked ? streetPicked.street : street.trim();
             const cty = (streetPicked && (cityFromAddress(streetPicked.city) || streetPicked.city)) || getCity();
-            const full = `${st} ${houseNo.trim()}${floor.trim() ? ", " + floor.trim() : ""}, ${cty}`;
+            const full = `${st} ${houseNo.trim()}${floor.trim() ? ", " + floor.trim() : ""}, ${cty}${extra.trim() ? " (" + extra.trim() + ")" : ""}`;
             onChange(full); applyCityFrom(full);
             if (canSave && saveAs.trim()) {
               const next = [...saved.filter((a) => a.label !== saveAs.trim()), { label: saveAs.trim(), address: full }].slice(0, 6);
@@ -1728,7 +1885,7 @@ function CustomerBookings({ openBooking }) {
         <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>🛟 {L("My reports", "Bejelentéseim")}</button>
       </div>
       {showReports && <CustomerReports close={() => setShowReports(false)} />}
-      {trackId && <TrackSheet bookingId={trackId} close={() => setTrackId(null)} />}
+      {trackId && <TrackSheet bookingId={trackId} booking={(bookings || []).find((x) => x.id === trackId)} close={() => setTrackId(null)} />}
       {mine.length === 0 && (
         <div style={{ textAlign: "center", padding: "70px 30px" }}>
           <div style={{ width: 88, height: 88, borderRadius: 28, background: C.card, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>🫧</div>
@@ -2057,7 +2214,8 @@ function EmployeeNotices() {
 ════════════════════════════════════════════════════════════ */
 
 function CompanyJobs({ openProfile }) {
-  const { session, bookings, employees, assignBooking, declineBooking, companies, uploadInvoice, archiveBooking } = useStore();
+  const { session, bookings, employees, assignBooking, declineBooking, companies, uploadInvoice, archiveBooking, hideDeletedIdentity } = useStore();
+  const [jobTrackId, setJobTrackId] = React.useState(null);
   const toast = useToast();
   const [declining, setDeclining] = useState(null); // booking being declined
   const [reason, setReason] = useState("");
@@ -2169,6 +2327,11 @@ function CompanyJobs({ openProfile }) {
               ))}
               {employees.length === 0 && <span style={{ fontFamily: B, fontSize: 11, color: C.coral }}>Add employees in Team tab first.</span>}
             </div>
+            {(b.status === 2 || b.status === 3) && (
+              <Btn small ghost style={{ width: "100%", marginTop: 10 }} onClick={() => setJobTrackId(b.id)}>
+                {L("Track cleaner on map", "Takarító követése a térképen")}
+              </Btn>
+            )}
             {b.status <= 1 && (
               <div style={{ marginTop: 8 }}>
                 <button onClick={() => { setDeclining(b); setReason(""); }} style={{ fontFamily: B, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 99, border: "1.5px solid #FFD8D1", background: C.card, color: C.coral, cursor: "pointer" }}>
@@ -2180,6 +2343,8 @@ function CompanyJobs({ openProfile }) {
         );
       })}
 
+      {jobTrackId && <TrackSheet bookingId={jobTrackId} booking={(bookings || []).find((x) => x.id === jobTrackId)} close={() => setJobTrackId(null)} />}
+
       {done.length > 0 && (
         <>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "20px 0 10px" }}>Completed jobs</div>
@@ -2187,7 +2352,14 @@ function CompanyJobs({ openProfile }) {
             <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .9 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{(b.service_snapshot || {}).name} · {b.customer_name}</div>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>
+                    {(b.service_snapshot || {}).name} · {b.customer_name}
+                    {b.customer_deleted && (
+                      <button onClick={async (e) => { e.stopPropagation(); await hideDeletedIdentity(b.id); toast(L("Removed from this booking", "Eltávolítva erről a foglalásról")); }}
+                        title={L("Remove the deleted user's details from this booking", "A törölt felhasználó adatainak eltávolítása")}
+                        style={{ marginLeft: 6, background: "none", border: "none", padding: 0, cursor: "pointer", color: C.inkFaint, fontSize: 11 }}>✕</button>
+                    )}
+                  </div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{dayLabel(b.scheduled_date)} · {huf((b.total_huf || 0) - (b.service_fee_huf || 0))} your share</div>
                 </div>
                 <Pill>Done ✨</Pill>
@@ -2351,7 +2523,7 @@ function CompanySchedule() {
           </div>
         );
       })}
-      {trackId && <TrackSheet bookingId={trackId} close={() => setTrackId(null)} />}
+      {trackId && <TrackSheet bookingId={trackId} booking={(bookings || []).find((x) => x.id === trackId)} close={() => setTrackId(null)} />}
     </div>
   );
 }
@@ -2469,7 +2641,11 @@ function CompanyServices() {
 }
 
 function CompanyTeam() {
-  const { employees, invites, bookings, createInvite, deleteInvite, sendNotice, notices, session, deleteNotice , removeEmployee } = useStore();
+  const { employees, invites, bookings, createInvite, deleteInvite, sendNotice, notices, session, deleteNotice , removeEmployee , fetchPendingCleaners, decideCleaner } = useStore();
+  const [pendingCleaners, setPendingCleaners] = React.useState([]);
+  const [viewCleanerDocs, setViewCleanerDocs] = React.useState(null);
+  const loadPending = React.useCallback(() => { fetchPendingCleaners().then(setPendingCleaners); }, []);
+  React.useEffect(() => { loadPending(); const iv = setInterval(loadPending, 30000); return () => clearInterval(iv); }, [loadPending]);
   const [confirmRm, setConfirmRm] = useState(null);
   const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
@@ -2500,6 +2676,45 @@ function CompanyTeam() {
           <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>Invite your first cleaner. They sign up with the code and are instantly linked to your company.</div>
         </div>
       )}
+
+      {pendingCleaners.length > 0 && (
+        <div style={{ background: C.amberSoft, borderRadius: 20, padding: 16, marginBottom: 14 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 4 }}>
+            {L("Waiting for your approval", "Jóváhagyásra vár")} ({pendingCleaners.length})
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+            {L("These cleaners signed up with your invite code. They can only log in once you approve them.", "Ezek a takarítók a meghívókódoddal regisztráltak. Csak jóváhagyás után tudnak belépni.")}
+          </div>
+          {pendingCleaners.map((p) => (
+            <div key={p.id} style={{ background: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Avatar name={p.full_name || "?"} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{p.full_name}</div>
+                  <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, overflow: "hidden", textOverflow: "ellipsis" }}>{p.email}{p.phone ? " · " + p.phone : ""}</div>
+                </div>
+              </div>
+              {(p.documents || []).length > 0 && (
+                <button onClick={() => setViewCleanerDocs({ title: `${p.full_name} — documents`, docs: p.documents })}
+                  style={{ marginTop: 8, fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.bg, color: C.navySoft, cursor: "pointer" }}>
+                  {L("View documents", "Dokumentumok")} ({p.documents.length})
+                </button>
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <Btn small style={{ flex: 1 }} onClick={async () => {
+                  const r = await decideCleaner(p.id, "approved");
+                  if (r?.error) toast(r.error, "error"); else { toast(L("Cleaner approved", "Takarító jóváhagyva")); loadPending(); }
+                }}>{L("Approve", "Jóváhagyás")}</Btn>
+                <Btn small ghost style={{ flex: 1, color: C.coral }} onClick={async () => {
+                  const r = await decideCleaner(p.id, "rejected");
+                  if (r?.error) toast(r.error, "error"); else { toast(L("Declined", "Elutasítva")); loadPending(); }
+                }}>{L("Decline", "Elutasítás")}</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {viewCleanerDocs && <DocViewer title={viewCleanerDocs.title} docs={viewCleanerDocs.docs} close={() => setViewCleanerDocs(null)} />}
 
       {employees.map((m) => (
         <div key={m.id} style={{ background: C.card, borderRadius: 20, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)" }}>
@@ -2649,11 +2864,11 @@ function JobHistory() {
 
 /* ── Company payout onboarding (Stripe Connect) ── */
 function PayoutSetup() {
-  const { connectStatus, connectOnboard, isLive } = useStore();
+  const { connectStatus, connectOnboard, isLive, dataVersion } = useStore();
   const toast = useToast();
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState(false);
-  React.useEffect(() => { if (isLive) connectStatus().then(setSt); }, [isLive]);
+  React.useEffect(() => { if (isLive) connectStatus().then(setSt); }, [isLive, dataVersion]);
   if (!isLive || !st || !st.available) return null;
   const ready = st.connected && st.chargesEnabled;
   return (
@@ -2682,6 +2897,68 @@ function PayoutSetup() {
           }}>{st.connected ? "Continue" : "Connect"}</Btn>
         )}
       </div>
+    </div>
+  );
+}
+
+function CompanyReviews() {
+  const { fetchCompanyReviews, dataVersion } = useStore();
+  const [data, setData] = React.useState(null);
+  const [filter, setFilter] = React.useState("all");
+  React.useEffect(() => { fetchCompanyReviews().then(setData); }, [dataVersion]);
+  if (!data) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading reviews…</div>;
+  const reviews = data.reviews || [];
+  const cleaners = data.cleaners || [];
+  const shown = filter === "all" ? reviews : reviews.filter((r) => String(r.cleaner_id || "unassigned") === filter);
+  const avg = reviews.length ? Math.round((reviews.reduce((a, r) => a + (Number(r.rating) || 0), 0) / reviews.length) * 10) / 10 : 0;
+  const stars = (n) => "★".repeat(Math.round(n || 0)) + "☆".repeat(Math.max(0, 5 - Math.round(n || 0)));
+  return (
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Reviews", "Értékelések")}</div>
+      <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginBottom: 16 }}>
+        {reviews.length} {L("reviews", "értékelés")} · {L("average", "átlag")} <b style={{ color: C.navy }}>{avg || "—"}</b> <span style={{ color: C.amber }}>{stars(avg)}</span>
+      </div>
+
+      {cleaners.length > 0 && (
+        <div style={{ background: C.card, borderRadius: 20, padding: 16, marginBottom: 16, boxShadow: "0 2px 12px rgba(20,28,58,.06)" }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginBottom: 10 }}>{L("By cleaner", "Takarítónként")}</div>
+          {cleaners.map((c) => (
+            <button key={c.cleanerId || "unassigned"} onClick={() => setFilter(String(c.cleanerId || "unassigned"))}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: filter === String(c.cleanerId || "unassigned") ? C.bg : "transparent", border: "none", borderRadius: 13, padding: "9px 10px", cursor: "pointer", textAlign: "left" }}>
+              <Avatar name={c.name} size={32} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{c.name}</div>
+                <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>{c.count} {L("reviews", "értékelés")}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.navy }}>{c.average}</div>
+                <div style={{ fontSize: 10, color: C.amber }}>{stars(c.average)}</div>
+              </div>
+            </button>
+          ))}
+          {filter !== "all" && (
+            <button onClick={() => setFilter("all")} style={{ marginTop: 8, background: "none", border: "none", fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft, cursor: "pointer" }}>
+              ← {L("Show all reviews", "Összes értékelés")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {shown.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>{L("No reviews yet.", "Még nincs értékelés.")}</div>}
+      {shown.map((r) => (
+        <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{r.customer_name || L("Customer", "Ügyfél")}</div>
+            <div style={{ color: C.amber, fontSize: 13 }}>{stars(r.rating)}</div>
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3 }}>
+            {r.service_snapshot && r.service_snapshot.name ? r.service_snapshot.name + " · " : ""}
+            {r.cleaner_name ? r.cleaner_name + " · " : ""}
+            {(() => { try { return new Date(r.created_at).toLocaleDateString(LOC()); } catch { return ""; } })()}
+          </div>
+          {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“{r.comment}”</div>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -3054,7 +3331,7 @@ function AdminCompanies() {
 }
 
 function ComplaintThread({ complaint, role, close, onChange }) {
-  const { fetchComplaintThread, sendComplaintMessage, adminUpdateComplaint, assignComplaint, adminAllCompanies, adminFetchAllCompanies } = useStore();
+  const { fetchComplaintThread, sendComplaintMessage, adminUpdateComplaint, assignComplaint, adminAllCompanies, adminFetchAllCompanies, setComplaintHandler, setCompanyAction, dataVersion } = useStore();
   const toast = useToast();
   const [msgs, setMsgs] = React.useState([]);
   const [text, setText] = React.useState("");
@@ -3062,8 +3339,12 @@ function ComplaintThread({ complaint, role, close, onChange }) {
   const [assignTo, setAssignTo] = React.useState("");
   const [status, setStatus] = React.useState(complaint.status);
   const [assigned, setAssigned] = React.useState(complaint.assigned_company_name || "");
+  const [handledBy, setHandledBy] = React.useState(complaint.handled_by || "admin");
+  const [coAction, setCoAction] = React.useState(complaint.company_action || "");
+  const [cbNote, setCbNote] = React.useState("");
   const load = () => fetchComplaintThread(complaint.id).then((m) => setMsgs(m || []));
-  React.useEffect(() => { load(); if (role === "admin" && (!adminAllCompanies || adminAllCompanies.length === 0)) adminFetchAllCompanies(); }, []);
+  React.useEffect(() => { load(); }, [dataVersion]);
+  React.useEffect(() => { if (role === "admin" && (!adminAllCompanies || adminAllCompanies.length === 0)) adminFetchAllCompanies(); }, []);
   const send = async () => { if (!text.trim()) return; const r = await sendComplaintMessage(complaint.id, text.trim()); if (r?.error) toast(r.error, "error"); else { setText(""); load(); } };
   const doResolve = async () => { const r = await adminUpdateComplaint(complaint.id, { status: "resolved", resolution: note }); if (r?.error) toast(r.error, "error"); else { setStatus("resolved"); toast("Marked resolved"); onChange && onChange(); } };
   const doAssign = async () => { if (!assignTo) return; const r = await assignComplaint(complaint.id, assignTo); if (r?.error) toast(r.error, "error"); else { const co = (adminAllCompanies || []).find((c) => c.id === assignTo); setAssigned(co?.name || "company"); setStatus("in_progress"); toast("Assigned to " + (co?.name || "company")); onChange && onChange(); } };
@@ -3086,7 +3367,61 @@ function ComplaintThread({ complaint, role, close, onChange }) {
         })}
         {msgs.length === 0 && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint, textAlign: "center", padding: 10 }}>No replies yet.</div>}
       </div>
+
+      {/* ── who is talking to the customer ── */}
+      {role === "admin" && (
+        <div style={{ background: C.card, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>Who replies to the customer?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[["admin", "🛡️ Cleano handles it"], ["company", "🏢 Hand to the company"]].map(([id, label]) => (
+              <button key={id} onClick={async () => {
+                const r = await setComplaintHandler(complaint.id, id);
+                if (r?.error) toast(r.error, "error");
+                else { setHandledBy(id); toast(id === "company" ? "Handed to the company" : "Cleano is handling it"); onChange && onChange(); }
+              }} style={{ flex: 1, fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "9px 10px", borderRadius: 12, cursor: "pointer",
+                border: handledBy === id ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`,
+                background: handledBy === id ? C.navyChip : C.bg, color: handledBy === id ? C.navy : C.inkSoft }}>{label}</button>
+            ))}
+          </div>
+          {handledBy === "company" && !assigned && (
+            <div style={{ fontFamily: B, fontSize: 11, color: C.coral, marginTop: 7 }}>Assign a company above first.</div>
+          )}
+          {coAction && (
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 8 }}>
+              Company chose: <b style={{ color: C.ink }}>{coAction === "callback" ? "call the customer back" : "solve it in chat"}</b>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── the company picks how to handle it ── */}
+      {role === "company" && (complaint.handled_by === "company" || handledBy === "company") && (
+        <div style={{ background: coAction ? C.mintSoft : C.amberSoft, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 4 }}>
+            {coAction ? (coAction === "callback" ? "You chose to call the customer" : "You're solving this in chat") : "Cleano passed this report to you"}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+            {coAction ? "You can still reply here at any time." : "Solve it right here in the chat, or call the customer back and report the outcome afterwards."}
+          </div>
+          {!coAction && (
+            <>
+              <Field label="Note to the customer (optional)" placeholder="e.g. we'll call you within the hour" value={cbNote} onChange={(e) => setCbNote(e.target.value)} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn small style={{ flex: 1 }} onClick={async () => {
+                  const r = await setCompanyAction(complaint.id, "chat", cbNote);
+                  if (r?.error) toast(r.error, "error"); else { setCoAction("chat"); toast("Replying here"); load(); onChange && onChange(); }
+                }}>💬 Solve in chat</Btn>
+                <Btn small ghost style={{ flex: 1 }} onClick={async () => {
+                  const r = await setCompanyAction(complaint.id, "callback", cbNote);
+                  if (r?.error) toast(r.error, "error"); else { setCoAction("callback"); toast("Customer told you'll call"); load(); onChange && onChange(); }
+                }}>📞 Call back</Btn>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {status !== "resolved" ? (
+
         <div style={{ display: "flex", gap: 8, marginBottom: (role === "admin" || role === "company") ? 14 : 0 }}>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a reply…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
           <Btn small mint disabled={!text.trim()} onClick={send}>Send</Btn>
@@ -3237,8 +3572,23 @@ function AdminUsers() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Avatar name={u.full_name || "?"} size={38} color={roleColor[u.role] || C.navySoft} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{u.full_name || "—"}</div>
-              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>
+                {u.deleted_name ? `Deleted user (${u.deleted_name})` : (u.full_name || "—")}
+              </div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.deleted_email || u.email}</div>
+              {(u.phone || u.address || u.company_name) && (
+                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
+                  {u.phone ? <span>{u.phone}{u.phone_verified ? " ✓" : ""}</span> : null}
+                  {u.phone && (u.address || u.company_name) ? " · " : ""}
+                  {u.company_name || ""}
+                  {u.address ? <div style={{ marginTop: 1 }}>{u.address}</div> : null}
+                </div>
+              )}
+              <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 3 }}>
+                {u.customer_type ? u.customer_type + " · " : ""}
+                {u.email_verified ? "email ✓ " : ""}
+                {L("joined", "csatlakozott")} {(() => { try { return new Date(u.created_at).toLocaleDateString(LOC()); } catch { return ""; } })()}
+              </div>
             </div>
             {u.role === "admin"
               ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.navy : C.navyChip}>{u.is_super ? "CEO" : "Admin"}</Pill>
@@ -3498,6 +3848,21 @@ function Shell() {
   }, []);
   applyTheme(dark);
   React.useEffect(() => { document.body.style.background = C.shell; }, [dark]);
+  // Store errors go through the single toast channel (de-duplicated) — never a
+  // banner *and* a toast for the same failure.
+  const shellToast = useToast();
+  React.useEffect(() => { if (error) { shellToast(error, "error"); clearError(); } }, [error]);
+  // 🔄 Live refresh: pull fresh data every 20s and whenever the app returns to
+  // the foreground, so actions taken elsewhere appear without restarting.
+  React.useEffect(() => {
+    if (!session || !store.isLive) return;
+    const tick = () => { if (!document.hidden) store.refreshData?.(); };
+    const iv = setInterval(tick, 20000);
+    const onVis = () => { if (!document.hidden) store.refreshData?.(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); };
+  }, [session?.userId, store.isLive]);
   // 🔔 register this device for real push notifications once logged in (native app only)
   React.useEffect(() => {
     const tok = getToken();
@@ -3529,7 +3894,7 @@ function Shell() {
   const NAVS = {
     customer: [{ id: "home", label: t("nav.home"), icon: "home" }, { id: "bookings", label: t("nav.bookings"), icon: "calendar" }],
     employee: [{ id: "home", label: "My jobs", icon: "sparkle" }, { id: "notices", label: "Notices", icon: "bell", badge: unread }],
-    company: [{ id: "home", label: "Jobs", icon: "clipboard" }, { id: "schedule", label: "Schedule", icon: "calendar" }, { id: "clients", label: "Clients", icon: "users" }, { id: "services", label: "Services", icon: "tag" }, { id: "team", label: "Team", icon: "briefcase" }, { id: "issues", label: "Issues", icon: "lifebuoy" }, { id: "settings", label: "Settings", icon: "settings" }],
+    company: [{ id: "home", label: "Jobs", icon: "clipboard" }, { id: "schedule", label: "Schedule", icon: "calendar" }, { id: "clients", label: "Clients", icon: "users" }, { id: "services", label: "Services", icon: "tag" }, { id: "team", label: "Team", icon: "briefcase" }, { id: "reviews", label: "Reviews", icon: "sparkle" }, { id: "issues", label: "Issues", icon: "lifebuoy" }, { id: "settings", label: "Settings", icon: "settings" }],
     admin: [{ id: "home", label: "Dashboard", icon: "grid" }, { id: "companies", label: "Companies", icon: "building" }, { id: "users", label: "Users", icon: "user" }, { id: "bookings", label: "Orders", icon: "calendar" }, { id: "complaints", label: "Complaints", icon: "lifebuoy" }, { id: "log", label: "Log", icon: "scroll" }],
   };
 
@@ -3551,12 +3916,6 @@ function Shell() {
           </div>
         )}
 
-        {error && (
-          <div style={{ background: C.coralSoft, padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontFamily: B, fontSize: 12, color: C.coralText }}>{error}</span>
-            <button onClick={clearError} style={{ border: "none", background: "none", color: C.coralText, cursor: "pointer", fontWeight: 700 }}>✕</button>
-          </div>
-        )}
 
         <div style={{ flex: 1, overflowY: "auto", paddingBottom: "calc(112px + env(safe-area-inset-bottom))" }}>
           {role === "customer" && (tab === "home" ? <CustomerHome openBooking={setBookingCo} openProfile={() => setShowProfile(true)} /> : <CustomerBookings openBooking={(co) => { setTab("home"); setBookingCo(co); }} />)}
@@ -3566,6 +3925,7 @@ function Shell() {
             tab === "clients" ? <CompanyClients /> :
             tab === "services" ? <CompanyServices /> :
             tab === "team" ? <CompanyTeam /> :
+            tab === "reviews" ? <CompanyReviews /> :
             tab === "issues" ? <CompanyComplaints /> :
             tab === "settings" ? <CompanySettings /> :
             <CompanyJobs openProfile={() => setShowProfile(true)} />
