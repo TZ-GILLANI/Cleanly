@@ -198,11 +198,25 @@ function DocUpload({ docs = [], onChange, label, hint }) {
 /* Opens a stored document. Data-URL "download" links are blocked inside the
    phone app, so we turn it into a blob URL and open it in the system viewer —
    from there the user can save or share it. */
-function openDoc(doc) {
+async function openDoc(doc) {
+  const [meta, b64] = String(doc.data || "").split(",");
+  const mime = ((meta || "").match(/data:([^;]+)/) || [])[1] || "application/octet-stream";
+  // Inside the phone app: save to a temp file and open the system share sheet —
+  // the ONLY reliable way to view/save a PDF in an iOS/Android webview.
   try {
-    const [meta, b64] = String(doc.data || "").split(",");
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform() && b64) {
+      const { Filesystem, Directory } = await import("@capacitor/filesystem");
+      const { Share } = await import("@capacitor/share");
+      const name = (doc.name || "document").replace(/[^\w.\-]+/g, "_");
+      const w = await Filesystem.writeFile({ path: name, data: b64, directory: Directory.Cache });
+      await Share.share({ title: doc.name || "Document", url: w.uri });
+      return;
+    }
+  } catch (e) { /* fall through to the browser path */ }
+  // Browser: blob URL + download
+  try {
     if (!b64) { window.open(doc.data, "_blank"); return; }
-    const mime = (meta.match(/data:([^;]+)/) || [])[1] || "application/octet-stream";
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -589,17 +603,32 @@ function TrackSheet({ bookingId, close, booking }) {
   );
 }
 
+/* Automatic live location: starts the moment the cleaner taps "On the way" and
+   keeps going through the whole cleaning until "Complete job" — no switch to
+   forget. (Runs while the app is open; a resumed app picks it straight back up.) */
 function LocationShare({ bookingId }) {
   const { postLocation } = useStore();
   const [on, setOn] = React.useState(false);
   React.useEffect(() => {
     if (!navigator.geolocation) return;
+    let last = 0;
     const id = navigator.geolocation.watchPosition(
-      (pos) => { setOn(true); postLocation(bookingId, pos.coords.latitude, pos.coords.longitude); },
+      (pos) => {
+        setOn(true);
+        const now = Date.now();
+        if (now - last > 12000) { last = now; postLocation(bookingId, pos.coords.latitude, pos.coords.longitude); }
+      },
       () => setOn(false),
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
     );
-    return () => navigator.geolocation.clearWatch(id);
+    // belt & braces: also push a fresh fix every 20s even if the phone is still
+    const iv = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { setOn(true); postLocation(bookingId, pos.coords.latitude, pos.coords.longitude); },
+        () => {}, { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 }
+      );
+    }, 20000);
+    return () => { navigator.geolocation.clearWatch(id); clearInterval(iv); };
   }, [bookingId]);
   return <div style={{ fontFamily: B, fontSize: 11, fontWeight: 700, color: on ? C.green : C.inkSoft, textAlign: "center", marginTop: 8 }}>{on ? L("Sharing your live location", "Élő helyzet megosztása") : L("Turn on location to share your position", "Kapcsold be a helymeghatározást")}</div>;
 }
@@ -2117,10 +2146,10 @@ function EmployeeJobs({ openProfile }) {
                 </div>
               )}
 
-              {tasks.length > 0 && (
+              {tasks.length > 0 && b.status >= 3 && (
                 <div style={{ marginTop: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 9 }}>
-                    <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>Task checklist</span>
+                    <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{L("Task checklist", "Feladatlista")}</span>
                     <span style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: allDone ? C.green : C.inkFaint }}>{b.tasks_done.length}/{tasks.length}</span>
                   </div>
                   <div style={{ marginBottom: 11 }}><Progress done={b.tasks_done.length} total={tasks.length} /></div>
@@ -2139,7 +2168,7 @@ function EmployeeJobs({ openProfile }) {
               <div style={{ marginTop: 12 }}>
                 {b.status === 1 && <Btn small full onClick={() => { setStatus(b.id, 2); toast("Status updated — on the way!"); }}>🚗 I'm on the way</Btn>}
                 {b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 3); toast("Cleaning started"); }}>🧽 Start cleaning</Btn>}
-                {b.status === 2 && <LocationShare bookingId={b.id} />}
+                {(b.status === 2 || b.status === 3) && <LocationShare bookingId={b.id} />}
                 {b.status === 3 && (
                   <Btn small full mint disabled={!allDone && tasks.length > 0} onClick={() => { setStatus(b.id, 4); toast("Job completed ✓"); }}>
                     {allDone || tasks.length === 0 ? "✓ Complete job" : `Finish all tasks (${b.tasks_done.length}/${tasks.length})`}
@@ -2216,6 +2245,14 @@ function EmployeeNotices() {
 function CompanyJobs({ openProfile }) {
   const { session, bookings, employees, assignBooking, declineBooking, companies, uploadInvoice, archiveBooking, hideDeletedIdentity } = useStore();
   const [jobTrackId, setJobTrackId] = React.useState(null);
+  // While any job is on-the-way/cleaning, poll faster so task ticks appear live
+  const { refreshData } = useStore();
+  const liveJob = bookings.some((x) => x.company_id === session.companyId && (x.status === 2 || x.status === 3));
+  React.useEffect(() => {
+    if (!liveJob) return;
+    const iv = setInterval(() => refreshData?.(), 8000);
+    return () => clearInterval(iv);
+  }, [liveJob]);
   const toast = useToast();
   const [declining, setDeclining] = useState(null); // booking being declined
   const [reason, setReason] = useState("");
@@ -2313,8 +2350,21 @@ function CompanyJobs({ openProfile }) {
               <div style={{ marginTop: 11 }}>
                 <Progress done={b.tasks_done.length} total={tasks.length} />
                 <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, fontWeight: 700, marginTop: 5 }}>
-                  {b.tasks_done.length}/{tasks.length} tasks done on site
+                  {b.tasks_done.length}/{tasks.length} {L("tasks done on site", "feladat kész a helyszínen")}
                 </div>
+                {b.status >= 3 && (
+                  <div style={{ marginTop: 8 }}>
+                    {tasks.map((tk, i) => {
+                      const dn = (b.tasks_done || []).includes(i);
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px" }}>
+                          <span style={{ width: 16, height: 16, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: dn ? C.mint : C.bg, border: dn ? "none" : `1.5px solid ${C.line}`, fontSize: 9, fontWeight: 700, color: C.navyDeep, flexShrink: 0 }}>{dn ? "✓" : ""}</span>
+                          <span style={{ fontFamily: B, fontSize: 11.5, color: dn ? C.green : C.inkSoft, textDecoration: dn ? "line-through" : "none" }}>{tk}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -3903,8 +3953,8 @@ function Shell() {
   const unread = notices.filter((n) => n.to_employee === session.userId && !n.is_read).length;
   const NAVS = {
     customer: [{ id: "home", label: t("nav.home"), icon: "home" }, { id: "bookings", label: t("nav.bookings"), icon: "calendar" }],
-    employee: [{ id: "home", label: "My jobs", icon: "sparkle" }, { id: "notices", label: "Notices", icon: "bell", badge: unread }],
-    company: [{ id: "home", label: "Jobs", icon: "clipboard" }, { id: "schedule", label: "Schedule", icon: "calendar" }, { id: "clients", label: "Clients", icon: "users" }, { id: "services", label: "Services", icon: "tag" }, { id: "team", label: "Team", icon: "briefcase" }, { id: "reviews", label: "Reviews", icon: "sparkle" }, { id: "issues", label: "Issues", icon: "lifebuoy" }, { id: "settings", label: "Settings", icon: "settings" }],
+    employee: [{ id: "home", label: L("My jobs", "Munkáim"), icon: "sparkle" }, { id: "notices", label: L("Notices", "Üzenetek"), icon: "bell", badge: unread }],
+    company: [{ id: "home", label: L("Jobs", "Munkák"), icon: "clipboard" }, { id: "schedule", label: L("Schedule", "Naptár"), icon: "calendar" }, { id: "clients", label: L("Clients", "Ügyfelek"), icon: "users" }, { id: "services", label: L("Services", "Szolgáltatások"), icon: "tag" }, { id: "team", label: L("Team", "Csapat"), icon: "briefcase" }, { id: "reviews", label: L("Reviews", "Értékelések"), icon: "sparkle" }, { id: "issues", label: L("Issues", "Bejelentések"), icon: "lifebuoy" }, { id: "settings", label: L("Settings", "Beállítások"), icon: "settings" }],
     admin: [{ id: "home", label: "Dashboard", icon: "grid" }, { id: "companies", label: "Companies", icon: "building" }, { id: "users", label: "Users", icon: "user" }, { id: "bookings", label: "Orders", icon: "calendar" }, { id: "complaints", label: "Complaints", icon: "lifebuoy" }, { id: "log", label: "Log", icon: "scroll" }],
   };
 

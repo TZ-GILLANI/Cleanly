@@ -218,7 +218,20 @@ router.put("/:id/status", requireAuth, async (req, res) => {
       else if (status === 3) await notify(b.customer_id, "status", "Cleaning in progress ✨", "Your cleaning has started.", b.id);
       else if (status === 4 && b.status !== 4) await notify(b.customer_id, "status", "Job completed ✅", "Your cleaning is done — please leave a review.", b.id);
       else if (status === 8) await notify(b.customer_id, "declined", "Order declined", b.payment_status === "paid" ? "The company can't take this booking — you've been refunded in full." : "The company can't take this booking.", b.id);
-      else if (status === 9 && req.user.role === "customer") {
+      // keep the company in the loop on live progress
+      if ([2, 3, 4].includes(status)) {
+        try {
+          const oc2 = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
+          if (oc2.rows[0]) {
+            const svcN = (b.service_snapshot && b.service_snapshot.name) || "Cleaning";
+            const msg = status === 2 ? ["Cleaner on the way 🚗", `${svcN} · your cleaner is heading out.`]
+              : status === 3 ? ["Cleaning started ✨", `${svcN} · work has begun on site.`]
+              : ["Job completed ✅", `${svcN} · finished. Awaiting the customer's review.`];
+            await notify(oc2.rows[0].owner_id, "status", msg[0], msg[1], b.id);
+          }
+        } catch (e) { console.error("owner status notify:", e.message); }
+      }
+      if (status === 9 && req.user.role === "customer") {
         const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
         if (oc.rows[0]) await notify(oc.rows[0].owner_id, "cancelled", "Booking cancelled", "A customer cancelled a booking.", b.id);
       }

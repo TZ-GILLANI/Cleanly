@@ -330,3 +330,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS default_payment_method TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS card_brand TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS card_last4 TEXT;
+
+-- v5.2: cleaner gets a 40-min heads-up too
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_cleaner_at TIMESTAMPTZ;

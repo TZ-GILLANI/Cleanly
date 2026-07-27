@@ -46,7 +46,7 @@ export async function sendPushDetailed(userId, title, body) {
         token,
         notification: { title, body: body || "" },
         apns: { headers: { "apns-priority": "10", "apns-push-type": "alert" },
-                payload: { aps: { alert: { title, body: body || "" }, sound: "default", badge: 1 } } },
+                payload: { aps: { alert: { title, body: body || "" }, sound: "default" } } },
         android: { priority: "high" },
       },
     }),
@@ -87,7 +87,7 @@ async function sendPush(userId, title, body) {
           // the app is closed; sound+badge also make it behave like a real app.
           apns: {
             headers: { "apns-priority": "10", "apns-push-type": "alert" },
-            payload: { aps: { alert: { title, body: body || "" }, sound: "default", badge: 1, "content-available": 1 } },
+            payload: { aps: { alert: { title, body: body || "" }, sound: "default", "content-available": 1 } },
           },
           android: { priority: "high", notification: { sound: "default", default_sound: true } },
         },

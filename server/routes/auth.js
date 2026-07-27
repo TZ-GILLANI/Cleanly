@@ -178,10 +178,16 @@ router.put("/profile", requireAuth, async (req, res) => {
     }
   }
   try {
+    let phoneParam = phone;
     if (phone) {
       const np = String(phone).replace(/[^0-9+]/g, "").slice(0, 20);
-      const taken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true AND id <> $2", [np, req.user.id]);
-      if (taken.rows.length) return res.status(400).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+      const mine = await query("SELECT phone FROM users WHERE id = $1", [req.user.id]);
+      if ((mine.rows[0]?.phone || "") === np) {
+        phoneParam = null;   // unchanged — saving language/name must never trip the uniqueness check
+      } else {
+        const taken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true AND id <> $2", [np, req.user.id]);
+        if (taken.rows.length) return res.status(400).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+      }
     }
     const result = await query(
       `UPDATE users SET
@@ -194,7 +200,7 @@ router.put("/profile", requireAuth, async (req, res) => {
         documents = COALESCE($7, documents),
         saved_addresses = COALESCE($9, saved_addresses)
       WHERE id = $8 RETURNING *`,
-      [fullName, phone, custTypeParam, address, paymentMethod, lang,
+      [fullName, phoneParam, custTypeParam, address, paymentMethod, lang,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, req.user.id,
        Array.isArray(savedAddresses) ? JSON.stringify(savedAddresses.slice(0, 12)) : null]
     );

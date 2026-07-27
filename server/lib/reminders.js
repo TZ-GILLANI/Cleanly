@@ -14,21 +14,33 @@ import { sendEmail } from "./mailer.js";
 
 const MIN = 60 * 1000;
 
-/* "2026-07-27" + "14:30" → Date (server timezone) */
+/* Booking times are HUNGARIAN local times, but the server runs in UTC.
+   Parse "2026-07-27" + "14:30" as Europe/Budapest, DST handled. */
+function budapestOffsetMs(dateStr) {
+  try {
+    const probe = new Date(`${dateStr}T12:00:00Z`);
+    const fmt = new Intl.DateTimeFormat("en", { timeZone: "Europe/Budapest", timeZoneName: "shortOffset" });
+    const part = fmt.formatToParts(probe).find((p) => p.type === "timeZoneName")?.value || "GMT+2";
+    const m = part.match(/([+-])(\d{1,2})(?::(\d{2}))?/);
+    if (!m) return 2 * 3600e3;
+    const sign = m[1] === "-" ? -1 : 1;
+    return sign * ((Number(m[2]) * 60 + Number(m[3] || 0)) * 60e3);
+  } catch { return 2 * 3600e3; }
+}
 function slotTime(dateVal, slot) {
   try {
     const d = dateVal instanceof Date ? dateVal.toISOString().slice(0, 10) : String(dateVal).slice(0, 10);
     const hm = String(slot || "09:00").match(/(\d{1,2}):(\d{2})/);
     if (!hm) return null;
-    const t = new Date(`${d}T${hm[1].padStart(2, "0")}:${hm[2]}:00`);
-    return isNaN(t.getTime()) ? null : t;
+    const utcMs = Date.parse(`${d}T${hm[1].padStart(2, "0")}:${hm[2]}:00Z`) - budapestOffsetMs(d);
+    return isNaN(utcMs) ? null : new Date(utcMs);
   } catch { return null; }
 }
 
 async function todaysBookings() {
   const r = await query(
     `SELECT b.id, b.scheduled_date, b.scheduled_slot, b.address, b.customer_id, b.company_id,
-            b.service_snapshot, b.status, b.reminder_customer_at, b.reminder_company_at,
+            b.service_snapshot, b.status, b.assigned_to, b.reminder_customer_at, b.reminder_company_at, b.reminder_cleaner_at,
             cu.email AS customer_email, cu.full_name AS customer_name,
             co.name AS company_name, ow.id AS owner_id, ow.email AS owner_email
      FROM bookings b
@@ -64,6 +76,18 @@ export async function runReminders() {
             `<div style="font-family:sans-serif;max-width:520px"><h2 style="color:#1B2A6B">See you soon${b.customer_name ? ", " + b.customer_name : ""}!</h2>
              <p><b>${svcName}</b><br/>Today at ${when}<br/>${String(b.address || "").slice(0, 120)}</p></div>`);
         } catch (e) { console.error("customer reminder:", e.message); }
+      }
+    }
+
+    // ── cleaner: 40 minutes before their assigned job ──
+    if (!b.reminder_cleaner_at && b.assigned_to) {
+      const minsAway = (start.getTime() - now) / MIN;
+      if (minsAway <= 40 && minsAway > -5) {
+        try {
+          await query("UPDATE bookings SET reminder_cleaner_at = NOW() WHERE id = $1 AND reminder_cleaner_at IS NULL", [b.id]);
+          await notify(b.assigned_to, "reminder", "Job in ~40 minutes 🧹",
+            `${svcName} at ${when} · ${String(b.address || "").slice(0, 80)}`, b.id);
+        } catch (e) { console.error("cleaner reminder:", e.message); }
       }
     }
 
