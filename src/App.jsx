@@ -1,3 +1,4 @@
+import ReactDOM from "react-dom";
 import React, { useState, useMemo, useContext, createContext, useCallback } from "react";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
@@ -107,7 +108,8 @@ const DEFAULT_AVAIL = {
   busy: {},
 };
 const availOf = (co) => (co && co.availability) ? co.availability : null;
-const dowOf = (iso) => String(new Date(String(iso).slice(0, 10) + "T12:00:00Z").getUTCDay());
+const isoOf = (d) => String((d && d.iso) ? d.iso : d).slice(0, 10);
+const dowOf = (iso) => String(new Date(isoOf(iso) + "T12:00:00Z").getUTCDay());
 
 /* The hours a company offers on a weekday. Falls back to old from/to data. */
 const daySlots = (av, iso) => {
@@ -120,14 +122,14 @@ const daySlots = (av, iso) => {
 };
 /* busy: { "YYYY-MM-DD": ["09:00", ...] } — single hours the company blocked */
 const slotBusy = (av, iso, slot) => {
-  const list = av && av.busy ? av.busy[String(iso).slice(0, 10)] : null;
+  const list = av && av.busy ? av.busy[isoOf(iso)] : null;
   return Array.isArray(list) && list.includes(String(slot).slice(0, 5));
 };
 /* The hours a customer can actually book on this date. */
 const openSlots = (av, iso) => {
   if (!av) return HOURS;
   if (av.paused) return [];
-  if (Array.isArray(av.closed) && av.closed.includes(String(iso).slice(0, 10))) return [];
+  if (Array.isArray(av.closed) && av.closed.includes(isoOf(iso))) return [];
   return daySlots(av, iso).filter((h) => !slotBusy(av, iso, h));
 };
 const slotOpen = (av, iso, slot) => openSlots(av, iso).includes(String(slot).slice(0, 5));
@@ -704,7 +706,19 @@ function NotificationBanner() {
     return () => window.removeEventListener("cleano-push", onPush);
   }, []);
   React.useEffect(() => {
-    const fresh = (notifications || []).find((n) => !n.is_read && !seenRef.current.has(n.id));
+    // A notification banners ONCE, ever — the shown-ids survive relaunches.
+    let shown = [];
+    try { shown = JSON.parse(localStorage.getItem("cleano_bannered") || "[]"); } catch {}
+    const shownSet = new Set(shown);
+    const isFreshEnough = (n) => {
+      // Older items (arrived while the app was closed → phone already got the
+      // push) go straight to the list, no banner.
+      try { return Date.now() - new Date(n.created_at).getTime() < 3 * 60 * 1000; } catch { return false; }
+    };
+    const fresh = (notifications || []).find((n) => !n.is_read && !shownSet.has(n.id) && !seenRef.current.has(n.id) && isFreshEnough(n));
+    // remember every current id either way so nothing ever re-banners
+    const merged = [...new Set([...shown, ...(notifications || []).map((n) => n.id)])].slice(-300);
+    try { localStorage.setItem("cleano_bannered", JSON.stringify(merged)); } catch {}
     if (fresh) {
       seenRef.current.add(fresh.id);
       setShow(fresh);
@@ -714,12 +728,13 @@ function NotificationBanner() {
   }, [notifications]);
   React.useEffect(() => { if (unreadNotif > 0) { const t = setTimeout(markNotificationsRead, 8000); return () => clearTimeout(t); } }, [unreadNotif]);
   if (!show) return null;
-  return (
+  return ReactDOM.createPortal(
     <div className="cl-rise" onClick={() => setShow(null)}
-      style={{ position: "fixed", top: "calc(env(safe-area-inset-top) + 10px)", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, zIndex: 60, background: C.navBg, backdropFilter: "blur(18px)", border: `1px solid ${C.line}`, borderRadius: 18, padding: "13px 16px", boxShadow: "0 14px 40px rgba(16,25,74,.28)", cursor: "pointer" }}>
+      style={{ position: "fixed", top: "calc(env(safe-area-inset-top) + 10px)", left: 0, right: 0, margin: "0 auto", width: "min(400px, calc(100vw - 28px))", zIndex: 220, background: C.navBg, backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${C.line}`, borderRadius: 18, padding: "13px 16px", boxShadow: "0 14px 40px rgba(16,25,74,.28)", cursor: "pointer" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{show.title}</div>
       {show.body && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>{show.body}</div>}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1842,12 +1857,12 @@ function BookingFlow({ company, close, onBooked }) {
 
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "16px 0 10px" }}>{L("Time", "Időpont")}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                {day && openSlots(availOf(company), day).length === 0 && (
+                {day && openSlots(availOf(company), day.iso).length === 0 && (
                   <div style={{ gridColumn: "1 / -1", fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: "14px 8px", lineHeight: 1.5 }}>
                     {L("No free times on this day — please pick another.", "Ezen a napon nincs szabad időpont — válassz másikat.")}
                   </div>
                 )}
-                {(day ? openSlots(availOf(company), day) : []).map((s) => (
+                {(day ? openSlots(availOf(company), day.iso) : []).map((s) => (
                   <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.navy : C.card, color: slot === s ? "#fff" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(27,42,107,.28)" : "0 1px 5px rgba(20,28,58,.06)" }}>
                     {s}
                   </button>
