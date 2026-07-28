@@ -258,6 +258,19 @@ const bkPaused = await j("/api/bookings", { method: "POST", token: reuse.data.to
 ok("paused company cannot be booked", bkPaused.status === 400);
 await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: { paused: false, days: { "0": {on:true,from:"00:00",to:"23:59"},"1": {on:true,from:"00:00",to:"23:59"},"2": {on:true,from:"00:00",to:"23:59"},"3": {on:true,from:"00:00",to:"23:59"},"4": {on:true,from:"00:00",to:"23:59"},"5": {on:true,from:"00:00",to:"23:59"},"6": {on:true,from:"00:00",to:"23:59"} }, closed: [] } } });
 
+console.log("\n── busy time slots ──");
+await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: {
+  paused: false,
+  days: { "0":{on:true,from:"00:00",to:"23:59"},"1":{on:true,from:"00:00",to:"23:59"},"2":{on:true,from:"00:00",to:"23:59"},"3":{on:true,from:"00:00",to:"23:59"},"4":{on:true,from:"00:00",to:"23:59"},"5":{on:true,from:"00:00",to:"23:59"},"6":{on:true,from:"00:00",to:"23:59"} },
+  closed: [], busy: { "2027-06-07": ["09:30", "13:00"] } } } });
+const busySaved = await j("/api/companies");
+const busyCo = (busySaved.data.companies || []).find((c) => c.id === coId);
+ok("busy slots are saved and public", busyCo?.availability?.busy?.["2027-06-07"]?.includes("09:30"), JSON.stringify(busyCo?.availability?.busy || {}));
+const bkBusy = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-06-07", scheduledSlot: "09:30", address: "B utca 1", paymentMethod: "cash_on_completion" } });
+ok("booking a busy slot is refused", bkBusy.status === 400, JSON.stringify(bkBusy.data));
+const bkFree = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-06-07", scheduledSlot: "11:00", address: "B utca 1", paymentMethod: "cash_on_completion" } });
+ok("a free slot on the same day still works", bkFree.status === 201, JSON.stringify(bkFree.data).slice(0, 100));
+
 console.log("\n── company reviews endpoint ──");
 const crev = await j("/api/reviews/company", { token: coTok });
 ok("company reviews endpoint returns data", crev.status === 200 && Array.isArray(crev.data.reviews) && Array.isArray(crev.data.cleaners), JSON.stringify(crev.data).slice(0, 120));

@@ -90,6 +90,11 @@ router.post("/", requireAuth, async (req, res) => {
       const rule = (av.days || {})[dow];
       if (rule && rule.on === false)
         return res.status(400).json({ error: "The company doesn't work on that weekday — please pick another day." });
+      if (av.busy && scheduledSlot) {
+        const blocked = av.busy[dstr];
+        if (Array.isArray(blocked) && blocked.includes(String(scheduledSlot).slice(0, 5)))
+          return res.status(400).json({ error: "That time slot is already taken — please pick another." });
+      }
       if (rule && rule.on && scheduledSlot) {
         const t = String(scheduledSlot).slice(0, 5);
         if (t < String(rule.from || "00:00") || t >= String(rule.to || "23:59"))

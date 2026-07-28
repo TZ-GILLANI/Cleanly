@@ -44,7 +44,16 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
       const closed = Array.isArray(a.closed)
         ? a.closed.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x))).slice(0, 200)
         : [];
-      availJson = JSON.stringify({ paused: !!a.paused, days, closed });
+      // busy: { "YYYY-MM-DD": ["09:30", ...] } — individually blocked time slots
+      const busy = {};
+      if (a.busy && typeof a.busy === "object") {
+        for (const [k, v] of Object.entries(a.busy).slice(0, 400)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(k)) || !Array.isArray(v)) continue;
+          const slots = v.filter((t) => /^\d{2}:\d{2}$/.test(String(t))).slice(0, 24);
+          if (slots.length) busy[k] = slots;
+        }
+      }
+      availJson = JSON.stringify({ paused: !!a.paused, days, closed, busy });
     } catch { return res.status(400).json({ error: "Invalid availability" }); }
   }
   // promo: null clears it; otherwise { pct 1–90, label ≤60 chars, until YYYY-MM-DD or null }

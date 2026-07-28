@@ -107,11 +107,23 @@ const dayRule = (av, iso) => {
   if (d && d.on === false) return { open: false, why: "weekday" };
   return { open: true, from: (d && d.from) || "00:00", to: (d && d.to) || "23:59" };
 };
+/* busy: { "YYYY-MM-DD": ["09:30","13:00"] } — individual slots the company blocked */
+const slotBusy = (av, iso, slot) => {
+  const list = av && av.busy ? av.busy[String(iso).slice(0, 10)] : null;
+  return Array.isArray(list) && list.includes(String(slot).slice(0, 5));
+};
 const slotOpen = (av, iso, slot) => {
   const r = dayRule(av, iso);
   if (!r.open) return false;
+  if (slotBusy(av, iso, slot)) return false;
   const t = String(slot).slice(0, 5);
   return t >= (r.from || "00:00") && t < (r.to || "23:59");
+};
+/* a whole day is unbookable if closed, or every slot in it is taken */
+const dayClosed = (av, iso) => {
+  if (!av) return false;
+  if (!dayRule(av, iso).open) return true;
+  return SLOTS.every((s) => !slotOpen(av, iso, s));
 };
 const COVER_PRESETS = [
   "linear-gradient(135deg,#22B573,#7BD96A)",
@@ -1810,7 +1822,7 @@ function BookingFlow({ company, close, onBooked }) {
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "6px 0 10px" }}>{L("Day", "Nap")}</div>
                   <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }} className="cl-noscroll">
                     {DAYS.map((d) => (
-                      <button key={d.iso} onClick={() => setDay(d)} style={{ minWidth: 58, padding: "11px 0", borderRadius: 16, border: "none", cursor: "pointer", background: day?.iso === d.iso ? C.navy : C.card, boxShadow: day?.iso === d.iso ? "0 4px 14px rgba(27,42,107,.3)" : "0 1px 5px rgba(20,28,58,.06)" }}>
+                      <button key={d.iso} disabled={dayClosed(availOf(company), d.iso)} onClick={() => setDay(d)} style={{ minWidth: 58, padding: "11px 0", borderRadius: 16, border: "none", opacity: dayClosed(availOf(company), d.iso) ? .3 : 1, cursor: dayClosed(availOf(company), d.iso) ? "not-allowed" : "pointer", background: day?.iso === d.iso ? C.navy : C.card, boxShadow: day?.iso === d.iso ? "0 4px 14px rgba(27,42,107,.3)" : "0 1px 5px rgba(20,28,58,.06)" }}>
                         <div style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: day?.iso === d.iso ? "#9FB0E8" : C.inkFaint }}>{d.d}</div>
                         <div style={{ fontFamily: F, fontSize: 16, fontWeight: 700, color: day?.iso === d.iso ? "#fff" : C.ink, marginTop: 2 }}>{d.n}</div>
                         {d.label && <div style={{ fontFamily: B, fontSize: 8.5, fontWeight: 700, color: day?.iso === d.iso ? C.mint : C.navySoft, marginTop: 2 }}>{d.label}</div>}
@@ -1822,6 +1834,11 @@ function BookingFlow({ company, close, onBooked }) {
 
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "16px 0 10px" }}>{L("Time", "Időpont")}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                {day && SLOTS.every((s) => !slotOpen(availOf(company), day, s)) && (
+                  <div style={{ gridColumn: "1 / -1", fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: "14px 8px", lineHeight: 1.5 }}>
+                    {L("No free times on this day — please pick another.", "Ezen a napon nincs szabad időpont — válassz másikat.")}
+                  </div>
+                )}
                 {SLOTS.map((s) => (
                   <button key={s} disabled={!slotOpen(availOf(company), day, s)} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", opacity: slotOpen(availOf(company), day, s) ? 1 : .35, cursor: slotOpen(availOf(company), day, s) ? "pointer" : "not-allowed", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.mint : C.card, color: slot === s ? "#10194A" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(94,230,168,.45)" : "0 1px 5px rgba(20,28,58,.06)" }}>{s}</button>
                 ))}
@@ -3062,10 +3079,11 @@ function CompanySettings() {
   });
   const [avail, setAvail] = React.useState(() => {
     const a = co?.availability;
-    if (!a) return JSON.parse(JSON.stringify(DEFAULT_AVAIL));
-    return { paused: !!a.paused, days: { ...DEFAULT_AVAIL.days, ...(a.days || {}) }, closed: Array.isArray(a.closed) ? a.closed : [] };
+    if (!a) return { ...JSON.parse(JSON.stringify(DEFAULT_AVAIL)), busy: {} };
+    return { paused: !!a.paused, days: { ...DEFAULT_AVAIL.days, ...(a.days || {}) }, closed: Array.isArray(a.closed) ? a.closed : [], busy: a.busy && typeof a.busy === "object" ? a.busy : {} };
   });
   const [closedDate, setClosedDate] = React.useState("");
+  const [busyDate, setBusyDate] = React.useState("");
   const DAY_NAMES = HUL()
     ? ["Vasárnap", "Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat"]
     : [L("Sunday","Vasárnap"), L("Monday","Hétfő"), L("Tuesday","Kedd"), L("Wednesday","Szerda"), L("Thursday","Csütörtök"), L("Friday","Péntek"), L("Saturday","Szombat")];
@@ -3241,6 +3259,48 @@ function CompanySettings() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* ── busy time slots on a specific date ── */}
+        <div style={{ marginTop: 16, borderTop: `1px solid ${C.line}55`, paddingTop: 14 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("Busy time slots", "Foglalt időpontok")}</div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+            {L("Pick a date, then tap the times you're already busy — customers can't book those.", "Válassz egy dátumot, majd koppints a foglalt időpontokra — azokat nem lehet lefoglalni.")}
+          </div>
+          <input type="date" value={busyDate} onChange={(e) => setBusyDate(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none", marginBottom: 9 }} />
+          {busyDate && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7 }}>
+              {SLOTS.map((sl) => {
+                const list = avail.busy[busyDate] || [];
+                const isBusy = list.includes(sl);
+                return (
+                  <button key={sl} onClick={() => {
+                    const next = isBusy ? list.filter((x) => x !== sl) : [...list, sl].sort();
+                    const busy = { ...avail.busy };
+                    if (next.length) busy[busyDate] = next; else delete busy[busyDate];
+                    setAvail({ ...avail, busy });
+                  }} style={{ padding: "9px 0", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5,
+                    background: isBusy ? C.coral : C.bg, color: isBusy ? "#fff" : C.inkSoft }}>
+                    {sl}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {Object.keys(avail.busy || {}).length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.inkFaint, marginBottom: 5 }}>{L("Blocked", "Letiltva")}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {Object.entries(avail.busy).sort().map(([dt, list]) => (
+                  <button key={dt} onClick={() => { const busy = { ...avail.busy }; delete busy[dt]; setAvail({ ...avail, busy }); }}
+                    style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 10px", borderRadius: 99, border: "none", background: C.coralSoft, color: C.coral, cursor: "pointer" }}>
+                    {dt}: {list.join(", ")} ✕
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

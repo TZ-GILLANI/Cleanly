@@ -6,6 +6,10 @@
 
 export const EXTRA = {
   de: {
+    "Busy time slots": "Belegte Zeiten",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Datum wählen, dann belegte Zeiten antippen — diese sind nicht buchbar.",
+    "Blocked": "Gesperrt",
+    "No free times on this day — please pick another.": "An diesem Tag keine freien Zeiten — bitte anderen Tag wählen.",
     "Availability": "Verfügbarkeit",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Kunden können nur innerhalb dieser Zeiten buchen. Ausgeschaltete Tage sind nicht buchbar.",
     "Fully booked — pause new bookings": "Ausgebucht — neue Buchungen pausieren",
@@ -285,6 +289,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Blick ins Admin-Panel der Plattform →",
   },
   ro: {
+    "Busy time slots": "Intervale ocupate",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Alege o dată, apoi apasă orele ocupate — clienții nu le pot rezerva.",
+    "Blocked": "Blocat",
+    "No free times on this day — please pick another.": "Nicio oră liberă în ziua asta — alege alta.",
     "Availability": "Disponibilitate",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Clienții pot rezerva doar în acest interval. Zilele oprite nu sunt disponibile.",
     "Fully booked — pause new bookings": "Complet ocupat — oprește rezervările",
@@ -564,6 +572,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Aruncă o privire în panoul de admin →",
   },
   sk: {
+    "Busy time slots": "Obsadené časy",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Vyberte dátum a ťuknite na obsadené časy — tie nie sú rezervovateľné.",
+    "Blocked": "Blokované",
+    "No free times on this day — please pick another.": "V tento deň nie sú voľné časy — vyberte iný.",
     "Availability": "Dostupnosť",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Zákazníci môžu rezervovať iba v týchto hodinách. Vypnuté dni nie sú dostupné.",
     "Fully booked — pause new bookings": "Obsadené — pozastaviť rezervácie",
@@ -843,6 +855,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Nahliadnite do admin panela →",
   },
   pl: {
+    "Busy time slots": "Zajęte godziny",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Wybierz datę, potem zaznacz zajęte godziny — nie będzie ich można zarezerwować.",
+    "Blocked": "Zablokowane",
+    "No free times on this day — please pick another.": "Brak wolnych godzin tego dnia — wybierz inny.",
     "Availability": "Dostępność",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Klienci mogą rezerwować tylko w tych godzinach. Wyłączone dni są niedostępne.",
     "Fully booked — pause new bookings": "Brak miejsc — wstrzymaj rezerwacje",
@@ -1122,6 +1138,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Zajrzyj do panelu administratora →",
   },
   uk: {
+    "Busy time slots": "Зайняті години",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Оберіть дату, потім позначте зайняті години — їх не можна буде забронювати.",
+    "Blocked": "Заблоковано",
+    "No free times on this day — please pick another.": "Цього дня немає вільних годин — оберіть інший.",
     "Availability": "Доступність",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Клієнти можуть бронювати лише в ці години. Вимкнені дні недоступні.",
     "Fully booked — pause new bookings": "Все зайнято — призупинити бронювання",
@@ -1401,6 +1421,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Зазирнути в адмін-панель →",
   },
   fr: {
+    "Busy time slots": "Créneaux occupés",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Choisissez une date, puis touchez les heures occupées — elles ne seront pas réservables.",
+    "Blocked": "Bloqué",
+    "No free times on this day — please pick another.": "Aucun créneau libre ce jour — choisissez-en un autre.",
     "Availability": "Disponibilité",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Les clients ne peuvent réserver que sur ces horaires. Les jours désactivés sont indisponibles.",
     "Fully booked — pause new bookings": "Complet — suspendre les réservations",
@@ -1680,6 +1704,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Jetez un œil au panneau admin →",
   },
   es: {
+    "Busy time slots": "Horas ocupadas",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Elige una fecha y toca las horas ocupadas — no se podrán reservar.",
+    "Blocked": "Bloqueado",
+    "No free times on this day — please pick another.": "No hay horas libres ese día — elige otro.",
     "Availability": "Disponibilidad",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "Los clientes solo pueden reservar en este horario. Los días desactivados no están disponibles.",
     "Fully booked — pause new bookings": "Completo — pausar reservas",
@@ -1959,6 +1987,10 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Echa un vistazo al panel de administración →",
   },
   it: {
+    "Busy time slots": "Orari occupati",
+    "Pick a date, then tap the times you're already busy — customers can't book those.": "Scegli una data, poi tocca gli orari occupati — non saranno prenotabili.",
+    "Blocked": "Bloccato",
+    "No free times on this day — please pick another.": "Nessun orario libero in questo giorno — scegline un altro.",
     "Availability": "Disponibilità",
     "Customers can only book inside these hours. Days you switch off are hidden completely.": "I clienti possono prenotare solo in questi orari. I giorni disattivati non sono disponibili.",
     "Fully booked — pause new bookings": "Tutto pieno — sospendi le prenotazioni",
