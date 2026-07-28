@@ -32,14 +32,18 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
   const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId, promo, availability } = req.body;
   let availJson;
-  if (availability !== undefined) {
+  if (availability === null) {
+    availJson = "null";          // explicit clear → no restrictions
+  } else if (availability !== undefined) {
     try {
       const a = availability || {};
       const days = {};
       for (const k of ["0","1","2","3","4","5","6"]) {
         const d = (a.days || {})[k] || {};
-        const hhmm = (v, fb) => (/^\d{2}:\d{2}$/.test(String(v)) ? String(v) : fb);
-        days[k] = { on: !!d.on, from: hhmm(d.from, "08:00"), to: hhmm(d.to, "18:00") };
+        const slots = Array.isArray(d.slots)
+          ? [...new Set(d.slots.filter((t) => /^\d{2}:\d{2}$/.test(String(t))))].sort().slice(0, 24)
+          : [];
+        days[k] = { on: !!d.on && slots.length > 0, slots };
       }
       const closed = Array.isArray(a.closed)
         ? a.closed.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x))).slice(0, 200)
@@ -91,7 +95,7 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         city = COALESCE($12, city),
         google_place_id = COALESCE($13, google_place_id),
         promo = CASE WHEN $15::text IS NULL THEN promo WHEN $15 = 'null' THEN NULL ELSE $15::jsonb END,
-        availability = COALESCE($16::jsonb, availability)
+        availability = CASE WHEN $16::text IS NULL THEN availability WHEN $16 = 'null' THEN NULL ELSE $16::jsonb END
       WHERE id = $14 RETURNING *`,
       [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber, contactPhone,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id, promoJson === undefined ? null : promoJson, availJson === undefined ? null : availJson]

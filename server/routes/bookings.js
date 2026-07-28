@@ -79,26 +79,35 @@ router.post("/", requireAuth, async (req, res) => {
     const co = coRes.rows[0];
 
     // ── Respect the company's availability (server-side, so a stale app can't
-    //    slip a booking into a day/time they are closed) ──
+    //    slip a booking into a time they don't work) ──
     const av = co.availability;
     if (av) {
       if (av.paused) return res.status(400).json({ error: "This company is not taking new bookings right now." });
       const dstr = String(scheduledDate).slice(0, 10);
       if (Array.isArray(av.closed) && av.closed.includes(dstr))
         return res.status(400).json({ error: "The company is closed on that date — please pick another day." });
+
       const dow = String(new Date(dstr + "T12:00:00Z").getUTCDay());
-      const rule = (av.days || {})[dow];
-      if (rule && rule.on === false)
-        return res.status(400).json({ error: "The company doesn't work on that weekday — please pick another day." });
-      if (av.busy && scheduledSlot) {
-        const blocked = av.busy[dstr];
-        if (Array.isArray(blocked) && blocked.includes(String(scheduledSlot).slice(0, 5)))
-          return res.status(400).json({ error: "That time slot is already taken — please pick another." });
+      const rule = (av.days || {})[dow] || {};
+      // the hours this company offers on that weekday (legacy from/to still honoured)
+      let offered = Array.isArray(rule.slots) ? rule.slots : null;
+      if (!offered && rule.from && rule.to) {
+        offered = [];
+        for (let h = 0; h < 24; h++) {
+          const t = String(h).padStart(2, "0") + ":00";
+          if (t >= rule.from && t < rule.to) offered.push(t);
+        }
       }
-      if (rule && rule.on && scheduledSlot) {
+      if (rule.on === false || (offered && offered.length === 0))
+        return res.status(400).json({ error: "The company doesn't work on that day — please pick another." });
+
+      if (scheduledSlot) {
         const t = String(scheduledSlot).slice(0, 5);
-        if (t < String(rule.from || "00:00") || t >= String(rule.to || "23:59"))
-          return res.status(400).json({ error: `That time is outside the company's hours (${rule.from}–${rule.to}).` });
+        const blocked = (av.busy || {})[dstr];
+        if (Array.isArray(blocked) && blocked.includes(t))
+          return res.status(400).json({ error: "That time slot is already taken — please pick another." });
+        if (offered && !offered.includes(t))
+          return res.status(400).json({ error: "The company doesn't offer that time — please pick one of their available hours." });
       }
     }
 

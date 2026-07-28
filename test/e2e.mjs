@@ -237,39 +237,43 @@ ok("personal data anonymised", anon.rows[0].full_name === "Deleted user" && anon
 const reuse = await j("/api/auth/register", { method: "POST", body: { email: "reuse@test.hu", password: "secret123", role: "customer", fullName: "Reuse", customerType: "resident", address: "Z utca 3", phone: "+36301112222", termsAccepted: true } });
 ok("phone becomes reusable after account deletion", reuse.status === 201, JSON.stringify(reuse.data));
 
-console.log("\n── company availability ──");
+console.log("\n── company availability (hourly slots) ──");
 const avSet = await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: {
   paused: false,
-  days: { "0": { on: false }, "1": { on: true, from: "09:00", to: "17:00" }, "2": { on: true, from: "09:00", to: "17:00" },
-          "3": { on: true, from: "09:00", to: "17:00" }, "4": { on: true, from: "09:00", to: "17:00" },
-          "5": { on: true, from: "09:00", to: "17:00" }, "6": { on: false } },
-  closed: ["2027-05-03"] } } });
-ok("company can save availability", avSet.status === 200 && avSet.data.company.availability?.days?.["1"]?.from === "09:00", JSON.stringify(avSet.data.company?.availability || {}).slice(0, 120));
+  days: { "0": { on: false, slots: [] },
+          "1": { on: true, slots: ["09:00","10:00","11:00"] }, "2": { on: true, slots: ["09:00","10:00","11:00"] },
+          "3": { on: true, slots: ["09:00","10:00","11:00"] }, "4": { on: true, slots: ["09:00","10:00","11:00"] },
+          "5": { on: true, slots: ["09:00","10:00","11:00"] }, "6": { on: false, slots: [] } },
+  closed: ["2027-05-03"], busy: {} } } });
+ok("company saves its bookable hours", avSet.status === 200 && avSet.data.company.availability?.days?.["1"]?.slots?.length === 3, JSON.stringify(avSet.data.company?.availability?.days?.["1"] || {}));
 const bkSunday = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-02", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
-ok("booking on a closed weekday is refused", bkSunday.status === 400, JSON.stringify(bkSunday.data));
+ok("booking on a day they don't work is refused", bkSunday.status === 400, JSON.stringify(bkSunday.data));
 const bkClosed = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-03", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
 ok("booking on a day-off date is refused", bkClosed.status === 400);
-const bkEarly = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-04", scheduledSlot: "08:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
-ok("booking outside working hours is refused", bkEarly.status === 400);
+const bkNotOffered = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-04", scheduledSlot: "16:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
+ok("booking an hour they don't offer is refused", bkNotOffered.status === 400, JSON.stringify(bkNotOffered.data));
 const bkOk = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-04", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
-ok("booking inside working hours succeeds", bkOk.status === 201, JSON.stringify(bkOk.data).slice(0, 120));
-await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: { paused: true, days: {}, closed: [] } } });
+ok("booking one of their hours succeeds", bkOk.status === 201, JSON.stringify(bkOk.data).slice(0, 120));
+await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: { paused: true, days: {}, closed: [], busy: {} } } });
 const bkPaused = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-05-05", scheduledSlot: "10:00", address: "A utca 1", paymentMethod: "cash_on_completion" } });
 ok("paused company cannot be booked", bkPaused.status === 400);
-await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: { paused: false, days: { "0": {on:true,from:"00:00",to:"23:59"},"1": {on:true,from:"00:00",to:"23:59"},"2": {on:true,from:"00:00",to:"23:59"},"3": {on:true,from:"00:00",to:"23:59"},"4": {on:true,from:"00:00",to:"23:59"},"5": {on:true,from:"00:00",to:"23:59"},"6": {on:true,from:"00:00",to:"23:59"} }, closed: [] } } });
 
 console.log("\n── busy time slots ──");
 await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: {
   paused: false,
-  days: { "0":{on:true,from:"00:00",to:"23:59"},"1":{on:true,from:"00:00",to:"23:59"},"2":{on:true,from:"00:00",to:"23:59"},"3":{on:true,from:"00:00",to:"23:59"},"4":{on:true,from:"00:00",to:"23:59"},"5":{on:true,from:"00:00",to:"23:59"},"6":{on:true,from:"00:00",to:"23:59"} },
-  closed: [], busy: { "2027-06-07": ["09:30", "13:00"] } } } });
+  days: { "0":{on:true,slots:["09:00","11:00","13:00"]},"1":{on:true,slots:["09:00","11:00","13:00"]},"2":{on:true,slots:["09:00","11:00","13:00"]},"3":{on:true,slots:["09:00","11:00","13:00"]},"4":{on:true,slots:["09:00","11:00","13:00"]},"5":{on:true,slots:["09:00","11:00","13:00"]},"6":{on:true,slots:["09:00","11:00","13:00"]} },
+  closed: [], busy: { "2027-06-07": ["09:00", "13:00"] } } } });
 const busySaved = await j("/api/companies");
 const busyCo = (busySaved.data.companies || []).find((c) => c.id === coId);
-ok("busy slots are saved and public", busyCo?.availability?.busy?.["2027-06-07"]?.includes("09:30"), JSON.stringify(busyCo?.availability?.busy || {}));
-const bkBusy = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-06-07", scheduledSlot: "09:30", address: "B utca 1", paymentMethod: "cash_on_completion" } });
+ok("busy slots are saved and public", busyCo?.availability?.busy?.["2027-06-07"]?.includes("09:00"), JSON.stringify(busyCo?.availability?.busy || {}));
+const bkBusy = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-06-07", scheduledSlot: "09:00", address: "B utca 1", paymentMethod: "cash_on_completion" } });
 ok("booking a busy slot is refused", bkBusy.status === 400, JSON.stringify(bkBusy.data));
 const bkFree = await j("/api/bookings", { method: "POST", token: reuse.data.token, body: { companyId: coId, serviceId: svcId, scheduledDate: "2027-06-07", scheduledSlot: "11:00", address: "B utca 1", paymentMethod: "cash_on_completion" } });
 ok("a free slot on the same day still works", bkFree.status === 201, JSON.stringify(bkFree.data).slice(0, 100));
+// clear availability again so later tests book freely
+await j(`/api/companies/${coId}`, { method: "PUT", token: coTok, body: { availability: null } });
+const avCleared = await j("/api/companies");
+ok("availability can be cleared back to unrestricted", !((avCleared.data.companies || []).find((c) => c.id === coId)?.availability?.days?.["1"]?.slots?.length));
 
 console.log("\n── company reviews endpoint ──");
 const crev = await j("/api/reviews/company", { token: coTok });
