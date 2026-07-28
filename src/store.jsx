@@ -402,7 +402,7 @@ export function StoreProvider({ children }) {
   const updateCompany = async (fields) => {
     if (isApiMode) {
       try {
-        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id } });
+        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability } });
         setDb(d => ({ ...d, companies: d.companies.map(c => c.id === session.companyId ? company : c) }));
         return {};
       } catch (e) { return { error: e.message }; }
