@@ -22,6 +22,14 @@ workflows:
         script: |
           npx cap add ios || true
           npx cap sync ios
+      # iPhone ONLY. Capacitor defaults to "1,2" (iPhone+iPad); claiming iPad
+      # support forces iPad screenshots AND means reviewers test on iPad, where
+      # this phone-column layout stretches badly. 1 = iPhone.
+      - name: iPhone-only device family
+        script: |
+          sed -i '' 's/TARGETED_DEVICE_FAMILY = "1,2"/TARGETED_DEVICE_FAMILY = "1"/g' ios/App/App.xcodeproj/project.pbxproj
+          sed -i '' 's/TARGETED_DEVICE_FAMILY = "1,2,7"/TARGETED_DEVICE_FAMILY = "1"/g' ios/App/App.xcodeproj/project.pbxproj
+          grep -c 'TARGETED_DEVICE_FAMILY = "1"' ios/App/App.xcodeproj/project.pbxproj || echo "WARN: device family not patched"
       - name: Firebase iOS config
         script: |
           cp ios-config/GoogleService-Info.plist ios/App/App/GoogleService-Info.plist
