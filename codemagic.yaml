@@ -101,7 +101,10 @@ workflows:
 
   android-playstore:
     name: Cleano Android (Play Store bundle)
-    instance_type: linux_x2
+    # NOTE: linux_x2 is NOT included in the free/basic Codemagic plan ("selected
+    # instance type is not available with the current billing plan"). The Mac
+    # machine IS included and builds Android fine (Java + Gradle).
+    instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
       node: 20
