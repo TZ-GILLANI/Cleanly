@@ -1,10 +1,13 @@
-# Render blueprint — creates the Cleanly backend with one click.
-# In Render: New → Blueprint → point it at your GitHub repo.
+# Render blueprint — the Cleano backend.
+# NOTE: `name` MUST match the existing Render service ("cleano"). If it doesn't,
+# a blueprint sync creates a SECOND duplicate service instead of updating this
+# one — that is exactly what happened on 29 Jul 2026. Same for `plan`: leaving
+# it as `free` risks a sync downgrading production to a sleeping free instance.
 services:
   - type: web
-    name: cleanly
+    name: cleano
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm install --include=dev && npm run build
     startCommand: node server/index.js
     healthCheckPath: /api/health

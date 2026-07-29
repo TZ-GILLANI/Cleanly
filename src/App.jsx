@@ -1594,7 +1594,6 @@ function CustomerHome({ openBooking, openProfile }) {
   return (
     <div className="cl-fade">
       <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(24px + env(safe-area-inset-top)) 20px 44px", position: "relative", overflow: "hidden" }}>
-        <Sparkle size={18} style={{ position: "absolute", top: 24, right: 24 }} cls="cl-twinkle" />
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={openProfile} aria-label="Edit profile"
             style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", minWidth: 0 }}>
@@ -2161,7 +2160,6 @@ function EmployeeJobs({ openProfile }) {
   return (
     <div className="cl-fade">
       <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(24px + env(safe-area-inset-top)) 20px 40px", position: "relative", overflow: "hidden" }}>
-        <Sparkle size={16} style={{ position: "absolute", top: 22, right: 22 }} cls="cl-twinkle" />
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="Profile">
             <Avatar name={session.name} color="#fff" size={44} />
@@ -4105,15 +4103,13 @@ const css = `
   @keyframes clRise { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   @keyframes clFade { from { opacity: 0; } to { opacity: 1; } }
   @keyframes clSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-  @keyframes clTwinkle { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.65); opacity: .55; } }
   @keyframes clBubble { from { transform: translateY(40vh); opacity: 0; } 20% { opacity: .5; } to { transform: translateY(-50vh); opacity: 0; } }
   .cl-pop { animation: clPop .55s cubic-bezier(.34,1.56,.64,1) both; }
   .cl-rise { animation: clRise .5s cubic-bezier(.2,.8,.3,1) both; }
   .cl-fade { animation: clFade .35s ease both; }
   .cl-slideup { animation: clSlideUp .38s cubic-bezier(.2,.9,.3,1) both; }
-  .cl-twinkle { animation: clTwinkle 2.2s ease-in-out infinite; }
   .cl-bubble { position: absolute; bottom: 0; width: 10px; height: 10px; border-radius: 50%; background: rgba(94,230,168,.4); animation: clBubble 5s linear infinite; }
-  @media (prefers-reduced-motion: reduce) { .cl-pop,.cl-rise,.cl-fade,.cl-slideup,.cl-twinkle,.cl-bubble { animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) { .cl-pop,.cl-rise,.cl-fade,.cl-slideup,.cl-bubble { animation: none !important; } }
 `;
 
 function Shell() {
