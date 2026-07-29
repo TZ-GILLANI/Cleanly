@@ -1,10 +1,16 @@
 import ReactDOM from "react-dom";
 import React, { useState, useMemo, useContext, createContext, useCallback } from "react";
+import { Capacitor } from "@capacitor/core";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
 import { xl } from "./lib/translations.js";
 import { initPush } from "./lib/push.js";
 import { API_BASE, getToken } from "./lib/api.js";
+
+/* In the installed app the layout fills the whole screen; the centered
+   430px column is only for desktop web browsers. */
+const NATIVE = (() => { try { return Capacitor.isNativePlatform(); } catch { return false; } })();
+const SHELL_W = NATIVE ? "100%" : 430;
 
 /* ── Theme: follows the phone's light/dark mode automatically ── */
 const LIGHT = {
@@ -1096,7 +1102,7 @@ function PhoneVerifyGate() {
 }
 
 /* ── Card payment wait overlay (payment gateway opened in browser) ── */
-function PaymentWait({ url, check, onPaid, onLater }) {
+function PaymentWait({ url, check, onPaid, onCancel }) {
   const [dots, setDots] = useState("");
   React.useEffect(() => {
     let alive = true;
@@ -1118,7 +1124,7 @@ function PaymentWait({ url, check, onPaid, onLater }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 20 }}>
           <Btn full onClick={() => window.open(url, "_blank")}>{L("Reopen payment page", "Fizetési oldal újranyitása")}</Btn>
-          <Btn ghost full onClick={onLater}>{L("Pay later from My bookings", "Fizetés később a Foglalásaimból")}</Btn>
+          <Btn ghost full onClick={onCancel}>{L("Cancel booking", "Foglalás lemondása")}</Btn>
         </div>
       </div>
     </div>
@@ -1130,7 +1136,7 @@ function PaymentWait({ url, check, onPaid, onLater }) {
 function ProfileSheet({ close }) {
   const { session, updateProfile, deleteAccount, logout, t, lang, setLang } = useStore();
   const toast = useToast();
-  const [f, setF] = useState({ name: session.name || "", phone: session.phone || "", custType: session.custType || "student", address: session.address || "", paymentMethod: session.paymentMethod || "cash", documents: session.documents || [] });
+  const [f, setF] = useState({ name: session.name || "", phone: session.phone || "", custType: session.custType || "student", address: session.address || "", paymentMethod: session.paymentMethod || "card", documents: session.documents || [] });
   const wantsUpgrade = session.role === "customer" && session.custType !== "student" && f.custType === "student";
   const [upgradeDocs, setUpgradeDocs] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1693,7 +1699,7 @@ function CustomerHome({ openBooking, openProfile }) {
 }
 
 function BookingFlow({ company, close, onBooked }) {
-  const { session, services, reviews, createBooking, startPayment, getPaymentStatus, feePct } = useStore();
+  const { session, services, reviews, createBooking, startPayment, getPaymentStatus, feePct, cancelBooking } = useStore();
   const toast = useToast();
   const svcs = services.filter((s) => s.company_id === company.id && s.is_active);
   const revs = reviews.filter((r) => r.company_id === company.id);
@@ -1929,7 +1935,7 @@ function BookingFlow({ company, close, onBooked }) {
             url={payWait.url}
             check={() => getPaymentStatus(payWait.row.id)}
             onPaid={() => { toast(L("Payment received 🎉", "Sikeres fizetés 🎉")); onBooked(payWait.row); }}
-            onLater={() => { toast(L("No problem — pay on completion", "Rendben — fizetés a szolgáltatás után")); onBooked(payWait.row); }}
+            onCancel={async () => { await cancelBooking(payWait.row.id); toast(L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés")); close(); }}
           />
         )}
         <div style={{ padding: "12px 22px calc(22px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.line}`, display: "flex", gap: 10 }}>
@@ -4161,7 +4167,7 @@ function Shell() {
     return (
       <div style={{ minHeight: "100vh", background: C.shell, display: "flex", justifyContent: "center" }}>
         <style>{css}</style>
-        <div style={{ width: "100%", maxWidth: 430 }}><Auth /></div>
+        <div style={{ width: "100%", maxWidth: SHELL_W }}><Auth /></div>
       </div>
     );
 
@@ -4177,7 +4183,7 @@ function Shell() {
   return (
     <div style={{ minHeight: "100vh", background: C.shell, display: "flex", justifyContent: "center", fontFamily: B }}>
       <style>{css}</style>
-      <div style={{ width: "100%", maxWidth: 430, background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", boxShadow: "0 0 50px rgba(20,28,58,.14)", position: "relative" }}>
+      <div style={{ width: "100%", maxWidth: SHELL_W, background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", boxShadow: NATIVE ? "none" : "0 0 50px rgba(20,28,58,.14)", position: "relative" }}>
         {demoSwitchRole && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 16px", background: C.navyDeep }}>
             <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.mint, letterSpacing: .8 }}>🧪 DEMO</span>

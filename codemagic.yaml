@@ -49,6 +49,10 @@ workflows:
           echo "--- AppDelegate.swift ---"; head -20 ios/App/App/AppDelegate.swift
           # b) allow background push delivery
           plutil -replace UIBackgroundModes -json '["remote-notification"]' ios/App/App/Info.plist || plutil -insert UIBackgroundModes -json '["remote-notification"]' ios/App/App/Info.plist
+          # Portrait only — the layout is a phone column, rotation shows a broken half-view
+          plutil -replace UISupportedInterfaceOrientations -json '["UIInterfaceOrientationPortrait"]' ios/App/App/Info.plist
+          plutil -replace 'UISupportedInterfaceOrientations~ipad' -json '["UIInterfaceOrientationPortrait"]' ios/App/App/Info.plist || plutil -insert 'UISupportedInterfaceOrientations~ipad' -json '["UIInterfaceOrientationPortrait"]' ios/App/App/Info.plist
+          plutil -replace UIRequiresFullScreen -bool YES ios/App/App/Info.plist || plutil -insert UIRequiresFullScreen -bool YES ios/App/App/Info.plist
           # c) link the push entitlements file into the App target build settings
           gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby -e "require 'xcodeproj'; pr=Xcodeproj::Project.open('ios/App/App.xcodeproj'); app=pr.targets.find{|t| t.name=='App'}; app.build_configurations.each{|c| c.build_settings['CODE_SIGN_ENTITLEMENTS']='App/App.entitlements'}; grp=pr.main_group.find_subpath('App', true); unless app.resources_build_phase.files_references.any?{|f| f.display_name=='GoogleService-Info.plist'}; ref=grp.new_reference('GoogleService-Info.plist'); app.add_resources([ref]); end; pr.save; puts 'entitlements + GoogleService-Info.plist wired into bundle'"
@@ -114,10 +118,30 @@ workflows:
         script: npm run build
       - name: Sync Android
         script: npx cap sync android
+      # Codemagic downloads the keystore and exports CM_* variables. Our
+      # build.gradle signs from android/key.properties, so write it here —
+      # without this step the bundle comes out UNSIGNED and Play rejects it.
+      - name: Set up signing (key.properties)
+        script: |
+          cat > "$CM_BUILD_DIR/android/key.properties" <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_KEYSTORE_PATH
+          EOF
+          echo "key.properties written; keystore at $CM_KEYSTORE_PATH"
       - name: Build release bundle
         script: |
           cd android
           chmod +x gradlew
           ./gradlew bundleRelease
+      - name: Verify the bundle really is signed
+        script: |
+          AAB=$(find "$CM_BUILD_DIR/android/app/build/outputs" -name "*.aab" | head -1)
+          if unzip -l "$AAB" | grep -q "META-INF/.*\.RSA\|META-INF/.*\.EC"; then
+            echo "SIGNED — $AAB"
+          else
+            echo "ERROR: bundle is NOT signed. Check the cleano_keystore reference name."; exit 1
+          fi
     artifacts:
       - android/app/build/outputs/**/*.aab

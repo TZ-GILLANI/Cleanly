@@ -6,6 +6,7 @@
 
 export const EXTRA = {
   de: {
+    "Booking cancelled — nothing was charged": "Buchung storniert — nichts wurde abgebucht",
     "hours": "Stunden",
     "All": "Alle",
     "None": "Keine",
@@ -294,6 +295,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Blick ins Admin-Panel der Plattform →",
   },
   ro: {
+    "Booking cancelled — nothing was charged": "Rezervare anulată — nu s-a încasat nimic",
     "hours": "ore",
     "All": "Toate",
     "None": "Niciuna",
@@ -582,6 +584,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Aruncă o privire în panoul de admin →",
   },
   sk: {
+    "Booking cancelled — nothing was charged": "Rezervácia zrušená — nič sa nestrhlo",
     "hours": "hodín",
     "All": "Všetky",
     "None": "Žiadne",
@@ -870,6 +873,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Nahliadnite do admin panela →",
   },
   pl: {
+    "Booking cancelled — nothing was charged": "Rezerwacja anulowana — nic nie pobrano",
     "hours": "godzin",
     "All": "Wszystkie",
     "None": "Żadne",
@@ -1158,6 +1162,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Zajrzyj do panelu administratora →",
   },
   uk: {
+    "Booking cancelled — nothing was charged": "Бронювання скасовано — кошти не списано",
     "hours": "годин",
     "All": "Усі",
     "None": "Жодної",
@@ -1446,6 +1451,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Зазирнути в адмін-панель →",
   },
   fr: {
+    "Booking cancelled — nothing was charged": "Réservation annulée — rien n'a été débité",
     "hours": "heures",
     "All": "Toutes",
     "None": "Aucune",
@@ -1734,6 +1740,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Jetez un œil au panneau admin →",
   },
   es: {
+    "Booking cancelled — nothing was charged": "Reserva cancelada — no se cobró nada",
     "hours": "horas",
     "All": "Todas",
     "None": "Ninguna",
@@ -2022,6 +2029,7 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Echa un vistazo al panel de administración →",
   },
   it: {
+    "Booking cancelled — nothing was charged": "Prenotazione annullata — nessun addebito",
     "hours": "ore",
     "All": "Tutte",
     "None": "Nessuna",

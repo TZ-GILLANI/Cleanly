@@ -17,6 +17,11 @@
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1023" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+      <style>
+      /* never show white behind the app — matches dark & light shells */
+      html, body { margin: 0; background: #10194a; }
+      @media (prefers-color-scheme: light) { html, body { background: #eef1f8; } }
+    </style>
   </head>
   <body style="margin:0">
     <div id="root"></div>
