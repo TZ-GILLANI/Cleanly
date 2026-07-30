@@ -141,6 +141,19 @@ workflows:
           storeFile=$CM_KEYSTORE_PATH
           EOF
           echo "key.properties written; keystore at $CM_KEYSTORE_PATH"
+      # Fail FAST if the passwords Codemagic has can't actually open the key —
+      # otherwise the same error only appears after a 7-minute Gradle build.
+      - name: Verify keystore passwords BEFORE building
+        script: |
+          echo "— can the STORE password open the keystore?"
+          keytool -list -keystore "$CM_KEYSTORE_PATH" -storepass "$CM_KEYSTORE_PASSWORD" > /dev/null \
+            || { echo "✗ KEYSTORE PASSWORD stored in Codemagic is WRONG"; exit 1; }
+          echo "✓ keystore password OK"
+          echo "— can the KEY password unlock key '$CM_KEY_ALIAS'?"
+          keytool -certreq -alias "$CM_KEY_ALIAS" -keystore "$CM_KEYSTORE_PATH" \
+            -storepass "$CM_KEYSTORE_PASSWORD" -keypass "$CM_KEY_PASSWORD" -file /tmp/req.csr \
+            || { echo "✗ KEY PASSWORD stored in Codemagic is WRONG (this is the 'Cannot recover key' cause). Re-add the keystore and type the SAME password in BOTH password fields."; exit 1; }
+          echo "✓ key password OK — signing will work"
       - name: Build release bundle
         script: |
           cd android

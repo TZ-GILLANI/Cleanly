@@ -67,6 +67,8 @@ app.get("/api/health", (req, res) => res.json({ ok: true, ts: new Date().toISOSt
 app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "privacy.html")));
 app.get("/terms", (req, res) => res.sendFile(path.join(__dirname, "terms.html")));
 app.get("/partner-terms", (req, res) => res.sendFile(path.join(__dirname, "partner-terms.html")));
+/* Account-deletion instructions — REQUIRED by Google Play (Data safety → Delete account URL) */
+app.get("/delete-account", (req, res) => res.sendFile(path.join(__dirname, "delete-account.html")));
 
 /* Barion sends the customer back here after paying (web + in-app browser) */
 app.get("/payment-result", (req, res) => {
