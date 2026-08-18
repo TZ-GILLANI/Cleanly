@@ -254,4 +254,87 @@ router.get("/log", ...guard, async (req, res) => {
   }
 });
 
+
+/* ── 5.10a Full user record. Support work needs the whole picture in one
+      place. Secrets stay out — safeUser-style stripping is enforced by the
+      explicit column list below. ── */
+router.get("/users/:id/full", ...guard, async (req, res) => {
+  try {
+    const u = await query(
+      `SELECT id, email, full_name, role, phone, address, city, country, customer_type,
+              approval_status, is_active, is_super, phone_verified, email_verified,
+              lang, documents, company_id, created_at, card_brand, card_last4
+         FROM users WHERE id = $1`, [req.params.id]);
+    if (!u.rows.length) return res.status(404).json({ error: "User not found" });
+
+    const [bookings, reviews, complaints, company] = await Promise.all([
+      query(`SELECT b.id, b.order_no, b.scheduled_date, b.scheduled_slot, b.status, b.payment_status,
+                    b.enroute_at, b.started_at, b.finished_at, b.collected_at, b.returned_at, b.fulfilment,
+                    b.total_huf, b.total_minor, b.currency, b.address, b.service_snapshot,
+                    c.name AS company_name
+               FROM bookings b LEFT JOIN companies c ON c.id = b.company_id
+              WHERE b.customer_id = $1 OR b.assigned_to = $1
+              ORDER BY b.scheduled_date DESC LIMIT 200`, [req.params.id]),
+      query(`SELECT r.id, r.stars, r.body, r.created_at, r.removed_at, c.name AS company_name
+               FROM reviews r LEFT JOIN companies c ON c.id = r.company_id
+              WHERE r.customer_id = $1 ORDER BY r.created_at DESC LIMIT 100`, [req.params.id]),
+      query(`SELECT id, subject, body, status, resolution, created_at FROM complaints
+              WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [req.params.id]).catch(() => ({ rows: [] })),
+      // company-role users own their company via owner_id; company_id may be unset
+      query(`SELECT id, name, tagline, area, city, country, contact_phone, tax_id, reg_number,
+                    service_radius_km, service_lat, service_lng, currency, rating, review_count,
+                    emoji, is_approved, is_listed, created_at,
+                    (stripe_account_id IS NOT NULL) AS stripe_ready
+               FROM companies WHERE id = $1 OR owner_id = $2 LIMIT 1`,
+             [u.rows[0].company_id || null, req.params.id]),
+    ]);
+    res.json({
+      user: u.rows[0],
+      bookings: bookings.rows,
+      reviews: reviews.rows,
+      complaints: complaints.rows,
+      company: company.rows[0] || null,
+    });
+  } catch (e) {
+    console.error("admin user full:", e.message);
+    res.status(500).json({ error: "Could not load the user" });
+  }
+});
+
+/* ── 5.10b Admin edits a company. Deliberately NOT editable: the Stripe
+      account id (would redirect their money), their password, and their
+      prices/services (their business decision — unlist instead). Every
+      change is logged field-by-field with before → after. ── */
+const ADMIN_EDITABLE = ["name", "tagline", "area", "city", "country", "contact_phone",
+  "tax_id", "reg_number", "emoji", "logo_url", "cover", "service_radius_km",
+  "service_lat", "service_lng", "is_listed", "is_approved"];
+
+router.put("/companies/:id/details", ...guard, async (req, res) => {
+  try {
+    const before = await query("SELECT * FROM companies WHERE id = $1", [req.params.id]);
+    if (!before.rows.length) return res.status(404).json({ error: "Company not found" });
+    const b = before.rows[0];
+
+    const sets = [], vals = [];
+    const changes = [];
+    for (const key of ADMIN_EDITABLE) {
+      if (!(key in (req.body || {}))) continue;
+      let v = req.body[key];
+      if (v === "" ) v = null;
+      if (String(b[key] ?? "") === String(v ?? "")) continue;
+      vals.push(v);
+      sets.push(`${key} = $${vals.length}`);
+      changes.push(`${key}: "${String(b[key] ?? "").slice(0, 60)}" → "${String(v ?? "").slice(0, 60)}"`);
+    }
+    if (!sets.length) return res.json({ company: b, changed: 0 });
+    vals.push(req.params.id);
+    const upd = await query(`UPDATE companies SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals);
+    await logAdmin(req, "company.edit", "company", req.params.id, changes.join(" · "));
+    res.json({ company: upd.rows[0], changed: changes.length });
+  } catch (e) {
+    console.error("admin company edit:", e.message);
+    res.status(500).json({ error: "Could not save the changes" });
+  }
+});
+
 export default router;

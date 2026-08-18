@@ -74,6 +74,10 @@ workflows:
           NEXT=$((LATEST + 1))
           cd ios/App && agvtool new-version -all "$NEXT"
           echo "Build number set to $NEXT"
+          # Marketing version comes from package.json so it can never drift from the app
+          MKT=$(node -p "require('$CM_BUILD_DIR/package.json').version")
+          agvtool new-marketing-version "$MKT"
+          echo "Marketing version set to $MKT"
       - name: Build & sign IPA (App Store distribution)
         script: |
           set -e

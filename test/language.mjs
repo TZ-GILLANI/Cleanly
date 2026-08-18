@@ -1,0 +1,120 @@
+/* LANGUAGE — the whole chain, including the parts the drift checker cannot see.
+   Run: node test/language.mjs                                                    */
+process.env.PGMEM = "1"; process.env.JWT_SECRET = "t"; process.env.PORT = "4507";
+process.on("unhandledRejection", (e) => { console.error("UNHANDLED:", e?.stack || e); process.exit(1); });
+await import("../server/index.js");
+await new Promise((r) => setTimeout(r, 900));
+const { query } = await import("../server/db.js");
+const fs = await import("fs");
+let pass = 0, fail = 0;
+const ok = (n, c, e = "") => { if (c) { pass++; console.log("  ✓", n); } else { fail++; console.log("  ✗", n, e); } };
+const j = async (p, o = {}) => {
+  const r = await fetch(`http://127.0.0.1:4507${p}`, { method: o.method || "GET", signal: AbortSignal.timeout(9000),
+    headers: { "Content-Type": "application/json", ...(o.token ? { Authorization: "Bearer " + o.token } : {}) },
+    body: o.body ? JSON.stringify(o.body) : undefined });
+  return { status: r.status, data: await r.json().catch(() => ({})) };
+};
+
+const srv = await import("../server/lib/i18n-server.js");
+
+console.log("\n── the server can speak all ten languages ──");
+ok("twelve languages are supported", srv.serverLangs().length === 12, srv.serverLangs().join(","));
+ok("an unknown language falls back to English", srv.normLang("zz") === "en");
+ok("a locale like 'hu-HU' is understood", srv.normLang("hu-HU") === "hu");
+ok("null is understood", srv.normLang(null) === "en");
+
+console.log("\n── every server string is translated into every language ──");
+const strings = srv.serverStrings();
+ok("there are server strings to check", strings.length >= 15, String(strings.length));
+let missing = [];
+for (const s of strings) {
+  for (const lg of srv.serverLangs()) {
+    if (lg === "en") continue;
+    if (srv.tr(lg, s) === s) missing.push(`${lg}: ${s}`);
+  }
+}
+ok("no server string falls back to English in any language", missing.length === 0, missing.slice(0, 5).join(" | "));
+ok("an untranslated string passes through rather than vanishing",
+   srv.tr("hu", "Something we never translated") === "Something we never translated");
+ok("English asks for no translation at all", srv.tr("en", "Job completed ✅") === "Job completed ✅");
+
+console.log("\n── notifications arrive in the RECIPIENT's language ──");
+await j("/api/auth/register", { method: "POST", body: { email: "hu@l.hu", password: "secret123", role: "customer", fullName: "Magyar", phone: "+36301110011", city: "Debrecen", address: "K 1", customerType: "resident", termsAccepted: true } });
+await j("/api/auth/register", { method: "POST", body: { email: "de@l.hu", password: "secret123", role: "customer", fullName: "Deutsch", phone: "+36301110012", city: "Debrecen", address: "K 2", customerType: "resident", termsAccepted: true } });
+await j("/api/auth/register", { method: "POST", body: { email: "en@l.hu", password: "secret123", role: "customer", fullName: "English", phone: "+36301110013", city: "Debrecen", address: "K 3", customerType: "resident", termsAccepted: true } });
+await query("UPDATE users SET approval_status='approved'");
+await query("UPDATE users SET lang='hu' WHERE email='hu@l.hu'");
+await query("UPDATE users SET lang='de' WHERE email='de@l.hu'");
+await query("UPDATE users SET lang='en' WHERE email='en@l.hu'");
+const idOf = async (e) => (await query("SELECT id FROM users WHERE email=$1", [e])).rows[0].id;
+const { notify } = await import("../server/lib/notify.js");
+for (const e of ["hu@l.hu", "de@l.hu", "en@l.hu"]) await notify(await idOf(e), "booking", "Cleaner assigned 🧹", "Job completed ✅");
+const seen = async (e) => (await query("SELECT title, body FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1", [await idOf(e)])).rows[0];
+const huN = await seen("hu@l.hu"), deN = await seen("de@l.hu"), enN = await seen("en@l.hu");
+ok("a Hungarian user gets Hungarian", huN.title === "Takarító kijelölve 🧹", huN.title);
+ok("a German user gets German", deN.title === "Reinigungskraft zugewiesen 🧹", deN.title);
+ok("an English user gets English", enN.title === "Cleaner assigned 🧹", enN.title);
+ok("the body is translated too, not just the title", huN.body === "Munka elkészült ✅", huN.body);
+
+console.log("\n── the language reaches the server for every role, not just customers ──");
+const storeSrc = fs.readFileSync("src/store.jsx", "utf8");
+ok("changing language saves it for whoever is logged in",
+   /setLang = \(l\) => \{[^}]*if \(session\?\.userId\) updateProfile\(\{ lang: l \}\)/.test(storeSrc),
+   "it used to save only for customers, so companies and cleaners got English pushes");
+const co = await j("/api/auth/register", { method: "POST", body: { email: "colang@l.hu", password: "secret123", role: "company", fullName: "O", companyName: "L Co", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Debrecen", termsAccepted: true } });
+await query("UPDATE users SET approval_status='approved'");
+const coTok = (await j("/api/auth/login", { method: "POST", body: { email: "colang@l.hu", password: "secret123" } })).data.token;
+await j("/api/auth/profile", { method: "PUT", token: coTok, body: { lang: "de" } });
+ok("a company can store its language", (await query("SELECT lang FROM users WHERE email='colang@l.hu'")).rows[0].lang === "de");
+await notify(await idOf("colang@l.hu"), "booking", "A booking is waiting for you");
+const coN = await seen("colang@l.hu");
+ok("and then gets notifications in it", coN.title === "Eine Buchung wartet auf Sie", coN.title);
+
+console.log("\n── API errors are translated where the person reads them ──");
+const apiSrc = fs.readFileSync("src/lib/api.js", "utf8");
+ok("the client translates server errors on display", /xl\(lg, raw\)/.test(apiSrc));
+ok("the English original is kept for logging", /rawMessage = raw/.test(apiSrc));
+ok("a translation failure never hides the real error", /catch \{ \/\* never let a translation problem hide/.test(apiSrc));
+
+console.log("\n── the client dictionaries carry the common server errors ──");
+const dict = await import("../src/lib/translations.js");
+const commonErrors = [
+  "Missing required fields",
+  "That date has already passed — please pick another.",
+  "That time has just been taken — please pick another.",
+  "Company is not currently accepting bookings",
+  "Service not found",
+  "Customers only",
+  "Forbidden",
+  "Invalid or expired token",
+];
+const notInDict = [];
+for (const e of commonErrors) {
+  for (const lg of ["hu", "de", "ro", "sk", "pl", "uk", "fr", "es", "it"]) {
+    if (lg === "hu") { if (!dict.EXTRA.de) continue; }
+    const d = dict.EXTRA[lg];
+    if (d && !d[e]) notInDict.push(`${lg}: ${e}`);
+  }
+}
+ok("the errors a user is most likely to hit are translated",
+   notInDict.length === 0, notInDict.slice(0, 6).join(" | "));
+
+
+console.log("\n── Turkish and Chinese ──");
+ok("Turkish notifications work", srv.tr("tr", "Job completed ✅") === "İş tamamlandı ✅", srv.tr("tr","Job completed ✅"));
+ok("Chinese notifications work", srv.tr("zh", "Job completed ✅") === "工作已完成 ✅", srv.tr("zh","Job completed ✅"));
+const i18n = await import("../src/lib/i18n.js");
+ok("the app offers twelve languages", i18n.LANGS.length === 12, String(i18n.LANGS.length));
+ok("Turkish and Chinese are in the picker", i18n.LANGS.some(l=>l.id==="tr") && i18n.LANGS.some(l=>l.id==="zh"));
+ok("both have a date locale", !!i18n.LOCALES.tr && !!i18n.LOCALES.zh);
+const d2 = await import("../src/lib/translations.js");
+ok("the customer journey is translated into Turkish", Object.keys(d2.EXTRA.tr).length >= 200, String(Object.keys(d2.EXTRA.tr).length));
+ok("and into Chinese", Object.keys(d2.EXTRA.zh).length >= 200, String(Object.keys(d2.EXTRA.zh).length));
+ok("an untranslated string falls back to English, never blank", d2.xl("zh", "Not translated yet") === "Not translated yet");
+ok("placeholders survive translation", /\{h\}/.test(d2.EXTRA.tr["More than {h}h before"]) && /\{h\}/.test(d2.EXTRA.zh["More than {h}h before"]));
+console.log("\n── the app itself still has zero drift ──");
+const drift = (await import("child_process")).execSync("node scripts/i18n-drift.mjs", { encoding: "utf8" });
+ok("the UI drift checker reports 0", /DRIFT: 0 missing/.test(drift), drift.split("\n").slice(-3).join(" "));
+
+console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
+process.exit(fail ? 1 : 0);

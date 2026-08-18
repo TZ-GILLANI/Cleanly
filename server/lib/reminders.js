@@ -1,6 +1,7 @@
 import { query } from "../db.js";
 import { notify } from "./notify.js";
 import { sendEmail } from "./mailer.js";
+import { refundBookingPayment } from "../routes/payments.js";
 
 /* ── Day-of reminders ──────────────────────────────────────────────
    Runs every 5 minutes.
@@ -34,6 +35,26 @@ function slotTime(dateVal, slot) {
     if (!hm) return null;
     const utcMs = Date.parse(`${d}T${hm[1].padStart(2, "0")}:${hm[2]}:00Z`) - budapestOffsetMs(d);
     return isNaN(utcMs) ? null : new Date(utcMs);
+  } catch { return null; }
+}
+
+/* The moment an unaccepted booking dies.
+
+   A paid booking at status 0 is auto-cancelled and refunded when EITHER the
+   company has sat on it for ACCEPT_TIMEOUT_H, OR the job itself is less than
+   12 hours away — whichever comes first. The company could not see this clock
+   at all, which meant losing paid work to a deadline nobody had mentioned. It
+   is exported so the app can show the countdown, and used by the sweep below
+   so the number on screen and the number enforced can never drift apart. */
+export function acceptDeadline(b) {
+  try {
+    const killH = Number(process.env.ACCEPT_TIMEOUT_H || 12);
+    const created = new Date(b.created_at).getTime();
+    const start = slotTime(b.scheduled_date, b.scheduled_slot);
+    const byAge = isNaN(created) ? Infinity : created + killH * 3600e3;
+    const byStart = start ? start.getTime() - 12 * 3600e3 : Infinity;
+    const at = Math.min(byAge, byStart);
+    return Number.isFinite(at) ? new Date(at).toISOString() : null;
   } catch { return null; }
 }
 
@@ -105,10 +126,67 @@ export async function runReminders() {
   }
 }
 
+
+/* ── 5.11 Unaccepted bookings must not hang forever ──────────────────
+   A paid booking sitting at status 0 means the customer's money is taken and
+   nobody has agreed to come. Nudge the company, then auto-cancel + refund.
+   Env-tunable: ACCEPT_NUDGE_H (2), ACCEPT_TIMEOUT_H (12).                */
+export async function sweepUnaccepted() {
+  const nudgeH = Number(process.env.ACCEPT_NUDGE_H || 2);
+  const killH = Number(process.env.ACCEPT_TIMEOUT_H || 12);
+  let rows;
+  try {
+    const r = await query(
+      `SELECT b.*, c.owner_id, c.name AS company_name
+         FROM bookings b JOIN companies c ON c.id = b.company_id
+        WHERE b.status = 0 AND b.scheduled_date >= (CURRENT_DATE - INTERVAL '1 day')
+          AND b.payment_status IN ('paid','pending','unpaid')`);
+    rows = r.rows;
+  } catch { return; }
+  const now = Date.now();
+  for (const b of rows) {
+    try {
+      const created = new Date(b.created_at).getTime();
+      const ageH = (now - created) / 3600e3;
+      const start = slotTime(b.scheduled_date, b.scheduled_slot);
+      const hoursToStart = start ? (start.getTime() - now) / 3600e3 : 999;
+
+      // 1) nudge once
+      if (ageH >= nudgeH && !b.accept_nudged_at) {
+        await query("UPDATE bookings SET accept_nudged_at = NOW() WHERE id = $1 AND accept_nudged_at IS NULL", [b.id]);
+        await notify(b.owner_id, "reminder", "A booking is waiting for you",
+          "A customer is waiting for you to accept a booking. If you can't take it, decline so they can rebook.", b.id);
+      }
+      // 2) auto-cancel + refund — same rule the company sees counting down
+      const deadline = acceptDeadline(b);
+      if (deadline ? now >= Date.parse(deadline) : (ageH >= killH || hoursToStart <= 12)) {
+        // Try to refund, but never let a payment-provider failure keep the customer
+        // trapped in a booking nobody is coming to. Cancel first, shout about the money.
+        if (b.payment_status === "paid") {
+          try { await refundBookingPayment(b, 100); }
+          catch (e) {
+            console.error("auto-cancel refund failed:", e.message);
+            try {
+              const { paymentAlert } = await import("./alerts.js");
+              paymentAlert("auto-cancel refund failed", `booking ${b.id} (${b.company_name}) was auto-cancelled but the refund did not go through: ${e.message}`);
+            } catch {}
+          }
+        }
+        await query("UPDATE bookings SET status = 9, decline_reason = $1 WHERE id = $2 AND status = 0",
+          ["auto-cancelled: company did not respond", b.id]);
+        await notify(b.customer_id, "cancelled", "Booking cancelled — refunded",
+          `${b.company_name} didn't confirm in time, so we cancelled it and refunded you in full. Other companies are available.`, b.id);
+        await notify(b.owner_id, "cancelled", "Booking auto-cancelled",
+          "You didn't respond in time, so a booking was cancelled and the customer refunded.", b.id);
+      }
+    } catch (e) { console.error("sweepUnaccepted:", e.message); }
+  }
+}
+
 let timer = null;
 export function startReminders() {
   if (timer) return;
-  const tick = () => runReminders().catch((e) => console.error("reminders:", e.message));
+  const tick = () => runReminders().then(sweepUnaccepted).catch((e) => console.error("reminders:", e.message));
   timer = setInterval(tick, 5 * MIN);
   setTimeout(tick, 30 * 1000);   // first pass shortly after boot
   console.log("   ⏰ Day-of reminders scheduler started (every 5 min)");

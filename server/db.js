@@ -17,6 +17,16 @@ if (process.env.PGMEM === "1") {
   const { fileURLToPath } = await import("url");
   const mem = newDb();
   mem.public.registerFunction({ name: "gen_random_uuid", returns: DataType.uuid, impure: true, implementation: () => randomUUID() });
+  /* pg-mem does not implement NULLIF. Production leans on it heavily to fall
+     back from a blank billing_name to the trading name, so without this the
+     fee-invoice path could not be tested at all — it failed silently inside a
+     catch and the tests only saw "no invoice". */
+  for (const t of [DataType.text, DataType.integer]) {
+    mem.public.registerFunction({
+      name: "nullif", args: [t, t], returns: t,
+      implementation: (a, b) => (a === b ? null : a),
+    });
+  }
   const here = path.dirname(fileURLToPath(import.meta.url));
   let schema = fs.readFileSync(path.join(here, "..", "schema.sql"), "utf8");
   // enum types live inside idempotent DO blocks — pull them out and run them first
@@ -27,6 +37,14 @@ if (process.env.PGMEM === "1") {
   schema = schema.replace(/CREATE OR REPLACE FUNCTION[\s\S]*?\$\$;/g, "");      // trigger functions
   schema = schema.replace(/CREATE TRIGGER[\s\S]*?;/g, "");
   schema = schema.replace(/CREATE EXTENSION[^;]*;/g, "");
+  // Strip line comments BEFORE splitting on ";" — a semicolon inside a comment
+  // would otherwise cut a statement in half and silently drop it.
+  schema = schema.replace(/^[ \t]*--.*$/gm, "");
+  // Partial indexes are a Postgres optimisation with no meaning in-memory, and
+  // pg-mem mis-plans equality lookups on the indexed column when one exists
+  // (a row with approval_status='approved' stops matching WHERE approval_status='approved').
+  // They are pure performance in production, so dropping them here is safe.
+  schema = schema.replace(/CREATE\s+(UNIQUE\s+)?INDEX[^;]*\sWHERE\s[^;]*;/gi, "");
   for (const stmt of schema.split(";")) {
     const q = stmt.trim();
     if (!q) continue;

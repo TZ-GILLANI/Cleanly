@@ -95,23 +95,48 @@ router.post("/broadcast", requireAuth, requireRole("admin"), async (req, res) =>
   try {
     const title = String(req.body?.title || "").trim();
     const body = String(req.body?.body || "").trim();
-    const audience = ["all", "customer", "company", "employee"].includes(req.body?.audience) ? req.body.audience : "all";
     if (!title) return res.status(400).json({ error: "Title is required" });
     if (title.length > 120 || body.length > 500) return res.status(400).json({ error: "Too long" });
+
+    /* ── 5.5 Targeted audiences. Blasting everyone when you meant one city is
+       a mistake you make once, so the caller must confirm a recipient count. ── */
+    const { where, params } = audienceFilter(req.body || {});
+    const preview = req.body?.preview === true;
+    const cnt = await query(`SELECT COUNT(*)::int AS n FROM users WHERE ${where}`, params);
+    if (preview) return res.json({ count: cnt.rows[0].n });
+    if (!cnt.rows[0].n) return res.status(400).json({ error: "That audience matches nobody" });
+
     const r = await query(
       `INSERT INTO notifications (user_id, type, title, body)
-       SELECT id, 'announcement', $1, $2 FROM users
-       WHERE role != 'admin' AND ($3 = 'all' OR role::text = $3)`,
-      [title, body || null, audience]
-    );
-    // The bulk insert covers the in-app feed; phones need the push fan-out too.
-    query(
-      `SELECT id FROM users
-       WHERE role != 'admin' AND ($1 = 'all' OR role::text = $1) AND push_token IS NOT NULL`,
-      [audience]
-    ).then((t) => pushToMany(t.rows.map((x) => x.id), title, body || "")).catch((e) => console.error("broadcast push:", e.message));
-    res.json({ ok: true, sent: r.rowCount });
-  } catch (e) { res.status(500).json({ error: "Broadcast failed" }); }
+       SELECT id, 'announcement', $${params.length + 1}, $${params.length + 2} FROM users WHERE ${where}`,
+      [...params, title, body || null]);
+
+    query(`SELECT id FROM users WHERE ${where} AND push_token IS NOT NULL`, params)
+      .then((t) => pushToMany(t.rows.map((x) => x.id), title, body || ""))
+      .catch((e) => console.error("broadcast push:", e.message));
+
+    try {
+      const { logAdmin } = await import("../lib/adminlog.js");
+      await logAdmin(req, "broadcast.send", "notification", null,
+        `audience=${JSON.stringify({ role: req.body?.audience, city: req.body?.city, country: req.body?.country, userId: req.body?.userId })} · recipients=${cnt.rows[0].n} · title="${title}"`);
+    } catch {}
+
+    res.json({ ok: true, sent: r.rowCount ?? cnt.rows[0].n, count: cnt.rows[0].n });
+  } catch (e) {
+    console.error("broadcast:", e.message);
+    res.status(500).json({ error: "Broadcast failed" });
+  }
 });
+
+/* Build the audience WHERE clause: everyone / role / city / country / one person. */
+function audienceFilter(b) {
+  const params = [];
+  const parts = ["role != 'admin'", "is_active IS NOT false"];
+  if (b.userId) { params.push(String(b.userId)); parts.push(`id = $${params.length}`); return { where: parts.join(" AND "), params }; }
+  if (["customer", "company", "employee"].includes(b.audience)) { params.push(b.audience); parts.push(`role::text = $${params.length}`); }
+  if (b.city) { params.push(String(b.city).trim()); parts.push(`LOWER(city) = LOWER($${params.length})`); }
+  if (b.country) { params.push(String(b.country).toUpperCase().slice(0, 2)); parts.push(`country = $${params.length}`); }
+  return { where: parts.join(" AND "), params };
+}
 
 export default router;

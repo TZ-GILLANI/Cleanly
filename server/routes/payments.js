@@ -1,7 +1,73 @@
 import { Router } from "express";
 import { query } from "../db.js";
+import { paymentAlert } from "../lib/alerts.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { notify } from "../lib/notify.js";
+
+
+/* ── Billing the partner for our commission.
+
+   There is no automatic invoicing. Cleano's own invoice to the partner is
+   raised outside the app and its number recorded afterwards, which is why
+   nothing here talks to an invoicing provider. What the code still owes the
+   operator is the list: which finished, paid jobs have a commission that has
+   not yet been billed. That lives in routes/invoices.js.
+
+   The columns that used to hold an auto-issued number now hold the number the
+   operator typed in, which is why they survive. ── */
+
+/* ── Who pays Stripe's cut ────────────────────────────────────────────────
+   On a direct charge the connected account is the merchant, so Stripe deducts
+   its processing fee from THEM. Left alone, a partner who lists 5,000 Ft
+   receives about 4,890 — and the Partner Terms would be promising something
+   that does not happen.
+
+   Cleano absorbs it instead: we reduce our own commission by Stripe's cut, so
+   the partner's settlement lands on exactly their listed price. It costs us
+   roughly a third of the commission, which is a deliberate startup choice —
+   partners get a number they can trust and we take less.
+
+   The rate is configurable because it varies by card: a domestic European card
+   is far cheaper than an international one. Set STRIPE_FEE_PCT and
+   STRIPE_FEE_FIXED_MINOR from your actual Stripe agreement. If the estimate is
+   slightly off, the difference lands on us, never on the partner — which is the
+   correct direction for the promise we are making. */
+export function stripeFeeMinor(amountMinor) {
+  /* Stripe Hungary standard pricing: 1.5% + 85 Ft for EEA cards, 2.5% + 85 Ft
+     for UK cards. We assume the EEA rate because that is nearly all the volume;
+     a UK or international card costs us more, and that difference comes out of
+     our margin rather than the partner's price. Override from the Stripe
+     agreement if the rate is ever renegotiated. */
+  const pct = Number(process.env.STRIPE_FEE_PCT ?? 1.5);
+  const fixed = Number(process.env.STRIPE_FEE_FIXED_MINOR ?? 8500);   // 85 Ft
+  return Math.round((Number(amountMinor) || 0) * pct / 100) + fixed;
+}
+
+/* The lowest price at which the promise in Partner Terms 3.4 can actually be
+   kept. We pay Stripe out of our commission, so if the commission is smaller
+   than Stripe's cut there is nothing left to pay it with, and the partner would
+   quietly receive less than they listed. With an 85 Ft fixed component that
+   happens under roughly 1,000 Ft, so services must be priced above it.
+
+   Derived from the live numbers rather than hard-coded, so it stays correct if
+   the commission or the Stripe agreement changes. */
+export function minimumServicePriceHuf() {
+  const commissionPct = Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50) / 100;
+  const stripePct = Number(process.env.STRIPE_FEE_PCT ?? 1.5) / 100;
+  const stripeFixedHuf = Number(process.env.STRIPE_FEE_FIXED_MINOR ?? 8500) / 100;
+  /* commission >= stripe fee on the gross:
+       p*c >= (p*(1+c))*sPct + sFixed        */
+  const denom = commissionPct - (1 + commissionPct) * stripePct;
+  if (denom <= 0) return Infinity;                      // commission can never cover it
+  return Math.ceil((stripeFixedHuf / denom) / 50) * 50; // round up to a tidy 50 Ft
+}
+
+/* What Cleano actually keeps, after covering Stripe on the partner's behalf.
+   Never negative: on a very small booking we simply earn nothing rather than
+   charging the partner for the privilege of working with us. */
+export function platformNetMinor(totalMinor, commissionMinor) {
+  return Math.max(0, Math.round(Number(commissionMinor) - stripeFeeMinor(totalMinor)));
+}
 
 const router = Router();
 
@@ -52,26 +118,96 @@ async function getStripe() {
 
 /* Full refund (cleaning price + Cleano fee) when a company/admin cancels a PAID booking.
    No-op for non-Stripe or unpaid bookings. Never throws — logs and returns a result. */
-export async function refundBookingPayment(booking) {
+/* Advance a YYYY-MM-DD by one period (weekly/biweekly/monthly). */
+export function nextDateFrom(dateStr, period) {
+  const [y, m, d] = String(dateStr).slice(0, 10).split("-").map(Number);
+  let nd;
+  if (period === "weekly") nd = new Date(Date.UTC(y, m - 1, d + 7));
+  else if (period === "biweekly") nd = new Date(Date.UTC(y, m - 1, d + 14));
+  else {
+    // monthly: clamp to the target month's last day (Jan 31 → Feb 28, not Mar 3)
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    nd = new Date(Date.UTC(y, m, Math.min(d, lastDay)));
+  }
+  return nd.toISOString().slice(0, 10);
+}
+
+export async function refundBookingPayment(booking, pct = 100) {
   try {
     if (!booking || booking.payment_status !== "paid") return { refunded: false, reason: "not-paid" };
+    if (pct <= 0) return { refunded: false, reason: "policy-zero" };
     const ref = booking.barion_payment_id || "";
-    if (!ref.startsWith("stripe:") || !process.env.STRIPE_SECRET_KEY) return { refunded: false, reason: "no-stripe" };
+    if (!ref.startsWith("stripe:") && !ref.startsWith("stripedc:")) return { refunded: false, reason: "no-stripe" };
+    if (!process.env.STRIPE_SECRET_KEY) return { refunded: false, reason: "no-stripe" };
     const stripe = await getStripe();
-    const session = await stripe.checkout.sessions.retrieve(ref.slice("stripe:".length));
+
+    // stripedc:<acct>:<session> = DIRECT charge on the company's account (3.1).
+    // stripe:<session>          = legacy destination charge on the platform.
+    let sessionId = "", acct = null;
+    if (ref.startsWith("stripedc:")) {
+      const parts = ref.split(":"); acct = parts[1]; sessionId = parts.slice(2).join(":");
+    } else sessionId = ref.slice("stripe:".length);
+    const opts = acct ? { stripeAccount: acct } : {};
+    const session = await stripe.checkout.sessions.retrieve(sessionId, opts);
     if (!session || !session.payment_intent) return { refunded: false, reason: "no-payment-intent" };
+
+    const partial = pct < 100;
+    const amountMinor = partial && booking.total_minor
+      ? Math.round(Number(booking.total_minor) * pct / 100)
+      : (partial ? Math.round(Number(booking.total_huf) * 100 * pct / 100) : null);
     await stripe.refunds.create({
       payment_intent: session.payment_intent,
-      refund_application_fee: true,
-      reverse_transfer: true,
-    });
-    await query("UPDATE bookings SET payment_status = 'refunded' WHERE id = $1", [booking.id]);
-    return { refunded: true };
+      ...(amountMinor ? { amount: amountMinor } : {}),
+      refund_application_fee: true,               // proportional on partial refunds
+      ...(acct ? {} : { reverse_transfer: true }),// only meaningful on destination charges
+    }, opts);
+    await query("UPDATE bookings SET payment_status = $1 WHERE id = $2",
+      [partial ? "partly-refunded" : "refunded", booking.id]);
+    return { refunded: true, pct };
   } catch (e) {
     console.error("refund failed:", e.message);
+    paymentAlert("refund-failed", `booking ${booking?.id}: ${e.stack || e.message}`);
     return { refunded: false, error: e.message };
   }
 }
+
+/* ── 5.12 Cancellation policy. Env-tunable so Musa can change the numbers
+      without a release: CANCEL_FREE_H (default 48). Company-side cancellations
+      are always refunded in full, whenever they happen. ── */
+/* ── Cancellation ────────────────────────────────────────────────────────
+   One rule, deliberately: a customer may cancel up to CANCEL_FREE_H hours
+   before the visit and get everything back. Inside that window they cannot
+   cancel at all.
+
+   There is no half-refund tier. A partial refund pleases nobody — the customer
+   feels charged for nothing, the partner feels underpaid for a slot they can no
+   longer fill — and it invites an argument every single time. A clear line the
+   customer was shown before paying is easier to defend than a sliding scale.
+
+   The company cancelling is a different matter entirely: that always refunds in
+   full, whenever it happens. Same for a booking nobody accepted in time. */
+export function hoursUntilBooking(booking, now = new Date()) {
+  try {
+    const d = booking.scheduled_date instanceof Date
+      ? booking.scheduled_date.toISOString().slice(0, 10) : String(booking.scheduled_date).slice(0, 10);
+    const hm = String(booking.scheduled_slot || "09:00").match(/(\d{1,2}):(\d{2})/) || [0, "9", "00"];
+    const start = Date.parse(`${d}T${String(hm[1]).padStart(2, "0")}:${hm[2]}:00+02:00`);
+    const h = (start - now.getTime()) / 3600e3;
+    return Number.isFinite(h) ? h : null;   // null = we could not tell
+  } catch { return null; }
+}
+
+/* May the CUSTOMER cancel this themselves right now? */
+export function customerMayCancel(booking, now = new Date()) {
+  const freeH = Number(process.env.CANCEL_FREE_H || 48);
+  const h = hoursUntilBooking(booking, now);
+  if (h === null) return true;            // unreadable date → let them, and refund fully
+  return h >= freeH;
+}
+
+/* When a cancellation IS allowed, it is always the whole amount. */
+export function cancellationRefundPct() { return 100; }
+
 
 /* Charge a subscription renewal with the customer's saved card (off-session).
    Returns {charged:true} when Stripe took the money, otherwise a reason so the
@@ -116,6 +252,7 @@ export async function chargeSavedCard(booking) {
     }
     return { charged: false, reason: pi.status };
   } catch (e) {
+    paymentAlert("subscription-charge-failed", `booking ${booking?.id}: ${e.stack || e.message}`);
     console.warn("renewal charge failed:", e.message);
     return { charged: false, reason: e.message };
   }
@@ -179,34 +316,95 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
 
     if (provider() === "stripe") {
       const stripe = await getStripe();
-      // Marketplace split: if the company completed Stripe onboarding, their share
-      // goes STRAIGHT to their account and Cleano keeps only the service fee.
-      // The exact fee stored on the booking (added on top of the company's price)
       const feeHuf = Number(booking.service_fee_huf) ||
         Math.round(amount * Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50) / (100 + Number(process.env.COMMISSION_PCT || 10)));
+      const currency = String(booking.currency || "HUF").toLowerCase();
+      const amountMinor = Number(booking.total_minor) || amount * 100;
+      const feeMinor = Number(booking.service_fee_minor) || feeHuf * 100;
+      const isSub = booking.pricing_type === "subscription";
+
+      // ── 3.1 DIRECT CHARGE: the payment is created ON the company's Stripe
+      //    account; the cleaning money never touches the platform. Cleano's
+      //    commission arrives via application_fee_amount. Falls back to the
+      //    legacy destination charge when the company has no usable account —
+      //    which is also exactly what keeps 1.0-era behaviour alive (2.1). ──
+      let directAcct = null;
+      if (booking.stripe_account_id && process.env.DIRECT_CHARGES !== "0") {
+        try {
+          const acct = await stripe.accounts.retrieve(booking.stripe_account_id);
+          if (acct.charges_enabled) directAcct = booking.stripe_account_id;
+        } catch (e) { console.warn("connect account check failed:", e.message); }
+      }
+
+      const lineItems = [{
+        price_data: {
+          currency,
+          unit_amount: amountMinor,
+          product_data: {
+            name: (svc.name || "Cleaning service").slice(0, 250),
+            description: `${booking.company_name} · ${String(booking.scheduled_date).slice(0, 10)} ${booking.scheduled_slot || ""}`.slice(0, 500),
+          },
+        },
+        quantity: 1,
+      }];
+
+      if (directAcct) {
+        // Customer (and any saved card for subscriptions) lives on the COMPANY's
+        // account — a subscription always belongs to one company, so its card
+        // stays where its charges happen. No cross-account cloning needed.
+        const dcOpts = { stripeAccount: directAcct };
+        let customerId = null;
+        if (isSub) {
+          const u = await query("SELECT email, full_name FROM users WHERE id = $1", [req.user.id]);
+          const cust = await stripe.customers.create({
+            email: u.rows[0]?.email || undefined,
+            name: u.rows[0]?.full_name || undefined,
+            metadata: { cleano_user: req.user.id },
+          }, dcOpts);
+          customerId = cust.id;
+        }
+        const session = await stripe.checkout.sessions.create({
+          mode: "payment",
+          locale: "hu",
+          ...(customerId ? { customer: customerId } : {}),
+          payment_intent_data: {
+            /* Reduced by Stripe's cut so the partner's settlement equals their
+               listed price exactly. See platformNetMinor above. */
+            application_fee_amount: platformNetMinor(amountMinor, feeMinor),
+            ...(isSub ? { setup_future_usage: "off_session" } : {}),
+          },
+          line_items: lineItems,
+          metadata: { booking_id: booking.id, cleano_direct: "1" },
+          success_url: `${base}/payment-result?bookingId=${booking.id}`,
+          cancel_url: `${base}/payment-result?status=cancel`,
+        }, dcOpts);
+        await query("UPDATE bookings SET barion_payment_id = $1, payment_status = 'pending' WHERE id = $2",
+          [`stripedc:${directAcct}:${session.id}`, booking.id]);
+        /* Remember what we actually asked Stripe to hand us, so the fee invoice
+           is for the real figure rather than the headline commission. */
+        await query("UPDATE bookings SET platform_net_minor = $1 WHERE id = $2",
+          [platformNetMinor(amountMinor, feeMinor), booking.id]);
+        return res.json({ gatewayUrl: session.url, paymentId: session.id });
+      }
+
+      // ── LEGACY destination charge (kept alive deliberately — 2.1) ──
       let split = null;
       if (booking.stripe_account_id) {
         try {
           const acct = await stripe.accounts.retrieve(booking.stripe_account_id);
-          if (acct.charges_enabled) {
-            split = {
-              application_fee_amount: feeHuf * 100,
-              transfer_data: { destination: booking.stripe_account_id },
-            };
-          }
-        } catch (e) { console.warn("connect account check failed:", e.message); }
+          /* Destination charge: Cleano is the merchant, so Stripe bills Cleano
+             directly and the partner already receives their price in full. No
+             adjustment needed — deducting again would charge them twice. */
+          if (acct.charges_enabled) split = { application_fee_amount: feeMinor, transfer_data: { destination: booking.stripe_account_id } };
+        } catch {}
       }
-      // Recurring plans: reuse (or create) a Stripe Customer and ask Stripe to
-      // keep the card on file, so later visits can be charged automatically.
-      const isSub = booking.pricing_type === "subscription";
       let customerId = null;
       if (isSub) {
         const u = await query("SELECT stripe_customer_id, email, full_name FROM users WHERE id = $1", [req.user.id]);
         customerId = u.rows[0]?.stripe_customer_id || null;
         if (!customerId) {
           const cust = await stripe.customers.create({
-            email: u.rows[0]?.email || undefined,
-            name: u.rows[0]?.full_name || undefined,
+            email: u.rows[0]?.email || undefined, name: u.rows[0]?.full_name || undefined,
             metadata: { cleano_user: req.user.id },
           });
           customerId = cust.id;
@@ -219,22 +417,13 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
         locale: "hu",
         ...(customerId ? { customer: customerId } : {}),
         ...(Object.keys(piData).length ? { payment_intent_data: piData } : {}),
-        line_items: [{
-          price_data: {
-            currency: "huf",
-            unit_amount: amount * 100, // HUF: whole forints → *100 keeps Stripe's divisible-by-100 rule
-            product_data: {
-              name: (svc.name || "Cleaning service").slice(0, 250),
-              description: `${booking.company_name} · ${String(booking.scheduled_date).slice(0, 10)} ${booking.scheduled_slot || ""}`.slice(0, 500),
-            },
-          },
-          quantity: 1,
-        }],
+        line_items: lineItems,
         metadata: { booking_id: booking.id },
         success_url: `${base}/payment-result?bookingId=${booking.id}`,
         cancel_url: `${base}/payment-result?status=cancel`,
       });
-      await query("UPDATE bookings SET barion_payment_id = $1, payment_status = 'pending' WHERE id = $2", ["stripe:" + session.id, booking.id]);
+      await query("UPDATE bookings SET barion_payment_id = $1, payment_status = 'pending' WHERE id = $2",
+        ["stripe:" + session.id, booking.id]);
       return res.json({ gatewayUrl: session.url, paymentId: session.id });
     }
 
@@ -300,8 +489,8 @@ async function handleCallback(req, res) {
     const state = await stateRes.json();
     // Trust ONLY Barion's answer, never the caller.
     if (state.Status === "Succeeded") {
-      await query(
-        "UPDATE bookings SET payment_status = 'paid' WHERE barion_payment_id = $1",
+      const paidRow = await query(
+        "UPDATE bookings SET payment_status = 'paid' WHERE barion_payment_id = $1 RETURNING id",
         [paymentId]
       );
     } else if (["Canceled", "Expired", "Failed"].includes(state.Status)) {
@@ -393,16 +582,37 @@ router.get("/connect/status", requireAuth, requireRole("company"), async (req, r
 
 /* GET /api/payments/config — lets the app know if card is available */
 router.get("/config", (req, res) => {
-  res.json({ feePct: Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50), cardEnabled: configured(), provider: provider() || "none", env: provider() === "stripe" ? (String(process.env.STRIPE_SECRET_KEY).startsWith("sk_live") ? "live" : "sandbox") : (process.env.BARION_ENV === "prod" ? "live" : "sandbox") });
+  res.json({ feePct: Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50),
+    // 5.12 — one source of truth for the cancellation policy, so the screen the
+    // customer reads before paying can never drift from the refund we actually give.
+    /* One number now: cancel freely before it, not at all after. */
+    cancelPolicy: { freeH: Number(process.env.CANCEL_FREE_H || 48) },
+    cardEnabled: configured(), provider: provider() || "none", env: provider() === "stripe" ? (String(process.env.STRIPE_SECRET_KEY).startsWith("sk_live") ? "live" : "sandbox") : (process.env.BARION_ENV === "prod" ? "live" : "sandbox") });
 });
 
 /* Stripe webhook — needs the RAW body for signature verification.
    Mounted in index.js BEFORE express.json(). */
 export async function stripeWebhook(req, res) {
-  if (!stripeConfigured() || !process.env.STRIPE_WEBHOOK_SECRET) return res.status(503).json({ error: "not_configured" });
+  /* Either secret is enough to be "configured". Requiring the platform one
+     specifically meant a setup with only the Connect secret would refuse every
+     event with a 503 — payments would succeed and no booking would ever be
+     marked paid, with nothing in the logs that looked like a payment problem. */
+  const anySecret = process.env.STRIPE_WEBHOOK_SECRET || process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+  if (!stripeConfigured() || !anySecret) return res.status(503).json({ error: "not_configured" });
   try {
     const stripe = await getStripe();
-    const event = await stripe.webhooks.constructEventAsync(req.body, req.headers["stripe-signature"] || "", process.env.STRIPE_WEBHOOK_SECRET);
+    // Direct charges arrive as CONNECT events with their own signing secret.
+    // Try the platform secret first, then the Connect one (if configured).
+    let event = null;
+    const sig = req.headers["stripe-signature"] || "";
+    const secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET].filter(Boolean);
+    let lastErr = null;
+    for (const sec of secrets) {
+      try { event = await stripe.webhooks.constructEventAsync(req.body, sig, sec); break; }
+      catch (e) { lastErr = e; }
+    }
+    if (!event) throw lastErr || new Error("no signature matched");
+    const connectAcct = event.account || null;   // set on Connect (direct-charge) events
     if (event.type === "checkout.session.completed") {
       const sess = event.data.object;
       const bookingId = sess.metadata?.booking_id;
@@ -413,16 +623,40 @@ export async function stripeWebhook(req, res) {
         try {
           if (sess.customer && sess.payment_intent) {
             const stripe2 = await getStripe();
-            const pi = await stripe2.paymentIntents.retrieve(String(sess.payment_intent));
+            const acctOpts = connectAcct ? { stripeAccount: connectAcct } : {};
+            const pi = await stripe2.paymentIntents.retrieve(String(sess.payment_intent), acctOpts);
             const pmId = pi.payment_method;
             if (pmId) {
-              const pm = await stripe2.paymentMethods.retrieve(String(pmId));
+              const pm = await stripe2.paymentMethods.retrieve(String(pmId), acctOpts);
               await query(
                 "UPDATE users SET stripe_customer_id = $1, default_payment_method = $2, card_brand = $3, card_last4 = $4 WHERE stripe_customer_id = $1 OR id = (SELECT customer_id FROM bookings WHERE id = $5)",
                 [String(sess.customer), String(pmId), pm.card?.brand || null, pm.card?.last4 || null, bookingId]
               );
             }
           }
+          // 3.4: first subscription payment succeeded → create the schedule.
+          try {
+            const bq2 = await query("SELECT * FROM bookings WHERE id = $1", [bookingId]);
+            const b2 = bq2.rows[0];
+            if (b2 && b2.pricing_type === "subscription" && b2.period && !b2.subscription_id) {
+              const pi2 = await (await getStripe()).paymentIntents.retrieve(String(sess.payment_intent), connectAcct ? { stripeAccount: connectAcct } : {});
+              const subIns = await query(
+                `INSERT INTO subscriptions (customer_id, company_id, service_id, frequency, slot, address, note, hours,
+                   currency, amount_minor, fee_minor, stripe_customer_id, payment_method_id, stripe_account_id,
+                   status, next_booking_date)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active',$15) RETURNING id`,
+                [b2.customer_id, b2.company_id, b2.service_id, b2.period, b2.scheduled_slot || "09:00",
+                 b2.address, b2.note || null, b2.hours || null, b2.currency || "HUF",
+                 Number(b2.total_minor) || Number(b2.total_huf) * 100,
+                 Number(b2.service_fee_minor) || Number(b2.service_fee_huf || 0) * 100,
+                 sess.customer ? String(sess.customer) : null,
+                 pi2.payment_method ? String(pi2.payment_method) : null,
+                 connectAcct,
+                 nextDateFrom(String(b2.scheduled_date).slice(0, 10), b2.period)]
+              );
+              await query("UPDATE bookings SET subscription_id = $1 WHERE id = $2", [subIns.rows[0].id, bookingId]);
+            }
+          } catch (e) { console.warn("create subscription:", e.message); }
         } catch (e) { console.warn("save card:", e.message); }
         try {
           const bq = await query("SELECT b.customer_id, b.service_snapshot, c.owner_id, c.name AS company_name FROM bookings b JOIN companies c ON c.id = b.company_id WHERE b.id = $1", [bookingId]);
@@ -438,6 +672,7 @@ export async function stripeWebhook(req, res) {
     res.json({ received: true });
   } catch (e) {
     console.error("stripe webhook:", e.message);
+    paymentAlert("webhook-rejected", e.stack || e.message);
     res.status(400).json({ error: "bad_signature" });
   }
 }

@@ -17,10 +17,22 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
   try {
-    // Admin suspension must bite immediately, not when the 7-day token expires.
-    const r = await query("SELECT is_active FROM users WHERE id = $1", [req.user.id]);
+    /* The token says what the user WAS when they logged in. The database says
+       what they ARE. Authorisation must follow the database, or:
+         · demoting an admin leaves them admin for up to seven days
+         · revoking a company's approval leaves their access intact
+         · anything that ever mints a token decides its own privileges
+       We were already querying this row for is_active, so making role
+       authoritative costs nothing extra. */
+    const r = await query(
+      "SELECT is_active, role, is_super, company_id FROM users WHERE id = $1", [req.user.id]);
     if (!r.rows.length || r.rows[0].is_active === false)
       return res.status(403).json({ error: "Account is deactivated" });
+
+    const row = r.rows[0];
+    req.user.role = row.role;                       // DB wins over the token claim
+    req.user.isSuper = row.is_super === true;
+    req.user.companyId = row.company_id ?? req.user.companyId ?? null;
     next();
   } catch (err) {
     console.error("auth check error:", err);

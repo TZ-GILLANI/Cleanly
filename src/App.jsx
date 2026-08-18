@@ -12,6 +12,79 @@ import { API_BASE, getToken } from "./lib/api.js";
 const NATIVE = (() => { try { return Capacitor.isNativePlatform(); } catch { return false; } })();
 const SHELL_W = NATIVE ? "100%" : 430;
 
+/* ── 4.2 Phone country codes. Default follows the device locale, so a
+   Ukrainian student in Debrecen isn't forced to fight a +36 field. ── */
+const DIAL_CODES = [
+  { c: "HU", d: "+36", f: "🇭🇺", n: "Magyarország" },
+  { c: "UA", d: "+380", f: "🇺🇦", n: "Україна" },
+  { c: "RO", d: "+40", f: "🇷🇴", n: "România" },
+  { c: "SK", d: "+421", f: "🇸🇰", n: "Slovensko" },
+  { c: "AT", d: "+43", f: "🇦🇹", n: "Österreich" },
+  { c: "DE", d: "+49", f: "🇩🇪", n: "Deutschland" },
+  { c: "PL", d: "+48", f: "🇵🇱", n: "Polska" },
+  { c: "RS", d: "+381", f: "🇷🇸", n: "Srbija" },
+  { c: "HR", d: "+385", f: "🇭🇷", n: "Hrvatska" },
+  { c: "SI", d: "+386", f: "🇸🇮", n: "Slovenija" },
+  { c: "GB", d: "+44", f: "🇬🇧", n: "United Kingdom" },
+  { c: "IT", d: "+39", f: "🇮🇹", n: "Italia" },
+  { c: "ES", d: "+34", f: "🇪🇸", n: "España" },
+  { c: "FR", d: "+33", f: "🇫🇷", n: "France" },
+  { c: "NL", d: "+31", f: "🇳🇱", n: "Nederland" },
+  { c: "TR", d: "+90", f: "🇹🇷", n: "Türkiye" },
+  { c: "PK", d: "+92", f: "🇵🇰", n: "Pakistan" },
+  { c: "IN", d: "+91", f: "🇮🇳", n: "India" },
+  { c: "NG", d: "+234", f: "🇳🇬", n: "Nigeria" },
+  { c: "CN", d: "+86", f: "🇨🇳", n: "中国" },
+  { c: "US", d: "+1", f: "🇺🇸", n: "United States" },
+];
+const deviceCountry = () => {
+  try {
+    const l = (navigator.languages && navigator.languages[0]) || navigator.language || "hu-HU";
+    const m = String(l).split("-")[1];
+    if (m && DIAL_CODES.some((x) => x.c === m.toUpperCase())) return m.toUpperCase();
+  } catch {}
+  return "HU";
+};
+const dialOf = (cc) => (DIAL_CODES.find((x) => x.c === cc) || DIAL_CODES[0]).d;
+/* Split a stored E.164 number back into picker + local part. */
+const splitPhone = (v) => {
+  const s = String(v || "").trim();
+  const hit = [...DIAL_CODES].sort((a, b) => b.d.length - a.d.length).find((x) => s.startsWith(x.d));
+  return hit ? { cc: hit.c, local: s.slice(hit.d.length).trim() } : { cc: deviceCountry(), local: s.replace(/^\+/, "") };
+};
+
+function PhoneField({ label, value, onChange }) {
+  const init = splitPhone(value);
+  const [cc, setCc] = useState(init.cc);
+  const [local, setLocal] = useState(init.local);
+  React.useEffect(() => { onChange(local ? dialOf(cc) + local.replace(/[^0-9]/g, "") : ""); }, [cc, local]);
+  return (
+    <div style={{ marginBottom: 13 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <select value={cc} onChange={(e) => setCc(e.target.value)}
+          style={{ width: 116, border: `1.5px solid ${C.line}`, borderRadius: 13, padding: "11px 8px", fontFamily: B, fontSize: 13, background: C.bg, color: C.ink, outline: "none" }}>
+          {DIAL_CODES.map((x) => <option key={x.c} value={x.c}>{x.f} {x.d}</option>)}
+        </select>
+        <input value={local} inputMode="tel" placeholder="30 123 4567"
+          onChange={(e) => setLocal(e.target.value)}
+          style={{ flex: 1, minWidth: 0, border: `1.5px solid ${C.line}`, borderRadius: 13, padding: "11px 13px", fontFamily: B, fontSize: 13.5, background: C.bg, color: C.ink, outline: "none" }} />
+      </div>
+    </div>
+  );
+}
+
+/* ── 2.1 Force-update gate ─────────────────────────────────────────
+   The server publishes a minimum supported version. Below it, the app
+   blocks with an update screen — this is what lets us change payment
+   flows later without silently breaking people on old builds. */
+const APP_VERSION = "7.0.0";
+const verLt = (a, b) => {
+  const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
+  return false;
+};
+
 /* ── Theme: follows the phone's light/dark mode automatically ── */
 const LIGHT = {
   navy: "#1B2A6B", navyDeep: "#10194A", navyMid: "#27379B", navySoft: "#4A5BBF",
@@ -44,9 +117,12 @@ const MARKETS = {
   },
 };
 const ALL_CITIES = Object.values(MARKETS).flatMap((m) => m.cities);
+/* 4.3 — any city, any country. The old version only accepted one of ten
+   Hungarian cities and fell back to a hardcoded "Debrecen", which is why
+   anyone outside Hungary saw Debrecen no matter what they typed. */
 const getCity = () => {
-  try { const c = localStorage.getItem("cleanly_city"); if (c && ALL_CITIES.includes(c)) return c; } catch {}
-  return "Debrecen";
+  try { const c = localStorage.getItem("cleanly_city"); if (c && c.trim()) return c.trim(); } catch {}
+  return "";
 };
 const saveCity = (c) => { try { localStorage.setItem("cleanly_city", c); } catch {} };
 
@@ -93,6 +169,19 @@ const everyP = (per) => (HUL()
   ? ({ weekly: "hetente", biweekly: "kéthetente", monthly: "havonta" }[per] || "havonta")
   : `every ${({ weekly: "week", biweekly: "2 weeks", monthly: "month" }[per] || "month")}`);
 const huf = (n) => (n ?? 0).toLocaleString("hu-HU") + " Ft";
+/* Two ladders. A cleaning finishes when the cleaner leaves; a laundry round
+   finishes days later when the items come back, so "Done" must not appear the
+   moment a bag is picked up. Index by status code, not by position. */
+const STAGE = (status, fulfilment) => {
+  const collection = fulfilment === "collection";
+  const M = collection
+    ? { 0: L("New", "Új"), 1: L("Assigned", "Kiosztva"), 2: L("On the way", "Úton"),
+        5: L("Collected", "Elvittük"), 3: L("In progress", "Folyamatban"),
+        6: L("Out for return", "Úton vissza"), 4: L("Returned ✨", "Visszahozva ✨") }
+    : { 0: L("New", "Új"), 1: L("Assigned", "Kiosztva"), 2: L("On the way", "Úton"),
+        3: L("Cleaning", "Takarítás"), 4: L("Done ✨", "Kész ✨") };
+  return M[Number(status)] || "";
+};
 const stageList = () => (HUL() ? ["Új", "Kiosztva", "Úton", "Takarítás", "Kész ✨"] : ["New", "Assigned", "On the way", "Cleaning", "Done ✨"]);
 /* Bookable hours. Companies tick the ones they work; customers see only those. */
 const HOURS = ["06:00","07:00","08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
@@ -126,20 +215,33 @@ const daySlots = (av, iso) => {
   if (d.from && d.to) return HOURS.filter((h) => h >= d.from && h < d.to);   // legacy
   return HOURS;
 };
-/* busy: { "YYYY-MM-DD": ["09:00", ...] } — single hours the company blocked */
-const slotBusy = (av, iso, slot) => {
-  const list = av && av.busy ? av.busy[isoOf(iso)] : null;
-  return Array.isArray(list) && list.includes(String(slot).slice(0, 5));
+/* Two kinds of blocked time, and the difference matters to a company that does
+   more than one thing:
+
+     busy         { "YYYY-MM-DD": ["09:00"] }               — blocked for EVERYTHING
+     busyServices { "<serviceId>": { "YYYY-MM-DD": [...] } } — blocked for ONE service
+
+   So a company whose cleaning slot is taken at 10:00 can still sell laundry at
+   10:00, while a dentist appointment blocks the whole hour. Passing no serviceId
+   asks the broad question: "is anything bookable then?" */
+const slotBusy = (av, iso, slot, serviceId) => {
+  const h = String(slot).slice(0, 5);
+  const all = av && av.busy ? av.busy[isoOf(iso)] : null;
+  if (Array.isArray(all) && all.includes(h)) return true;
+  if (!serviceId) return false;
+  const perSvc = av && av.busyServices ? (av.busyServices[serviceId] || {})[isoOf(iso)] : null;
+  return Array.isArray(perSvc) && perSvc.includes(h);
 };
-/* The hours a customer can actually book on this date. */
-const openSlots = (av, iso) => {
+/* The hours a customer can actually book on this date, for this service. */
+const openSlots = (av, iso, serviceId) => {
   if (!av) return HOURS;
   if (av.paused) return [];
   if (Array.isArray(av.closed) && av.closed.includes(isoOf(iso))) return [];
-  return daySlots(av, iso).filter((h) => !slotBusy(av, iso, h));
+  return daySlots(av, iso).filter((h) => !slotBusy(av, iso, h, serviceId));
 };
-const slotOpen = (av, iso, slot) => openSlots(av, iso).includes(String(slot).slice(0, 5));
-/* a whole day is unbookable if nothing is left on it */
+const slotOpen = (av, iso, slot, serviceId) => openSlots(av, iso, serviceId).includes(String(slot).slice(0, 5));
+/* A day is only "closed" if NOTHING at all can be booked — never grey out the
+   whole day just because one service happens to be full. */
 const dayClosed = (av, iso) => openSlots(av, iso).length === 0;
 const COVER_PRESETS = [
   "linear-gradient(135deg,#22B573,#7BD96A)",
@@ -216,13 +318,21 @@ function DocUpload({ docs = [], onChange, label, hint }) {
   const add = (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
-    files.forEach((file) => {
-      if (file.size > 2 * 1024 * 1024) return alert(`${file.name}: max 2 MB per file`);
-      if (docs.length >= 6) return;
-      const reader = new FileReader();
-      reader.onload = () => onChange([...docs, { name: file.name, type: file.type, data: reader.result }].slice(0, 6));
-      reader.readAsDataURL(file);
-    });
+    (async () => {
+      let next = docs;
+      for (const file of files) {
+        if (next.length >= 6) break;
+        try {
+          const data = await prepareUpload(file);
+          next = [...next, { name: file.name, type: /^image\//.test(file.type) ? "image/jpeg" : file.type, data }].slice(0, 6);
+          onChange(next);
+        } catch (err) {
+          alert(err.message === "too-large"
+            ? `${file.name}: ${L("that file is too large — 8 MB maximum", "túl nagy a fájl — legfeljebb 8 MB")}`
+            : `${file.name}: ${L("could not be read", "nem sikerült beolvasni")}`);
+        }
+      }
+    })();
   };
   return (
     <div style={{ marginBottom: 14 }}>
@@ -287,7 +397,7 @@ function DocViewer({ docs, title, close }) {
   const canDownload = true;
   return (
     <Sheet title={title} close={close}>
-      {(!docs || docs.length === 0) && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>No documents uploaded.</div>}
+      {(!docs || docs.length === 0) && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("No documents uploaded.", "Nincs feltöltött dokumentum.")}</div>}
       {(docs || []).map((doc, i) => (
         <div key={i} style={{ marginBottom: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 6 }}>{doc.name}</div>
@@ -317,17 +427,169 @@ const priceLabel = (s) => {
 const basePrice = (s) => (s.pricing_type === "hourly" ? (s.hourly_rate_huf || 0) : (s.price_huf || 0));
 
 // Local-timezone ISO date — toISOString() shifts to UTC and books Hungarians a day early after 22:00.
+/* ── Photos from a modern phone are 3–12 MB, and we were simply refusing them.
+   Shrink instead of reject: draw the image to a canvas at a sane size and
+   re-encode as JPEG, dropping quality a step at a time until it fits. A photo of
+   an ID card or a company document is perfectly legible at 1600px, and this turns
+   a 9 MB refusal into a 300 KB upload.
+
+   Anything that isn't an image (a PDF) can't be re-encoded, so it keeps a plain
+   size check — but a far more generous one now that photos aren't the problem. ── */
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+async function compressImage(file, { maxEdge = 1600, maxBytes = 900 * 1024 } = {}) {
+  const dataUrl = await readAsDataUrl(file);
+  if (!/^image\//.test(file.type) || /image\/svg/.test(file.type)) return dataUrl;
+
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error("decode failed"));
+    i.src = dataUrl;
+  });
+
+  const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  /* White behind transparency, or a PNG logo turns black once it becomes JPEG. */
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  let out = dataUrl;
+  for (const q of [0.82, 0.7, 0.6, 0.5, 0.4]) {
+    out = canvas.toDataURL("image/jpeg", q);
+    if (out.length * 0.75 <= maxBytes) break;
+  }
+  /* If shrinking somehow made it bigger (tiny images), keep the original. */
+  return out.length < dataUrl.length ? out : dataUrl;
+}
+
+/* One place that turns a picked file into something safe to send. */
+async function prepareUpload(file, opts) {
+  if (/^image\//.test(file.type)) return await compressImage(file, opts);
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("too-large");
+  return await readAsDataUrl(file);
+}
+
+/* Both maps in the app should look like the same product. Carto's minimalist
+   grey basemaps: Positron in daylight, Dark Matter at night — the same family the
+   live-tracking map uses, so a company setting its service circle and a customer
+   watching a cleaner arrive are looking at the same cartography.
+   Read at render time rather than cached, because the phone can switch theme
+   while the app is open. */
+const MAP_TILES = () => {
+  const dark = typeof window !== "undefined" && window.matchMedia
+    && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return dark
+    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+};
+
+/* When live tracking makes sense, which differs by job type:
+     on-site     — 2 on the way, 3 cleaning (they are at your address)
+     collection  — 2 coming to collect, 6 bringing it back
+   Deliberately NOT during 5 (collected) or 3 (in progress) on a collection job:
+   the items are at the company's premises and following a driver around town
+   while your washing is in a machine is neither useful nor comfortable. */
+const canTrack = (b) => {
+  const st = Number(b?.status);
+  return b?.fulfilment === "collection" ? (st === 2 || st === 6) : (st === 2 || st === 3);
+};
+
+/* What a search should look at. Typing "laundry" must find the company that
+   offers laundry, not just one with "laundry" in its name — otherwise the only
+   way to discover a service is to open every company in turn and read the list.
+   Also searches translated service names, so a Hungarian typing "mosás" finds a
+   service written in English and vice versa. */
+function matchesSearch(company, services, q) {
+  const needle = String(q || "").trim().toLowerCase();
+  if (!needle) return { hit: true, services: [] };
+
+  const inText = (v) => String(v || "").toLowerCase().includes(needle);
+  const nameHit = inText(company.name) || inText(company.tagline) || inText(company.area);
+
+  const mine = (services || []).filter((s) => s.company_id === company.id && s.is_active !== false);
+  const svcHits = mine.filter((s) => {
+    if (inText(s.name) || inText(s.description)) return true;
+    /* the same service, in whatever language it was translated into */
+    for (const map of [s.name_i18n, s.description_i18n]) {
+      if (map && typeof map === "object") {
+        for (const k of Object.keys(map)) { if (k !== "_src" && inText(map[k])) return true; }
+      }
+    }
+    return false;
+  });
+
+  return { hit: nameHit || svcHits.length > 0, services: svcHits };
+}
+
+/* Mirrors the server rule so the button simply is not there once the window has
+   closed — offering a button that always errors is worse than not offering it. */
+const canStillCancel = (b, freeH = 48) => {
+  try {
+    const d = String(b.scheduled_date).slice(0, 10);
+    const hm = String(b.scheduled_slot || "09:00").match(/(\d{1,2}):(\d{2})/) || [0, "9", "00"];
+    const start = Date.parse(`${d}T${String(hm[1]).padStart(2, "0")}:${hm[2]}:00`);
+    const h = (start - Date.now()) / 3600e3;
+    return !Number.isFinite(h) ? true : h >= freeH;
+  } catch { return true; }
+};
+
 const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-const nextDays = () => {
+/* When a job is due to start, in the phone's own timezone. Shared by the
+   company's "needs attention" list so "starting soon" and "overdue" mean the
+   same thing everywhere. */
+const slotStartMs = (b) => {
+  try {
+    const d = String(b.scheduled_date).slice(0, 10);
+    const hm = String(b.scheduled_slot || "09:00").match(/(\d{1,2}):(\d{2})/) || [0, "9", "00"];
+    const t = Date.parse(`${d}T${String(hm[1]).padStart(2, "0")}:${hm[2]}:00`);
+    return Number.isFinite(t) ? t : null;
+  } catch { return null; }
+};
+
+/* "3h 20m", "45m", "12m" — deliberately short, because it sits inside a chip. */
+const shortLeft = (ms) => {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60);
+  return h >= 1 ? `${h}h ${m % 60}m` : `${m}m`;
+};
+
+
+/* How far ahead customers may book. Two months covers holidays, house moves and
+   "before my parents visit", which is when people actually plan a deep clean.
+   The server enforces its own outer limit, so this is only the UI. */
+const BOOK_AHEAD_DAYS = 60;
+
+/* Bounds shared by the customer's date strip and the company's busy-slot editor,
+   so the two can never disagree about how far ahead the diary runs. */
+const todayISO = () => localISO(new Date());
+const maxBookISO = () => { const d = new Date(); d.setDate(d.getDate() + BOOK_AHEAD_DAYS); return localISO(d); };
+
+const nextDays = (days = BOOK_AHEAD_DAYS) => {
   const out = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < days; i++) {
     const d = new Date(); d.setDate(d.getDate() + i);
     out.push({
       iso: localISO(d),
       d: d.toLocaleDateString(LOC(), { weekday: "short" }),
       n: d.getDate(),
-      label: i === 0 ? "Today" : i === 1 ? "Tomorrow" : null,
+      month: d.toLocaleDateString(LOC(), { month: "long" }),
+      monthKey: `${d.getFullYear()}-${d.getMonth()}`,
+      label: i === 0 ? L("Today", "Ma") : i === 1 ? L("Tomorrow", "Holnap") : null,
     });
   }
   return out;
@@ -471,13 +733,13 @@ const Field = ({ label, hint, area, ...props }) => {
     </div>
   );
 };
-const StatusPill = ({ status }) => {
+const StatusPill = ({ status, fulfilment }) => {
   const ended = status === 8 || status === 9; // 8 declined · 9 cancelled
   return (
     <Pill
       bg={ended ? C.coralSoft : status >= 4 ? C.mintSoft : status === 0 ? C.amberSoft : C.navyChip}
       color={ended ? C.coral : status >= 4 ? C.green : status === 0 ? C.amber : C.navySoft}
-    >{status === 9 ? L("Cancelled", "Lemondva") : status === 8 ? L("Declined", "Elutasítva") : stageList()[status]}</Pill>
+    >{status === 9 ? L("Cancelled", "Lemondva") : status === 8 ? L("Declined", "Elutasítva") : STAGE(status, fulfilment)}</Pill>
   );
 };
 function Sheet({ title, close, children }) {
@@ -507,6 +769,33 @@ const Progress = ({ done, total }) => (
 /* Dark navy live map: the cleaner shows as the Cleano octopus, the destination
    as a mint pin, and the real driving route between them is drawn as a path so
    the cleaner can follow it too. */
+/* ── 4.6 Company service area: drag the pin, drag the slider. The circle is
+   what actually filters bookings; the free-text area name stays as copy. ── */
+function AreaMap({ lat, lng, radiusKm, onChange, height = 240 }) {
+  const ref = React.useRef(null), mapRef = React.useRef(null);
+  const mkRef = React.useRef(null), cirRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!window.L || !ref.current || mapRef.current) return;
+    const L = window.L;
+    const start = [Number(lat) || 47.5316, Number(lng) || 21.6273];
+    const map = L.map(ref.current, { attributionControl: false }).setView(start, 12);
+    mapRef.current = map;
+    L.tileLayer(MAP_TILES(), { maxZoom: 19, subdomains: "abcd" }).addTo(map);
+    const icon = L.divIcon({ className: "", iconSize: [26, 26], iconAnchor: [13, 13],
+      html: `<div style="width:26px;height:26px;border-radius:50%;background:${C.navy};border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>` });
+    mkRef.current = L.marker(start, { icon, draggable: true }).addTo(map);
+    cirRef.current = L.circle(start, { radius: (radiusKm || 10) * 1000, color: C.navy, weight: 2, fillColor: C.navy, fillOpacity: 0.12 }).addTo(map);
+    const move = (ll) => { cirRef.current.setLatLng(ll); onChange({ lat: ll.lat, lng: ll.lng }); };
+    mkRef.current.on("drag", (e) => move(e.target.getLatLng()));
+    map.on("click", (e) => { mkRef.current.setLatLng(e.latlng); move(e.latlng); });
+    setTimeout(() => map.invalidateSize(), 150);
+    return () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
+  }, []);
+  React.useEffect(() => { if (cirRef.current) cirRef.current.setRadius((radiusKm || 10) * 1000); }, [radiusKm]);
+  if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>{L("Map unavailable offline.", "A térkép offline nem érhető el.")}</div>;
+  return <div ref={ref} style={{ height, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.line}` }} />;
+}
+
 function LiveMap({ lat, lng, destLat, destLng, height = 320 }) {
   const ref = React.useRef(null);
   const mapRef = React.useRef(null);
@@ -522,7 +811,7 @@ function LiveMap({ lat, lng, destLat, destLng, height = 320 }) {
       mapRef.current = L.map(ref.current, { zoomControl: false, attributionControl: false })
         .setView([lat || 47.53, lng || 21.63], 14);
       // dark basemap — matches the app's navy palette
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 20, subdomains: "abcd" })
+      L.tileLayer(MAP_TILES(), { maxZoom: 20, subdomains: "abcd" })
         .addTo(mapRef.current);
       L.control.zoom({ position: "bottomright" }).addTo(mapRef.current);
     }
@@ -568,7 +857,7 @@ function LiveMap({ lat, lng, destLat, destLng, height = 320 }) {
   }, [lat, lng, destLat, destLng]);
 
   React.useEffect(() => () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } }, []);
-  if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>Map unavailable offline.</div>;
+  if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>{L("Map unavailable offline.", "A térkép offline nem érhető el.")}</div>;
   return <div ref={ref} style={{ width: "100%", height, borderRadius: 18, overflow: "hidden", zIndex: 0, background: C.navyDeep }} />;
 }
 
@@ -622,7 +911,7 @@ function TrackSheet({ bookingId, close, booking }) {
         </>
       ) : (
         <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 30, lineHeight: 1.6 }}>
-          {L("Waiting for the cleaner to start sharing their location. This appears once they are on the way.", "Várakozás a takarító pozíciójára. Akkor jelenik meg, amikor úton van.")}
+          {L("Waiting for them to start sharing their location. This appears once they are on the road.", "Várakozás a pozíció megosztására. Akkor jelenik meg, amint úton vannak.")}
         </div>
       )}
 
@@ -798,7 +1087,13 @@ function ConfirmDialog({ title, body, confirmLabel, onConfirm, onCancel }) {
 function cityFromAddress(addr) {
   if (!addr) return null;
   const low = String(addr).toLowerCase();
-  return ALL_CITIES.find((c) => low.includes(c.toLowerCase())) || null;
+  const known = ALL_CITIES.find((c) => low.includes(c.toLowerCase()));
+  if (known) return known;
+  // any address: take the token after the postcode, else the last comma-part
+  const m = String(addr).match(/\b\d{4,5}\s+([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű' -]{2,40})/);
+  if (m) return m[1].trim();
+  const parts = String(addr).split(",").map((x) => x.trim()).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 2] || parts[parts.length - 1] : null;
 }
 
 /* Street autocomplete via Photon (OpenStreetMap, free, typo-tolerant). */
@@ -1197,7 +1492,7 @@ function ProfileSheet({ close }) {
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{t("profile.homeAddress")}</div>
             <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
           </div>
-          <Field label={t("profile.phone")} placeholder="+36 30 …" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+          <PhoneField label={t("profile.phone")} value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
           <div style={{ marginBottom: 13 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.paymentMethod")}</div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -1214,9 +1509,9 @@ function ProfileSheet({ close }) {
 
       {session.role === "employee" && (
         <>
-          <Field label="Phone number" placeholder="+36 30 …" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+          <PhoneField label={L("Phone number", "Telefonszám")} value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
           <DocUpload
-            label="Identity documents"
+            label={L("Identity documents", "Személyazonosító okmányok")}
             hint="ID card or residence card — your company and the platform admin can verify you."
             docs={f.documents}
             onChange={(docs) => setF({ ...f, documents: docs })}
@@ -1243,6 +1538,7 @@ function ProfileSheet({ close }) {
       </div>
 
       <NotificationHistory />
+      <CalendarSync />
       <ChangePasswordBox />
       <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 14, fontFamily: B, fontSize: 11 }}>
         <a href={(API_BASE || "") + (session.role === "company" ? "/partner-terms" : "/terms")} target="_blank" rel="noreferrer" style={{ color: C.inkFaint }}>{L("Terms", "ÁSZF")}</a>
@@ -1280,7 +1576,7 @@ function Auth() {
   const { t, lang, setLang } = store;
   const [role, setRole] = useState(null);
   const [mode, setMode] = useState("signup");
-  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "Debrecen", phone: "", documents: [], terms: false });
+  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "", phone: "", documents: [], terms: false });
   React.useEffect(() => { getDial().then((d) => setF((prev) => (prev.phone ? prev : { ...prev, phone: d + " " }))); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -1425,13 +1721,13 @@ function Auth() {
           )}
           {mode === "signup" && role === "employee" && (
             <>
-              <Field label="Company invite code" placeholder="e.g. SPARK-7K4D" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} />
+              <Field label={L("Company invite code", "Céges meghívókód")} placeholder={L("e.g. SPARK-7K4D", "pl. SPARK-7K4D")} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} />
               {isLive && <Field label="Your name" placeholder="Full name" value={f.name} onChange={set("name")} />}
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Residence address *", "Lakcím *")}</div>
               <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
               <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account.", "Egy szám = egy fiók.")} value={f.phone} onChange={set("phone")} />
               <DocUpload
-                label="Identity document"
+                label={L("Identity document", "Személyazonosító okmány")}
                 hint="ID card or residence card (lakcímkártya / tartózkodási engedély) — required before your first job."
                 docs={f.documents}
                 onChange={(docs) => setF({ ...f, documents: docs })}
@@ -1440,7 +1736,7 @@ function Auth() {
           )}
           {mode === "signup" && role === "company" && (
             <>
-              <Field label="Company name *" placeholder="e.g. SparkClean Kft." value={f.companyName} onChange={set("companyName")} />
+              <Field label={L("Company name *", "Cégnév *")} placeholder="e.g. SparkClean Kft." value={f.companyName} onChange={set("companyName")} />
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("City you serve *", "Melyik városban dolgoztok? *")}</div>
               <select value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })}
                 style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
@@ -1449,10 +1745,10 @@ function Auth() {
               <Field label={L("Tax number (adószám) *", "Adószám *")} placeholder="12345678-1-42"
                 hint={f.taxId.trim() ? (huTaxIdValid(f.taxId) ? "✅ " + L("Valid tax number", "Érvényes adószám") : "❌ " + L("Invalid — check the digits (format: 12345678-1-42)", "Hibás — ellenőrizd a számokat (formátum: 12345678-1-42)")) : L("We verify this against the official checksum.", "A hivatalos ellenőrzőszám alapján ellenőrizzük.")}
                 value={f.taxId} onChange={set("taxId")} />
-              <Field label="Company registration no." placeholder="e.g. 09-09-123456" value={f.regNumber} onChange={set("regNumber")} />
-              <Field label="Contact phone" placeholder="+36 …" value={f.contactPhone} onChange={set("contactPhone")} />
+              <Field label={L("Company registration no.", "Cégjegyzékszám")} placeholder="e.g. 09-09-123456" value={f.regNumber} onChange={set("regNumber")} />
+              <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contactPhone} onChange={(v) => setF((p) => ({ ...p, contactPhone: v }))} />
               <DocUpload
-                label="Verification documents"
+                label={L("Verification documents", "Igazoló dokumentumok")}
                 hint="Company registration extract (cégkivonat), tax certificate — photos or PDFs. Speeds up approval."
                 docs={f.documents}
                 onChange={(docs) => setF({ ...f, documents: docs })}
@@ -1578,9 +1874,9 @@ function CustomerHome({ openBooking, openProfile }) {
 
   const list = useMemo(() => {
     let res = companies
-      .filter((c) => (c.city || "Debrecen") === city)
+      .filter((c) => !city || !c.city || String(c.city).toLowerCase() === String(city).toLowerCase())
       .filter((c) => c.is_approved !== false && c.is_listed !== false)
-      .filter((c) => c.name.toLowerCase().includes(q.toLowerCase()) || (c.tagline || "").toLowerCase().includes(q.toLowerCase()));
+      .filter((c) => matchesSearch(c, services, q).hit);
     if (sort === "rating") res = [...res].sort((a, b) => b.rating - a.rating);
     else if (sort === "price") res = [...res].sort((a, b) => {
       // hourly services store price_huf 0 — rank by real base price (rate or flat), same as the card labels
@@ -1595,7 +1891,7 @@ function CustomerHome({ openBooking, openProfile }) {
     <div className="cl-fade">
       <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(24px + env(safe-area-inset-top)) 20px 44px", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={openProfile} aria-label="Edit profile"
+          <button onClick={openProfile} aria-label={L("Edit profile", "Profil szerkesztése")}
             style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", minWidth: 0 }}>
             <Octo size={32} />
             <div style={{ minWidth: 0 }}>
@@ -1653,6 +1949,9 @@ function CustomerHome({ openBooking, openProfile }) {
           const minPrice = prices.length ? Math.min(...prices) : null;
           const hasHourly = svcs.some((s) => s.pricing_type === "hourly");
           const hasSub = svcs.some((s) => s.pricing_type === "subscription");
+          /* When someone searched, say WHY this company came back — otherwise a
+             search for "laundry" returns a cleaning company with no explanation. */
+          const hitSvcs = matchesSearch(co, services, q).services;
           return (
             <div key={co.id} onClick={() => openBooking(co)} className="cl-card cl-rise" style={{ background: C.card, borderRadius: 22, marginBottom: 14, overflow: "hidden", cursor: "pointer", boxShadow: "0 4px 18px rgba(20,28,58,.07)", animationDelay: `${i * .07}s` }}>
               <div style={{ height: 70, background: coverOf(co), display: "flex", alignItems: "center", padding: "0 16px" }}>
@@ -1662,16 +1961,30 @@ function CustomerHome({ openBooking, openProfile }) {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink, display: "flex", alignItems: "center", gap: 5 }}>
                     {co.name}
-                    {co.is_approved !== false && <span title="Documents verified by Cleano" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", background: C.mint, color: C.navyDeep, fontSize: 9.5, fontWeight: 900, flexShrink: 0 }}>✓</span>}
+                    {co.is_approved !== false && <span title={L("Documents verified by Cleano", "A Cleano ellenőrizte a dokumentumokat")} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", background: C.mint, color: C.navyDeep, fontSize: 9.5, fontWeight: 900, flexShrink: 0 }}>✓</span>}
                   </div>
                   {availOf(co)?.paused && <Pill bg={C.amberSoft} color={C.amber}>{L("Fully booked", "Betelt")}</Pill>}
                   {promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{promoOf(co).pct}%{promoOf(co).label ? ` ${promoOf(co).label}` : ""}</Pill>}
                   {isStudent && !promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
                 </div>
-                {co.tagline && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3 }}>{co.tagline}</div>}
+                {co.tagline && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3 }}><Translated map={co.tagline_i18n} fallback={co.tagline} /></div>}
+                {hitSvcs.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                    {hitSvcs.slice(0, 3).map((sv) => (
+                      <span key={sv.id} style={{ fontFamily: B, fontWeight: 700, fontSize: 10, padding: "4px 9px", borderRadius: 99, background: C.mintSoft, color: C.greenDeep }}>
+                        {sv.icon} <Translated map={sv.name_i18n} fallback={sv.name} />
+                      </span>
+                    ))}
+                    {hitSvcs.length > 3 && (
+                      <span style={{ fontFamily: B, fontWeight: 700, fontSize: 10, padding: "4px 9px", borderRadius: 99, background: C.bg, color: C.inkFaint }}>
+                        +{hitSvcs.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Star size={12} /> <b style={{ color: C.ink }}>{co.rating}</b> ({co.review_count})</span>
-                  <><span>·</span><span>📍 {co.city || "Debrecen"}{co.area ? ` · ${co.area}` : ""}</span></>
+                  <><span>·</span><span>📍 {co.city || ""}{co.area ? ` · ${co.area}` : ""}{co.distance_km != null ? ` · ${co.distance_km} km` : ""}</span></>
                   {minPrice != null && <><span>·</span><span style={{ fontWeight: 700, color: C.navy }}>{L(`from ${huf(minPrice)}`, `${huf(minPrice)}-tól`)}</span></>}
                 </div>
                 {(hasHourly || hasSub) && (
@@ -1698,7 +2011,14 @@ function CustomerHome({ openBooking, openProfile }) {
 }
 
 function BookingFlow({ company, close, onBooked }) {
-  const { session, services, reviews, createBooking, startPayment, getPaymentStatus, feePct, cancelBooking } = useStore();
+  const { session, services, reviews, createBooking, startPayment, getPaymentStatus, feePct, cancelBooking, cancelPolicy } = useStore();
+  const [reqAck, setReqAck] = useState(false);
+  const reqList = React.useMemo(() => {
+    const a = Array.isArray(company?.requirements) ? company.requirements : [];
+    const b = Array.isArray(svc?.requirements) ? svc.requirements : [];
+    return [...a, ...b].map((x) => String(x).trim()).filter(Boolean).slice(0, 12);
+  }, [company, svc]);
+  const reqMaps = Array.isArray(company?.requirements_i18n) ? company.requirements_i18n : [];
   const toast = useToast();
   const svcs = services.filter((s) => s.company_id === company.id && s.is_active);
   const revs = reviews.filter((r) => r.company_id === company.id);
@@ -1715,12 +2035,17 @@ function BookingFlow({ company, close, onBooked }) {
   const [payWait, setPayWait] = useState(null);
   const isStudent = session.custType === "student";
   const isHourly = svc?.pricing_type === "hourly";
+  const isUnit = svc?.pricing_type === "unit";
+  const unitMin = Number(svc?.min_units) || 1;
+  const unitMax = Number(svc?.max_units) || 50;
+  const [units, setUnits] = useState(unitMin);
+  React.useEffect(() => { setUnits(Number(svc?.min_units) || 1); }, [svc?.id]);
   const isSub = svc?.pricing_type === "subscription";
   const promo = promoOf(company);
   const effPct = (s) => Math.max(s && s.promo_pct ? s.promo_pct : 0, promo ? promo.pct : 0, isStudent ? company.student_discount || 0 : 0);
   const discPct = effPct(svc);
   const stud = (n) => Math.round((n || 0) * discPct / 100);
-  const gross = !svc ? 0 : isHourly ? (svc.hourly_rate_huf || 0) * hours : (svc.price_huf || 0);
+  const gross = !svc ? 0 : isHourly ? (svc.hourly_rate_huf || 0) * hours : isUnit ? Math.round((svc.unit_price_huf || 0) * units) : (svc.price_huf || 0);
   const discount = stud(gross);
   const companyShare = gross - discount;
   const serviceFee = Math.round(companyShare * (feePct ?? 10) / 100);
@@ -1794,6 +2119,30 @@ function BookingFlow({ company, close, onBooked }) {
                   </div>
                 </div>
               )}
+              {isUnit && (
+                <div className="cl-fade" style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 12 }}>
+                    {L("How much do you need cleaned?", "Mennyit kell kitisztítani?")}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <button onClick={() => setUnits((u) => Math.max(unitMin, Math.round((u - 1) * 100) / 100))}
+                      style={{ width: 44, height: 44, borderRadius: 14, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>−</button>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 26, color: C.navy }}>
+                        {units} <span style={{ fontSize: 14 }}>{svc.unit_label}</span>
+                      </div>
+                      <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
+                        {huf(svc.unit_price_huf)}/{svc.unit_label} × {units} = <b style={{ color: C.ink }}>{huf(Math.round((svc.unit_price_huf || 0) * units))}</b>
+                      </div>
+                    </div>
+                    <button onClick={() => setUnits((u) => Math.min(unitMax, Math.round((u + 1) * 100) / 100))}
+                      style={{ width: 44, height: 44, borderRadius: 14, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>+</button>
+                  </div>
+                  <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+                    {L("An estimate is fine — the company checks it when they arrive.", "A becslés is elég — a cég a helyszínen ellenőrzi.")}
+                  </div>
+                </div>
+              )}
               {isSub && (
                 <div className="cl-fade" style={{ background: C.mintSoft, borderRadius: 14, padding: "11px 14px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.5 }}>
                   {L(`🔁 Subscription — recurs ${everyP(svc.period)}. We schedule the first clean next; cancel anytime.`, `🔁 Előfizetés — ${everyP(svc.period)} ismétlődik. Most az első takarítást időzítjük; bármikor lemondhatod.`)}
@@ -1847,14 +2196,36 @@ function BookingFlow({ company, close, onBooked }) {
                 </>
               ) : (
                 <>
-                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "6px 0 10px" }}>{L("Day", "Nap")}</div>
-                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }} className="cl-noscroll">
-                    {DAYS.map((d) => (
-                      <button key={d.iso} disabled={dayClosed(availOf(company), d.iso)} onClick={() => setDay(d)} style={{ minWidth: 58, padding: "11px 0", borderRadius: 16, border: "none", opacity: dayClosed(availOf(company), d.iso) ? .3 : 1, cursor: dayClosed(availOf(company), d.iso) ? "not-allowed" : "pointer", background: day?.iso === d.iso ? C.navy : C.card, boxShadow: day?.iso === d.iso ? "0 4px 14px rgba(27,42,107,.3)" : "0 1px 5px rgba(20,28,58,.06)" }}>
-                        <div style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: day?.iso === d.iso ? "#9FB0E8" : C.inkFaint }}>{d.d}</div>
-                        <div style={{ fontFamily: F, fontSize: 16, fontWeight: 700, color: day?.iso === d.iso ? "#fff" : C.ink, marginTop: 2 }}>{d.n}</div>
-                        {d.label && <div style={{ fontFamily: B, fontSize: 8.5, fontWeight: 700, color: day?.iso === d.iso ? C.mint : C.navySoft, marginTop: 2 }}>{d.label}</div>}
-                      </button>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "6px 0 10px" }}>
+                    <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{L("Day", "Nap")}</span>
+                    <span style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint }}>{L("Book up to 2 months ahead", "Két hónapra előre foglalhatsz")}</span>
+                  </div>
+                  {/* Two months of days is too many to scroll blindly, so they are
+                      grouped by month and the strip snaps to whole weeks. */}
+                  <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 6, scrollSnapType: "x proximity" }} className="cl-noscroll">
+                    {Object.entries(DAYS.reduce((acc, d) => { (acc[d.monthKey] ||= []).push(d); return acc; }, {})).map(([mk, mdays]) => (
+                      <div key={mk} style={{ flex: "0 0 auto" }}>
+                        <div style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: "capitalize", marginBottom: 6, paddingLeft: 2 }}>{mdays[0].month}</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          {mdays.map((d) => {
+                            const closed = dayClosed(availOf(company), d.iso);
+                            const full = !closed && openSlots(availOf(company), d.iso, svc?.id).length === 0;
+                            const off = closed || full;
+                            return (
+                              <button key={d.iso} disabled={off} onClick={() => setDay(d)}
+                                title={full ? L("Fully booked", "Teljesen betelt") : undefined}
+                                style={{ minWidth: 58, padding: "11px 0", borderRadius: 16, border: "none", scrollSnapAlign: "start",
+                                  opacity: off ? .3 : 1, cursor: off ? "not-allowed" : "pointer",
+                                  background: day?.iso === d.iso ? C.navy : C.card,
+                                  boxShadow: day?.iso === d.iso ? "0 4px 14px rgba(27,42,107,.3)" : "0 1px 5px rgba(20,28,58,.06)" }}>
+                                <div style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: day?.iso === d.iso ? "#9FB0E8" : C.inkFaint }}>{d.d}</div>
+                                <div style={{ fontFamily: F, fontSize: 16, fontWeight: 700, color: day?.iso === d.iso ? "#fff" : C.ink, marginTop: 2 }}>{d.n}</div>
+                                {d.label && <div style={{ fontFamily: B, fontSize: 8.5, fontWeight: 700, color: day?.iso === d.iso ? C.mint : C.navySoft, marginTop: 2 }}>{d.label}</div>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </>
@@ -1862,12 +2233,12 @@ function BookingFlow({ company, close, onBooked }) {
 
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "16px 0 10px" }}>{L("Time", "Időpont")}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                {day && openSlots(availOf(company), day.iso).length === 0 && (
+                {day && openSlots(availOf(company), day.iso, svc?.id).length === 0 && (
                   <div style={{ gridColumn: "1 / -1", fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: "14px 8px", lineHeight: 1.5 }}>
                     {L("No free times on this day — please pick another.", "Ezen a napon nincs szabad időpont — válassz másikat.")}
                   </div>
                 )}
-                {(day ? openSlots(availOf(company), day.iso) : []).map((s) => (
+                {(day ? openSlots(availOf(company), day.iso, svc?.id) : []).map((s) => (
                   <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.navy : C.card, color: slot === s ? "#fff" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(27,42,107,.28)" : "0 1px 5px rgba(20,28,58,.06)" }}>
                     {s}
                   </button>
@@ -1891,9 +2262,65 @@ function BookingFlow({ company, close, onBooked }) {
 
           {step === 3 && svc && (
             <div className="cl-fade" style={{ paddingTop: 6 }}>
+              {svc?.fulfilment === "collection" && (
+                <div style={{ background: C.navyChip, borderRadius: 18, padding: "13px 16px", marginBottom: 12 }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 5 }}>
+                    🚚 {L("We collect and bring it back", "Elvisszük és visszahozzuk")}
+                  </div>
+                  <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, lineHeight: 1.55 }}>
+                    {L("We pick your items up at the time you chose above. You'll get them back about {d} days later, and we'll message you before we return them.", "A fent választott időpontban elvisszük a holmidat. Körülbelül {d} nap múlva kapod vissza, és a visszaszállítás előtt üzenünk.")
+                      .replace("{d}", svc.turnaround_days ?? 3)}
+                  </div>
+                </div>
+              )}
+
+              {/* ── What happens if you cancel. One line, no sliding scale. ── */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "13px 16px", marginBottom: 12, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 7 }}>
+                  {L("If you need to cancel", "Ha le kell mondanod")}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "4px 0" }}>
+                  <span style={{ fontFamily: B, fontSize: 12, color: C.inkSoft }}>
+                    {L("More than {h}h before", "Több mint {h} órával előtte").replace("{h}", cancelPolicy.freeH)}
+                  </span>
+                  <span style={{ fontFamily: B, fontSize: 12, fontWeight: 700, color: C.green }}>{L("Full refund", "Teljes visszatérítés")}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "4px 0" }}>
+                  <span style={{ fontFamily: B, fontSize: 12, color: C.inkSoft }}>
+                    {L("Within {h}h", "{h} órán belül").replace("{h}", cancelPolicy.freeH)}
+                  </span>
+                  <span style={{ fontFamily: B, fontSize: 12, fontWeight: 700, color: C.inkSoft }}>{L("Cannot be cancelled", "Nem mondható le")}</span>
+                </div>
+                <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 7, lineHeight: 1.5 }}>
+                  {L("If the company cancels, you always get 100% back.", "Ha a cég mondja le, mindig 100%-ot kapsz vissza.")}
+                </div>
+              </div>
+
+              {/* ── 5.4 What the company needs from you — acknowledged BEFORE paying ── */}
+              {reqList.length > 0 && (
+                <div style={{ background: C.amberSoft, borderRadius: 18, padding: "14px 16px", marginBottom: 12 }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 8 }}>
+                    {L("Before they arrive", "Mielőtt megérkeznek")}
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {reqList.map((r, i) => (
+                      <li key={i} style={{ fontFamily: B, fontSize: 12.5, color: C.ink, lineHeight: 1.7 }}>
+                        <Translated map={reqMaps[i]} fallback={r} />
+                      </li>
+                    ))}
+                  </ul>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 9, marginTop: 11, cursor: "pointer" }}>
+                    <input type="checkbox" checked={reqAck} onChange={(e) => setReqAck(e.target.checked)}
+                      style={{ width: 18, height: 18, accentColor: C.navy, marginTop: 1, flexShrink: 0 }} />
+                    <span style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+                      {L("I understand and will have these ready", "Megértettem, és ezeket biztosítom")}
+                    </span>
+                  </label>
+                </div>
+              )}
               <div style={{ background: C.card, borderRadius: 18, padding: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.inkSoft }}>
-                  <span>{svc.name}{isHourly ? ` · ${hours} ${L("h", "óra")} × ${huf(svc.hourly_rate_huf)}` : isSub ? ` · ${everyP(svc.period)}` : ""}</span><span>{huf(gross)}</span>
+                  <span>{svc.name}{isHourly ? ` · ${hours} ${L("h", "óra")} × ${huf(svc.hourly_rate_huf)}` : isUnit ? ` · ${units} ${svc.unit_label} × ${huf(svc.unit_price_huf)}` : isSub ? ` · ${everyP(svc.period)}` : ""}</span><span>{huf(gross)}</span>
                 </div>
                 {discPct > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.green, fontWeight: 700, marginTop: 7 }}>
@@ -1939,10 +2366,10 @@ function BookingFlow({ company, close, onBooked }) {
         )}
         <div style={{ padding: "12px 22px calc(22px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.line}`, display: "flex", gap: 10 }}>
           {step > 0 && <Btn ghost onClick={() => setStep(step - 1)}>←</Btn>}
-          <Btn full disabled={!canNext || busy} onClick={async () => {
+          <Btn full disabled={!canNext || busy || (step === 3 && reqList.length > 0 && !reqAck)} onClick={async () => {
             if (step < 3) { setStep(step + 1); return; }
             setBusy(true);
-            const row = await createBooking({ companyId: company.id, service: svc, date: day.iso, slot, address: addr, note, total, pricingType: svc.pricing_type, hours: isHourly ? hours : null, period: isSub ? svc.period : null });
+            const row = await createBooking({ companyId: company.id, service: svc, date: day.iso, slot, address: addr, note, total, pricingType: svc.pricing_type, hours: isHourly ? hours : null, units: isUnit ? units : null, period: isSub ? svc.period : null, requirementsAck: reqList.length > 0 ? reqAck : undefined });
             setBusy(false);
             if (!row) { toast(L("Booking failed — try again", "A foglalás nem sikerült — próbáld újra"), "error"); return; }
             // Card + live backend + one-off booking → provider checkout (Stripe/SimplePay/Barion) in the browser
@@ -1966,9 +2393,13 @@ function BookingFlow({ company, close, onBooked }) {
 }
 
 function CustomerBookings({ openBooking }) {
-  const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment } = useStore();
+  const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment, fetchSubscriptions, subscriptionAction } = useStore();
   const toast = useToast();
   const mine = bookings.filter((b) => b.customer_id === session.userId || b.customer_name === session.name);
+  const [plans, setPlans] = useState([]);
+  const [cancelPlan, setCancelPlan] = useState(null);
+  const reloadPlans = React.useCallback(() => { fetchSubscriptions().then(setPlans); }, []);
+  React.useEffect(() => { reloadPlans(); }, []);
   const [reviewing, setReviewing] = useState(null);
   const [stars, setStars] = useState(5);
   const [body, setBody] = useState("");
@@ -1988,6 +2419,55 @@ function CustomerBookings({ openBooking }) {
       </div>
       {showReports && <CustomerReports close={() => setShowReports(false)} />}
       {trackId && <TrackSheet bookingId={trackId} booking={(bookings || []).find((x) => x.id === trackId)} close={() => setTrackId(null)} />}
+
+      {/* ── 3.4 Recurring plans — the schedule itself, not just its bookings ── */}
+      {plans.filter((p) => p.status !== "cancelled").length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.inkSoft, marginBottom: 8 }}>{L("Recurring plans", "Ismétlődő csomagok")}</div>
+          {plans.filter((p) => p.status !== "cancelled").map((p) => (
+            <div key={p.id} style={{ background: C.card, borderRadius: 18, padding: "13px 15px", marginBottom: 9, boxShadow: "0 2px 10px rgba(20,28,58,.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{p.company_emoji || "🫧"} {p.company_name}</div>
+                  <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3 }}>
+                    {p.frequency === "weekly" ? L("Every week", "Hetente") : p.frequency === "biweekly" ? L("Every 2 weeks", "Kéthetente") : L("Every month", "Havonta")} · {p.slot}
+                  </div>
+                  <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 3 }}>
+                    {p.status === "paused"
+                      ? L("Paused", "Szüneteltetve")
+                      : p.next_date ? L("Next: ", "Következő: ") + String(p.next_date).slice(0, 10) : L("Scheduling…", "Ütemezés…")}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <button onClick={async () => {
+                    const r = await subscriptionAction(p.id, p.status === "paused" ? "resume" : "pause");
+                    if (r?.error) toast(r.error, "error");
+                    else { toast(p.status === "paused" ? L("Plan resumed", "Csomag folytatva") : L("Plan paused", "Csomag szüneteltetve")); reloadPlans(); }
+                  }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.bg, color: C.navySoft, cursor: "pointer" }}>
+                    {p.status === "paused" ? L("Resume", "Folytatás") : L("Pause", "Szünet")}
+                  </button>
+                  <button onClick={() => setCancelPlan(p)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.card, color: C.coral, cursor: "pointer" }}>
+                    {L("Cancel plan", "Lemondás")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {cancelPlan && (
+        <ConfirmDialog
+          title={L("Cancel this plan?", "Lemondod a csomagot?")}
+          body={L("Future visits will be cancelled and anything already paid for them refunded in full.", "A jövőbeli alkalmakat lemondjuk, és a már kifizetett összeget teljes egészében visszatérítjük.")}
+          confirmLabel={L("Cancel plan", "Csomag lemondása")}
+          onCancel={() => setCancelPlan(null)}
+          onConfirm={async () => {
+            const r = await subscriptionAction(cancelPlan.id, "cancel");
+            setCancelPlan(null);
+            if (r?.error) toast(r.error, "error");
+            else { toast(L("Plan cancelled", "Csomag lemondva")); reloadPlans(); }
+          }} />
+      )}
       {mine.length === 0 && (
         <div style={{ textAlign: "center", padding: "70px 30px" }}>
           <div style={{ width: 88, height: 88, borderRadius: 28, background: C.card, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>🫧</div>
@@ -2011,7 +2491,7 @@ function CustomerBookings({ openBooking }) {
                   <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1 }}>{co ? `${co.emoji} ${co.name}` : ""}</div>
                 </div>
               </div>
-              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>💳 Paid</Pill>} <StatusPill status={b.status} /></>
+              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>💳 Paid</Pill>} <StatusPill status={b.status} fulfilment={b.fulfilment} /></>
             </div>
 
             {b.status !== 9 && b.status !== 8 && (
@@ -2044,8 +2524,12 @@ function CustomerBookings({ openBooking }) {
                 </div>
               </div>
             )}
-            {b.status === 2 && (
-              <Btn small ghost style={{ width: "100%", marginBottom: 10 }} onClick={() => setTrackId(b.id)}>{L("Track cleaner on map", "Takarító követése a térképen")}</Btn>
+            {canTrack(b) && (
+              <Btn small ghost style={{ width: "100%", marginBottom: 10 }} onClick={() => setTrackId(b.id)}>
+                {b.fulfilment === "collection" && Number(b.status) === 6
+                  ? L("Track the return on map", "Visszaút követése a térképen")
+                  : L("Track cleaner on map", "Takarító követése a térképen")}
+              </Btn>
             )}
 
             {b.pricing_type === "subscription" && b.status !== 9 && b.status !== 8 && (
@@ -2059,8 +2543,18 @@ function CustomerBookings({ openBooking }) {
               💰 {huf(b.total_huf)}{b.pricing_type === "hourly" && b.hours ? ` · ⏱ ${b.hours} ${L("h", "óra")}` : b.pricing_type === "subscription" && b.period ? ` · 🔁 ${everyP(b.period)}` : ""} {b.customer_type === "student" && L("· 🎓 student price", "· 🎓 diákár")}
             </div>
 
+            {b.fulfilment === "collection" && b.return_date && b.status !== 8 && b.status !== 9 && (
+              <div style={{ background: C.navyChip, borderRadius: 12, padding: "9px 12px", marginTop: 9, fontFamily: B, fontSize: 11.5, color: C.ink }}>
+                🚚 {Number(b.status) >= 4
+                  ? L("Returned to you", "Visszahoztuk")
+                  : `${L("Back with you on", "Nálad lesz")} ${dayLabel(b.return_date)}`}
+              </div>
+            )}
+            <CustomerInvoiceLine booking={b} />
+
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              {b.status <= 1 && (
+              {b.status !== 9 && b.status !== 8 && <AddToCalendar booking={b} />}
+              {b.status <= 1 && canStillCancel(b) && (
                 <Btn small ghost style={{ flex: 1, color: C.coral, borderColor: C.line }} onClick={() => setConfirmCancel(b)}>{b.pricing_type === "subscription" ? L("Cancel subscription", "Előfizetés lemondása") : L("Cancel booking", "Foglalás lemondása")}</Btn>
               )}
               {b.status === 4 && !reviewed && <Btn small mint style={{ flex: 1 }} onClick={() => { setReviewing(b); setStars(5); setBody(""); }}>{L("Rate this clean", "Értékeld a takarítást")}</Btn>}
@@ -2155,13 +2649,28 @@ function EmployeeJobs({ openProfile }) {
   const done = my.filter((b) => b.status >= 4);
   const co = companies.find((c) => c.id === session.companyId);
   const myReviews = reviews.filter((r) => done.some((b) => b.id === r.booking_id));
+  const isoOf = (x) => String(x).slice(0, 10);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todays = open.filter((b) => isoOf(b.scheduled_date) === todayIso)
+    .sort((a, b) => String(a.scheduled_slot).localeCompare(String(b.scheduled_slot)));
+  const calDays = React.useMemo(() => {
+    const out = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      const iso = d.toISOString().slice(0, 10);
+      out.push({ iso, isToday: i === 0, dom: d.getDate(),
+        dow: d.toLocaleDateString(LOC(), { weekday: "narrow" }),
+        jobs: open.filter((b) => isoOf(b.scheduled_date) === iso) });
+    }
+    return out;
+  }, [bookings, session.userId]);
   const avgRating = myReviews.length ? (myReviews.reduce((a, r) => a + r.stars, 0) / myReviews.length).toFixed(1) : null;
 
   return (
     <div className="cl-fade">
       <div style={{ background: `radial-gradient(140% 120% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(24px + env(safe-area-inset-top)) 20px 40px", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="Profile">
+          <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label={L("Profile", "Profil")}>
             <Avatar name={session.name} color="#fff" size={44} />
           </button>
           <div>
@@ -2171,9 +2680,9 @@ function EmployeeJobs({ openProfile }) {
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
           {[
-            { k: "Open jobs", v: open.length },
-            { k: "Completed", v: done.length },
-            { k: "Rating", v: avgRating ? `${avgRating} ★` : "—" },
+            { k: L("Open jobs", "Nyitott munkák"), v: open.length },
+            { k: L("Completed", "Elvégzett"), v: done.length },
+            { k: L("Rating", "Értékelés"), v: avgRating ? `${avgRating} ★` : "—" },
           ].map((s) => (
             <div key={s.k} style={{ flex: 1, background: "rgba(255,255,255,.1)", borderRadius: 15, padding: "11px 12px" }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: "#fff" }}>{s.v}</div>
@@ -2187,12 +2696,51 @@ function EmployeeJobs({ openProfile }) {
       </svg>
 
       <div style={{ padding: "8px 20px 30px" }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "8px 0 12px" }}>My jobs</div>
+        {/* ── 5.6 What you're doing today, before anything else ── */}
+        {todays.length > 0 && (
+          <div style={{ background: C.navy, borderRadius: 22, padding: 18, marginBottom: 16, boxShadow: "0 6px 20px rgba(27,42,107,.22)" }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: "#fff" }}>
+              {L("Today", "Ma")} · {todays.length} {todays.length === 1 ? L("job", "munka") : L("jobs", "munka")}
+            </div>
+            {todays.map((b) => (
+              <div key={b.id} style={{ display: "flex", gap: 11, alignItems: "flex-start", marginTop: 12 }}>
+                <div style={{ background: "rgba(255,255,255,.14)", borderRadius: 11, padding: "6px 9px", fontFamily: F, fontWeight: 700, fontSize: 13, color: "#fff", flexShrink: 0 }}>{b.scheduled_slot}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: "#fff" }}>{(b.service_snapshot || {}).name}</div>
+                  <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2, lineHeight: 1.5 }}>{b.address}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── 5.6 The week ahead, so nothing is a surprise ── */}
+        {open.length > 0 && (
+          <div style={{ background: C.card, borderRadius: 20, padding: "14px 16px", marginBottom: 16, boxShadow: "0 2px 12px rgba(20,28,58,.05)" }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginBottom: 10 }}>{L("Next 14 days", "Következő 14 nap")}</div>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
+              {calDays.map((d) => (
+                <div key={d.iso} style={{ flex: "0 0 auto", width: 44, textAlign: "center", borderRadius: 13, padding: "8px 0",
+                  background: d.isToday ? C.navy : d.jobs.length ? C.navyChip : C.bg }}>
+                  <div style={{ fontFamily: B, fontSize: 9.5, fontWeight: 700, color: d.isToday ? "#9FB0E8" : C.inkFaint }}>{d.dow}</div>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: d.isToday ? "#fff" : C.ink, marginTop: 1 }}>{d.dom}</div>
+                  <div style={{ height: 5, marginTop: 4, display: "flex", gap: 2, justifyContent: "center" }}>
+                    {d.jobs.slice(0, 3).map((_, i) => (
+                      <span key={i} style={{ width: 4, height: 4, borderRadius: 99, background: d.isToday ? "#fff" : C.navy, display: "block" }} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "8px 0 12px" }}>{L("My jobs", "Munkáim")}</div>
         {open.length === 0 && (
           <div style={{ textAlign: "center", padding: "44px 30px", background: C.card, borderRadius: 20, boxShadow: "0 2px 12px rgba(20,28,58,.05)" }}>
             <div style={{ fontSize: 36 }}>🛋️</div>
-            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, marginTop: 12 }}>No jobs assigned</div>
-            <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6 }}>New assignments appear here automatically.</div>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, marginTop: 12 }}>{L("No jobs assigned", "Nincs kiosztott munka")}</div>
+            <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6 }}>{L("New assignments appear here automatically.", "Az új megbízások automatikusan itt jelennek meg.")}</div>
           </div>
         )}
         {open.map((b) => {
@@ -2209,7 +2757,7 @@ function EmployeeJobs({ openProfile }) {
                     📍 {b.address} · 👤 {b.customer_name || "Customer"}
                   </div>
                 </div>
-                <StatusPill status={b.status} />
+                <StatusPill status={b.status} fulfilment={b.fulfilment} />
               </div>
 
               {b.note && (
@@ -2238,12 +2786,24 @@ function EmployeeJobs({ openProfile }) {
               )}
 
               <div style={{ marginTop: 12 }}>
-                {b.status === 1 && <Btn small full onClick={() => { setStatus(b.id, 2); toast("Status updated — on the way!"); }}>🚗 I'm on the way</Btn>}
-                {b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 3); toast("Cleaning started"); }}>🧽 Start cleaning</Btn>}
-                {(b.status === 2 || b.status === 3) && <LocationShare bookingId={b.id} />}
-                {b.status === 3 && (
-                  <Btn small full mint disabled={!allDone && tasks.length > 0} onClick={() => { setStatus(b.id, 4); toast("Job completed ✓"); }}>
-                    {allDone || tasks.length === 0 ? "✓ Complete job" : `Finish all tasks (${b.tasks_done.length}/${tasks.length})`}
+                <div style={{ marginBottom: 8 }}><AddToCalendar booking={b} /></div>
+                {b.status === 1 && <Btn small full onClick={() => { setStatus(b.id, 2); toast(L("Status updated — on the way!", "Állapot frissítve — úton vagy!")); }}>🚗 {L("I'm on the way", "Úton vagyok")}</Btn>}
+                {/* A collection job goes: on the way → collected → in progress →
+                    out for return → returned. Nothing says "done" until it is back. */}
+                {b.fulfilment === "collection" ? (
+                  <>
+                    {b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 5); toast(L("Items collected", "Holmi elvive")); }}>📦 {L("I've collected the items", "Elvittem a holmit")}</Btn>}
+                    {b.status === 5 && <Btn small full onClick={() => { setStatus(b.id, 3); toast(L("Work started", "Munka elkezdve")); }}>🧺 {L("Start the work", "Munka indítása")}</Btn>}
+                    {b.status === 3 && <Btn small full onClick={() => { setStatus(b.id, 6); toast(L("On the way back", "Úton vissza")); }}>🚚 {L("Taking it back", "Viszem vissza")}</Btn>}
+                    {b.status === 6 && <Btn small full mint onClick={() => { setStatus(b.id, 4); toast(L("Returned to the customer ✓", "Visszaadva az ügyfélnek ✓")); }}>✓ {L("Returned to the customer", "Visszaadva az ügyfélnek")}</Btn>}
+                  </>
+                ) : (
+                  b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 3); toast(L("Cleaning started", "Takarítás elkezdve")); }}>🧽 {L("Start cleaning", "Takarítás indítása")}</Btn>
+                )}
+                {canTrack(b) && <LocationShare bookingId={b.id} />}
+                {b.status === 3 && b.fulfilment !== "collection" && (
+                  <Btn small full mint disabled={!allDone && tasks.length > 0} onClick={() => { setStatus(b.id, 4); toast(L("Job completed ✓", "Munka kész ✓")); }}>
+                    {allDone || tasks.length === 0 ? `✓ ${L("Complete job", "Munka befejezése")}` : `${L("Finish all tasks", "Fejezd be az összes feladatot")} (${b.tasks_done.length}/${tasks.length})`}
                   </Btn>
                 )}
               </div>
@@ -2253,7 +2813,7 @@ function EmployeeJobs({ openProfile }) {
 
         {done.length > 0 && (
           <>
-            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>Completed</div>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>{L("Completed", "Elvégzett")}</div>
             {done.map((b) => (
               <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .8 }}>
                 <div>
@@ -2284,10 +2844,10 @@ function EmployeeNotices() {
         From {co?.name || "your company"} {unread > 0 && <Pill bg={C.coral} color="#fff" style={{ marginLeft: 6 }}>{unread} new</Pill>}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Message your company…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 14, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
+        <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={L("Message your company…", "Írj a cégednek…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 14, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
         <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast("Message sent to your company"); setReply(""); } }}>Send</Btn>
       </div>
-      {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>No messages from your company yet.</div>}
+      {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>{L("No messages from your company yet.", "Még nincs üzenet a cégedtől.")}</div>}
       {mine.map((n) => (
         <div key={n.id} onClick={() => { if (!n.from_employee && !n.is_read) { markNoticeRead(n.id); toast("Marked as read"); } }} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: (n.from_employee || n.is_read) ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: (n.from_employee || n.is_read) ? "default" : "pointer" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2343,10 +2903,44 @@ function CompanyJobs({ openProfile }) {
   const todayJobs = done.filter(isToday);
   const todayRevenue = todayJobs.reduce((a, b) => a + net(b), 0);
   const subs = open.filter((b) => b.pricing_type === "subscription");
+
+  /* ── What actually needs the owner, right now ──────────────────────────
+     "Open jobs" is a number that only ever goes up. These three buckets are
+     the ones that cost money if ignored:
+       · unaccepted — the customer has paid and nobody has agreed to come. The
+         server auto-cancels and refunds these, so the clock is real revenue.
+       · unassigned and starting soon — accepted, but no cleaner is going.
+       · overdue — the slot has been and gone and nobody set off.            */
+  const [, forceTick] = React.useState(0);
+  const unaccepted = open.filter((b) => Number(b.status) === 0);
+  React.useEffect(() => {
+    if (!unaccepted.length) return;
+    const iv = setInterval(() => forceTick((n) => n + 1), 30000);
+    return () => clearInterval(iv);
+  }, [unaccepted.length]);
+
+  const msLeft = (b) => (b.accept_deadline ? Date.parse(b.accept_deadline) - Date.now() : null);
+  const soonest = unaccepted.reduce((acc, b) => {
+    const m = msLeft(b);
+    return m != null && Number.isFinite(m) && (acc == null || m < acc) ? m : acc;
+  }, null);
+  const startsWithin = (b, h) => {
+    const t = slotStartMs(b);
+    return t != null && t - Date.now() > 0 && t - Date.now() <= h * 3600e3;
+  };
+  const unassignedSoon = open.filter((b) => Number(b.status) > 0 && !b.assigned_to && startsWithin(b, 24));
+  const overdue = open.filter((b) => {
+    const t = slotStartMs(b);
+    return t != null && t < Date.now() && Number(b.status) < 2;
+  });
+  const attention = [...unaccepted, ...unassignedSoon, ...overdue];
+  const needsAttention = attention.length;
+
   const shownOpen = open.filter((b) =>
     filter === "new" ? b.status === 0 :
     filter === "unassigned" ? !b.assigned_to :
     filter === "today" ? isToday(b) :
+    filter === "attention" ? attention.some((x) => x.id === b.id) :
     filter === "subs" ? b.pricing_type === "subscription" : true
   );
 
@@ -2359,7 +2953,7 @@ function CompanyJobs({ openProfile }) {
             Admin · {new Date().toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "short" })}
           </div>
         </div>
-        <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="Profile">
+        <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label={L("Profile", "Profil")}>
           <CompanyLogo co={co} size={42} radius={14} />
         </button>
       </div>
@@ -2379,9 +2973,33 @@ function CompanyJobs({ openProfile }) {
         ))}
       </div>
 
-      {unassigned > 0 && (
-        <div style={{ background: C.amberSoft, border: `1.5px solid ${C.coral}44`, borderRadius: 14, padding: "10px 14px", marginBottom: 14, fontFamily: B, fontSize: 12, color: C.amber, lineHeight: 1.55 }}>
-          ⚠️ <b>{unassigned} booking{unassigned > 1 ? "s" : ""}</b> need{unassigned === 1 ? "s" : ""} a cleaner assigned. Go to Team tab to add staff.
+      {needsAttention > 0 && (
+        <div style={{ background: C.amberSoft, border: `1.5px solid ${C.coral}44`, borderRadius: 14, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.amber }}>
+            {L("Needs you", "Rád vár")} · {needsAttention}
+          </div>
+          {unaccepted.length > 0 && (
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.amber, marginTop: 6, lineHeight: 1.55 }}>
+              <b>{unaccepted.length}</b> {L("paid and waiting for you to accept", "kifizetve, elfogadásra vár")}
+              {soonest != null && soonest > 0 && <> — {L("the first is cancelled and refunded in", "az elsőt ennyi idő múlva lemondjuk és visszatérítjük:")} <b>{shortLeft(soonest)}</b></>}
+              {soonest != null && soonest <= 0 && <> — {L("one is past its deadline", "az egyik már lejárt")}</>}
+            </div>
+          )}
+          {unassignedSoon.length > 0 && (
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.amber, marginTop: 5, lineHeight: 1.55 }}>
+              <b>{unassignedSoon.length}</b> {L("start within 24 hours with no cleaner assigned", "24 órán belül kezdődik, kijelölt takarító nélkül")}
+            </div>
+          )}
+          {overdue.length > 0 && (
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.coralText || C.coral, marginTop: 5, lineHeight: 1.55 }}>
+              <b>{overdue.length}</b> {L("should have started already", "már el kellett volna kezdődnie")}
+            </div>
+          )}
+          {employees.length === 0 && (
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 7 }}>
+              {L("Add your cleaners in the Team tab before you can assign anyone.", "Előbb vedd fel a takarítókat a Csapat fülön, hogy ki tudd osztani a munkát.")}
+            </div>
+          )}
         </div>
       )}
 
@@ -2392,13 +3010,20 @@ function CompanyJobs({ openProfile }) {
         </div>
       )}
 
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink, marginBottom: 10 }}>Incoming & active jobs</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink, marginBottom: 10 }}>{L("Incoming & active jobs", "Beérkező és folyamatban lévő munkák")}</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-        {[{ id: "all", label: `All (${open.length})` }, { id: "new", label: `🆕 New (${open.filter(b => b.status === 0).length})` }, { id: "unassigned", label: `⚠️ Unassigned (${unassigned})` }, { id: "today", label: `📅 Today (${open.filter(isToday).length})` }, { id: "subs", label: `🔁 Plans (${subs.length})` }].map((f) => (
+        {[
+          { id: "attention", label: `⚠️ ${L("Needs you", "Rád vár")} (${needsAttention})`, hide: !needsAttention },
+          { id: "all", label: `${L("All", "Mind")} (${open.length})` },
+          { id: "new", label: `🆕 ${L("Not accepted", "Nincs elfogadva")} (${unaccepted.length})` },
+          { id: "unassigned", label: `👤 ${L("No cleaner", "Nincs takarító")} (${unassigned})` },
+          { id: "today", label: `📅 ${L("Today", "Ma")} (${open.filter(isToday).length})` },
+          { id: "subs", label: `🔁 ${L("Plans", "Bérletek")} (${subs.length})` },
+        ].filter((f) => !f.hide).map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.navy : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
         ))}
       </div>
-      {shownOpen.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 36, background: C.card, borderRadius: 18, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{open.length === 0 ? "No open jobs right now. New customer bookings will appear here." : "Nothing matches this filter."}</div>}
+      {shownOpen.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 36, background: C.card, borderRadius: 18, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{open.length === 0 ? L("No open jobs right now. New customer bookings will appear here.", "Most nincs nyitott munka. Az új foglalások itt jelennek meg.") : L("Nothing matches this filter.", "Semmi nem felel meg ennek a szűrőnek.")}</div>}
       {[...shownOpen].sort((a, b) => (a.assigned_to ? 1 : 0) - (b.assigned_to ? 1 : 0)).map((b) => {
         const svc = b.service_snapshot || {};
         const tasks = svc.tasks || [];
@@ -2413,8 +3038,21 @@ function CompanyJobs({ openProfile }) {
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <StatusPill status={b.status} />
+                <StatusPill status={b.status} fulfilment={b.fulfilment} />
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, marginTop: 7 }}>{huf(b.total_huf)}</div>
+                {/* The clock the company could not see. Past zero we say so
+                    plainly rather than showing a negative number. */}
+                {Number(b.status) === 0 && b.accept_deadline && (() => {
+                  const left = msLeft(b);
+                  const urgent = left != null && left < 3 * 3600e3;
+                  return (
+                    <div style={{ marginTop: 6, display: "inline-block", background: urgent ? C.coralSoft : C.amberSoft, color: urgent ? (C.coralText || C.coral) : C.amber, borderRadius: 99, padding: "3px 9px", fontFamily: B, fontWeight: 700, fontSize: 10 }}>
+                      {left != null && left > 0
+                        ? `⏳ ${shortLeft(left)} ${L("to accept", "az elfogadásra")}`
+                        : L("⏳ deadline passed", "⏳ határidő lejárt")}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -2447,9 +3085,31 @@ function CompanyJobs({ openProfile }) {
                   {b.assigned_to === m.id ? "✓ " : ""}{m.full_name.split(" ")[0]}
                 </button>
               ))}
-              {employees.length === 0 && <span style={{ fontFamily: B, fontSize: 11, color: C.coral }}>Add employees in Team tab first.</span>}
+              {employees.length === 0 && <span style={{ fontFamily: B, fontSize: 11, color: C.coral }}>{L("Add employees in the Team tab first.", "Előbb adj hozzá munkatársakat a Csapat fülön.")}</span>}
             </div>
-            {(b.status === 2 || b.status === 3) && (
+            {b.status !== 9 && b.status !== 8 && (
+              <div style={{ marginTop: 10 }}><AddToCalendar booking={b} /></div>
+            )}
+            {(b.enroute_at || b.started_at || b.finished_at || b.collected_at || b.returned_at) && (
+              <div style={{ background: C.bg, borderRadius: 12, padding: "9px 12px", marginTop: 10 }}>
+                <div style={{ fontFamily: B, fontWeight: 700, fontSize: 10, color: C.inkFaint, letterSpacing: .3, marginBottom: 4 }}>
+                  {L("WHAT ACTUALLY HAPPENED", "AMI VALÓJÁBAN TÖRTÉNT")}
+                </div>
+                {[[b.enroute_at, L("Set off", "Elindult")],
+                  [b.collected_at, L("Collected", "Elvitte")],
+                  [b.started_at, L("Started", "Elkezdte")],
+                  [b.finished_at, L("Finished", "Befejezte")],
+                  [b.returned_at, L("Returned", "Visszahozta")]].filter(([t]) => t).map(([t, lbl], i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 11, color: C.inkSoft, padding: "2px 0" }}>
+                    <span>{lbl}</span>
+                    <span style={{ color: C.ink, fontWeight: 600 }}>{(() => { try { return new Date(t).toLocaleString(LOC(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <PartnerInvoiceBox booking={b} />
+            <ReportCustomerBox booking={b} />
+            {canTrack(b) && (
               <Btn small ghost style={{ width: "100%", marginTop: 10 }} onClick={() => setJobTrackId(b.id)}>
                 {L("Track cleaner on map", "Takarító követése a térképen")}
               </Btn>
@@ -2469,7 +3129,7 @@ function CompanyJobs({ openProfile }) {
 
       {done.length > 0 && (
         <>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "20px 0 10px" }}>Completed jobs</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "20px 0 10px" }}>{L("Completed jobs", "Elvégzett munkák")}</div>
           {done.map((b) => (
             <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .9 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -2495,18 +3155,20 @@ function CompanyJobs({ openProfile }) {
                     <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => {
                       const file = e.target.files?.[0]; e.target.value = "";
                       if (!file) return;
-                      if (file.size > 2 * 1024 * 1024) { toast("Max 2 MB", "error"); return; }
-                      const reader = new FileReader();
-                      reader.onload = async () => {
-                        const r = await uploadInvoice(b.id, { name: file.name, type: file.type, data: reader.result });
-                        if (r?.error) toast(r.error, "error"); else toast("Invoice attached — customer can download it");
-                      };
-                      reader.readAsDataURL(file);
+                      (async () => {
+                        try {
+                          const data = await prepareUpload(file);
+                          upsertBooking({ ...b, invoice: { name: file.name, type: file.type, data } });
+                          toast(L("Invoice uploaded", "Számla feltöltve"));
+                        } catch (err) {
+                          toast(err.message === "too-large" ? L("That file is too large — 8 MB maximum", "Túl nagy a fájl — legfeljebb 8 MB") : L("Could not read that file", "Nem sikerült beolvasni a fájlt"), "error");
+                        }
+                      })();
                     }} />
                   </label>
                 )}
                 <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast("Moved to history (Settings)"); }}
-                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Clear</button>
+                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{L("Clear", "Törlés")}</button>
               </div>
             </div>
           ))}
@@ -2517,7 +3179,7 @@ function CompanyJobs({ openProfile }) {
       )}
 
       {declining && (
-        <Sheet title="Decline this booking?" close={() => setDeclining(null)}>
+        <Sheet title={L("Decline this booking?", "Elutasítod ezt a foglalást?")} close={() => setDeclining(null)}>
           <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.6, marginBottom: 14 }}>
             Tell {declining.customer_name || "the customer"} why you can't take <b style={{ color: C.ink }}>{(declining.service_snapshot || {}).name}</b> on {dayLabel(declining.scheduled_date)} at {declining.scheduled_slot}.
           </div>
@@ -2526,7 +3188,7 @@ function CompanyJobs({ openProfile }) {
               <button key={q} onClick={() => setReason(q)} style={{ fontFamily: B, fontSize: 11.5, fontWeight: 600, padding: "8px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: reason === q ? C.coralSoft : C.card, color: reason === q ? C.coral : C.navySoft, cursor: "pointer" }}>{q}</button>
             ))}
           </div>
-          <Field area placeholder="Add a note (optional)…" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <Field area placeholder={L("Add a note (optional)…", "Megjegyzés (nem kötelező)…")} value={reason} onChange={(e) => setReason(e.target.value)} />
           <Btn full danger onClick={() => { declineBooking(declining.id, reason || "Not available for this time"); toast("Booking declined"); setDeclining(null); }}>
             Decline booking
           </Btn>
@@ -2574,7 +3236,7 @@ function CompanyClients() {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 14, padding: "11px 14px", marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
         <span style={{ opacity: .45 }}>🔍</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search clients…" style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("Search clients…", "Ügyfelek keresése…")} style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
       </div>
       {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No clients yet — they appear after the first booking.</div>}
       {filtered.map((c) => (
@@ -2613,7 +3275,7 @@ function CompanySchedule() {
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 6px" }}>Schedule</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 6px" }}>{L("Schedule", "Beosztás")}</div>
       <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 14 }}>Your whole pipeline on a calendar — dots mark days with jobs.</div>
       <Calendar selected={selDay} onSelect={setSelDay} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 10px" }}>
@@ -2621,7 +3283,7 @@ function CompanySchedule() {
         {dayJobs.length > 0 && <Pill bg={C.mintSoft} color={C.green}>{huf(dayRevenue)}</Pill>}
       </div>
       {dayJobs.length === 0 && (
-        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30, background: C.card, borderRadius: 18, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>Nothing scheduled this day.</div>
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30, background: C.card, borderRadius: 18, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{L("Nothing scheduled this day.", "Erre a napra nincs semmi.")}</div>
       )}
       {dayJobs.map((b) => {
         const svc = b.service_snapshot || {};
@@ -2637,11 +3299,11 @@ function CompanySchedule() {
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <StatusPill status={b.status} />
+                <StatusPill status={b.status} fulfilment={b.fulfilment} />
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navy, marginTop: 6 }}>{huf(b.total_huf)}</div>
               </div>
             </div>
-            {b.status === 2 && <Btn small ghost style={{ width: "100%", marginTop: 10 }} onClick={() => setTrackId(b.id)}>{L("Track cleaner on map", "Takarító követése")}</Btn>}
+            {canTrack(b) && <Btn small ghost style={{ width: "100%", marginTop: 10 }} onClick={() => setTrackId(b.id)}>{L("Track cleaner on map", "Takarító követése")}</Btn>}
           </div>
         );
       })}
@@ -2657,7 +3319,8 @@ function CompanyServices() {
   const [editing, setEditing] = useState(null);
   const [f, setF] = useState({});
   const openEditor = (svc) => {
-    setF(svc ? { ...svc, tasksText: (svc.tasks || []).join("\n") } : { name: "", description: "", icon: "🏠", price_huf: "", minutes: 120, tasksText: "", pricing_type: "flat", hourly_rate_huf: "", min_hours: 2, max_hours: 8, period: "weekly" });
+    setF(svc ? { ...svc, tasksText: (svc.tasks || []).join("\n") } : { name: "", description: "", icon: "🏠", price_huf: "", minutes: 120, tasksText: "", pricing_type: "flat", hourly_rate_huf: "", min_hours: 2, max_hours: 8, period: "weekly", promo_pct: 0,
+      fulfilment: "onsite", turnaround_days: 3, slot_capacity: null, dur_unit: "min" });
     setEditing(svc ? "edit" : "new");
   };
 
@@ -2681,14 +3344,14 @@ function CompanyServices() {
                 <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(s)}</span>
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
-                <Pill bg={C.navyChip} color={C.navySoft}>{s.pricing_type === "hourly" ? "⏱ Hourly" : s.pricing_type === "subscription" ? `🔁 ${periodLabel(s.period)}` : "💰 Flat"}</Pill>
+                <Pill bg={C.navyChip} color={C.navySoft}>{s.pricing_type === "hourly" ? `⏱ ${L("Hourly", "Óradíj")}` : s.pricing_type === "unit" ? `⚖️ ${huf(s.unit_price_huf)}/${s.unit_label || ""}` : s.pricing_type === "subscription" ? `🔁 ${periodLabel(s.period)}` : `💰 ${L("Flat", "Fix")}`}</Pill>
               </div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{s.description} · ⏱ {s.minutes} min · {(s.tasks || []).length} tasks</div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 <Btn small ghost onClick={() => openEditor(s)}>✏️ Edit</Btn>
                 {s.promo_pct > 0 && <Pill bg={C.mintSoft} color={C.greenDeep}>−{s.promo_pct}%</Pill>}
-                <Btn small ghost onClick={() => { upsertService({ ...s, is_active: !s.is_active }); toast(s.is_active ? "Service hidden" : "Service re-listed"); }} style={{ color: s.is_active ? C.coral : C.green }}>
-                  {s.is_active ? "Hide" : "Re-list"}
+                <Btn small ghost onClick={() => { upsertService({ ...s, is_active: !s.is_active }); toast(s.is_active ? L("Service hidden", "Szolgáltatás elrejtve") : L("Service re-listed", "Szolgáltatás újra látható")); }} style={{ color: s.is_active ? C.coral : C.green }}>
+                  {s.is_active ? L("Hide", "Elrejtés") : L("Re-list", "Újra listázom")}
                 </Btn>
               </div>
             </div>
@@ -2701,19 +3364,52 @@ function CompanyServices() {
         <Sheet title={editing === "new" ? "New service" : "Edit service"} close={() => setEditing(null)}>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ width: 84 }}>
-              <Field label="Icon" placeholder="🏠" value={f.icon} onChange={(e) => setF({ ...f, icon: e.target.value })} />
+              <Field label={L("Icon", "Ikon")} placeholder="🏠" value={f.icon} onChange={(e) => setF({ ...f, icon: e.target.value })} />
             </div>
             <div style={{ flex: 1 }}>
-              <Field label="Name" placeholder="e.g. Deep clean" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+              <Field label={L("Name", "Név")} placeholder={L("e.g. Deep clean", "pl. Nagytakarítás")} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
             </div>
             <div style={{ width: 110 }}>
-              <Field label="Discount %" type="number" placeholder="0" value={f.promo_pct ?? ""} onChange={(e) => setF({ ...f, promo_pct: e.target.value === "" ? null : Math.min(90, Math.max(0, parseInt(e.target.value, 10) || 0)) })} />
+              <Field label={L("Discount %", "Kedvezmény %")} type="number" placeholder="0" value={f.promo_pct ?? ""} onChange={(e) => setF({ ...f, promo_pct: e.target.value === "" ? null : Math.min(90, Math.max(0, parseInt(e.target.value, 10) || 0)) })} />
             </div>
           </div>
-          <Field label="Description" placeholder="What's included, in one line" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>Pricing model</div>
+          <Field label={L("Description", "Leírás")} placeholder={L("What's included, in one line", "Mit tartalmaz, egy sorban")} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+          {/* ── How this service is delivered. Cleaning happens at the address;
+                 laundry is taken away and brought back — a different job with a
+                 different ending, so it gets its own stages. ── */}
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{L("How it works", "Hogyan zajlik")}</div>
+          <div style={{ display: "flex", gap: 7, marginBottom: 12 }}>
+            {[["onsite", "🏠", L("We work at their address", "Náluk dolgozunk")],
+              ["collection", "🚚", L("We collect and bring it back", "Elvisszük és visszahozzuk")]].map(([id, ic, lbl]) => (
+              <button key={id} onClick={() => setF({ ...f, fulfilment: id })}
+                style={{ flex: 1, border: "none", cursor: "pointer", borderRadius: 14, padding: "11px 9px", textAlign: "left",
+                  background: (f.fulfilment || "onsite") === id ? C.navy : C.bg, color: (f.fulfilment || "onsite") === id ? "#fff" : C.inkSoft }}>
+                <div style={{ fontSize: 16 }}>{ic}</div>
+                <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, marginTop: 3, lineHeight: 1.35 }}>{lbl}</div>
+              </button>
+            ))}
+          </div>
+          {(f.fulfilment || "onsite") === "collection" && (
+            <div style={{ background: C.navyChip, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.5 }}>
+                {L("The customer is told when their things come back, and the job only counts as finished once you return them.", "Az ügyfél megtudja, mikor kapja vissza a holmiját, és a munka csak a visszaszállításkor számít késznek.")}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1 }}><Field label={L("Ready in (days)", "Elkészül (nap)")} type="number" placeholder="3"
+                  value={f.turnaround_days ?? 3} onChange={(e) => setF({ ...f, turnaround_days: Math.min(60, Math.max(0, parseInt(e.target.value, 10) || 0)) })} /></div>
+                <div style={{ flex: 1 }}><Field label={L("Pickups per hour", "Felvétel óránként")} type="number" placeholder={L("team size", "csapatlétszám")}
+                  value={f.slot_capacity ?? ""} onChange={(e) => setF({ ...f, slot_capacity: e.target.value === "" ? null : Math.min(100, Math.max(1, parseInt(e.target.value, 10) || 1)) })} /></div>
+              </div>
+              <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 4, lineHeight: 1.5 }}>
+                {L("Leave pickups per hour empty to use your team size. One van can usually call at several addresses in an hour.", "Hagyd üresen, ha a csapatlétszámot használnád. Egy furgon általában több címre is eljut egy óra alatt.")}
+              </div>
+            </div>
+          )}
+
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Pricing model", "Árazás módja")}</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[{ id: "flat", t: "Flat", icon: "💰" }, { id: "hourly", t: "Hourly", icon: "⏱️" }, { id: "subscription", t: "Plan", icon: "🔁" }].map((o) => (
+            {[{ id: "flat", t: L("Flat", "Fix"), icon: "💰" }, { id: "hourly", t: L("Hourly", "Óradíj"), icon: "⏱️" },
+              { id: "unit", t: L("Per unit", "Egységár"), icon: "⚖️" }, { id: "subscription", t: L("Plan", "Bérlet"), icon: "🔁" }].map((o) => (
               <button key={o.id} onClick={() => setF({ ...f, pricing_type: o.id })} style={{ flex: 1, padding: "10px 4px", borderRadius: 13, cursor: "pointer", border: (f.pricing_type || "flat") === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", textAlign: "center" }}>
                 <div style={{ fontSize: 18 }}>{o.icon}</div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.ink, marginTop: 3 }}>{o.t}</div>
@@ -2721,25 +3417,81 @@ function CompanyServices() {
             ))}
           </div>
 
+          {(f.pricing_type || "flat") === "unit" && (
+            <>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}><Field label={L("Price per unit (HUF)", "Egységár (Ft)")} type="number" placeholder="1200"
+                  value={f.unit_price_huf ?? ""} onChange={(e) => setF({ ...f, unit_price_huf: e.target.value })} /></div>
+                <div style={{ flex: 1 }}><Field label={L("Unit name", "Mértékegység")} placeholder={L("kg, m², piece", "kg, m², darab")}
+                  value={f.unit_label ?? ""} onChange={(e) => setF({ ...f, unit_label: e.target.value.slice(0, 12) })} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}><Field label={L("Minimum quantity", "Minimum mennyiség")} type="number" placeholder="1"
+                  value={f.min_units ?? ""} onChange={(e) => setF({ ...f, min_units: e.target.value })} /></div>
+                <div style={{ flex: 1 }}><Field label={L("Maximum quantity", "Maximum mennyiség")} type="number" placeholder="50"
+                  value={f.max_units ?? ""} onChange={(e) => setF({ ...f, max_units: e.target.value })} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: -2, marginBottom: 8 }}>
+                {[["kg", L("kg — laundry by weight", "kg — mosás súly szerint")],
+                  ["m²", L("m² — carpets, floors", "m² — szőnyeg, padló")],
+                  [L("piece", "darab"), L("piece — ironing, curtains", "darab — vasalás, függöny")]].map(([u, hint]) => (
+                  <button key={u} title={hint} onClick={() => setF({ ...f, unit_label: u })}
+                    style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99,
+                      background: f.unit_label === u ? C.navy : C.bg, color: f.unit_label === u ? "#fff" : C.inkSoft }}>{u}</button>
+                ))}
+              </div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: -4, marginBottom: 10, lineHeight: 1.5 }}>
+                {L("The customer chooses how much, and the price is worked out from it — 1,200 Ft per kg, 5 kg, 6,000 Ft. Use 'piece' for ironing.", "Az ügyfél választja a mennyiséget, az árat abból számoljuk — 1 200 Ft/kg, 5 kg, 6 000 Ft. Vasaláshoz használd a „darab” egységet.")}
+              </div>
+            </>
+          )}
+
           {(f.pricing_type || "flat") === "flat" && (
             <div style={{ display: "flex", gap: 10 }}>
-              <div style={{ flex: 1 }}><Field label="Price (HUF)" type="number" placeholder="15900" value={f.price_huf} onChange={(e) => setF({ ...f, price_huf: e.target.value })} /></div>
-              <div style={{ flex: 1 }}><Field label="Duration (min)" type="number" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} /></div>
+              <div style={{ flex: 1 }}><Field label={L("Price (HUF)", "Ár (Ft)")} type="number" placeholder="15900" value={f.price_huf} onChange={(e) => setF({ ...f, price_huf: e.target.value })} /></div>
+              <div style={{ flex: 1 }}>
+                {/* Minutes or hours. A deep clean is "3 hours" in the company's head,
+                    not "180 minutes" — but minutes stay the stored unit so nothing
+                    downstream has to learn a second one. */}
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 5 }}>{L("How long it takes", "Mennyi ideig tart")}</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input type="number" min="0" step={f.dur_unit === "h" ? "0.5" : "5"}
+                    value={f.dur_unit === "h" ? (f.minutes === "" || f.minutes == null ? "" : Math.round((Number(f.minutes) / 60) * 100) / 100) : (f.minutes ?? "")}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "") return setF({ ...f, minutes: "" });
+                      setF({ ...f, minutes: f.dur_unit === "h" ? Math.round(Number(v) * 60) : Math.round(Number(v)) });
+                    }}
+                    style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }} />
+                  <div style={{ display: "flex", background: C.bg, borderRadius: 13, padding: 3 }}>
+                    {[["min", L("min", "perc")], ["h", L("hours", "óra")]].map(([u, lbl]) => (
+                      <button key={u} onClick={() => setF({ ...f, dur_unit: u })}
+                        style={{ border: "none", cursor: "pointer", borderRadius: 10, padding: "8px 11px", fontFamily: B, fontWeight: 700, fontSize: 11,
+                          background: (f.dur_unit || "min") === u ? C.card : "transparent", color: (f.dur_unit || "min") === u ? C.ink : C.inkFaint }}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                {Number(f.minutes) > 0 && (
+                  <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 4 }}>
+                    = {Math.floor(Number(f.minutes) / 60) > 0 ? `${Math.floor(Number(f.minutes) / 60)} ${L("h", "óra")} ` : ""}{Number(f.minutes) % 60 > 0 ? `${Number(f.minutes) % 60} ${L("min", "perc")}` : ""}
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {f.pricing_type === "hourly" && (
             <>
-              <Field label="Hourly rate (HUF / hour)" type="number" placeholder="4500" value={f.hourly_rate_huf} onChange={(e) => setF({ ...f, hourly_rate_huf: e.target.value })} />
+              <Field label={L("Hourly rate (HUF / hour)", "Óradíj (Ft / óra)")} type="number" placeholder="4500" value={f.hourly_rate_huf} onChange={(e) => setF({ ...f, hourly_rate_huf: e.target.value })} />
               <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1 }}><Field label="Min hours" type="number" value={f.min_hours ?? 2} onChange={(e) => setF({ ...f, min_hours: e.target.value })} /></div>
-                <div style={{ flex: 1 }}><Field label="Max hours" type="number" value={f.max_hours ?? 8} onChange={(e) => setF({ ...f, max_hours: e.target.value })} /></div>
+                <div style={{ flex: 1 }}><Field label={L("Min hours", "Min. óra")} type="number" value={f.min_hours ?? 2} onChange={(e) => setF({ ...f, min_hours: e.target.value })} /></div>
+                <div style={{ flex: 1 }}><Field label={L("Max hours", "Max. óra")} type="number" value={f.max_hours ?? 8} onChange={(e) => setF({ ...f, max_hours: e.target.value })} /></div>
               </div>
             </>
           )}
           {f.pricing_type === "subscription" && (
             <>
-              <Field label="Price per period (HUF)" type="number" placeholder="13900" value={f.price_huf} onChange={(e) => setF({ ...f, price_huf: e.target.value })} />
-              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>Billing period</div>
+              <Field label={L("Price per period (HUF)", "Ár időszakonként (Ft)")} type="number" placeholder="13900" value={f.price_huf} onChange={(e) => setF({ ...f, price_huf: e.target.value })} />
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Billing period", "Számlázási időszak")}</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 {["weekly", "biweekly", "monthly"].map((p) => (
                   <button key={p} onClick={() => setF({ ...f, period: p })} style={{ flex: 1, padding: "10px 4px", borderRadius: 13, cursor: "pointer", border: (f.period || "weekly") === p ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", fontFamily: F, fontWeight: 700, fontSize: 11, color: C.ink, textTransform: "capitalize" }}>{p}</button>
@@ -2748,9 +3500,15 @@ function CompanyServices() {
             </>
           )}
 
-          <Field area rows={5} label="Cleaner task checklist (one per line)" placeholder={"Kitchen surfaces & sink\nBathroom full clean\nVacuum & mop"} value={f.tasksText} onChange={(e) => setF({ ...f, tasksText: e.target.value })} />
+          <Field area rows={5} label={L("Cleaner task checklist (one per line)", "Takarítói feladatlista (soronként egy)")} placeholder={"Kitchen surfaces & sink\nBathroom full clean\nVacuum & mop"} value={f.tasksText} onChange={(e) => setF({ ...f, tasksText: e.target.value })} />
           <Btn full disabled={!f.name || (f.pricing_type === "hourly" ? !f.hourly_rate_huf : !f.price_huf)} onClick={() => {
-            upsertService({ id: editing === "edit" ? f.id : undefined, name: f.name, description: f.description, icon: f.icon || "🏠", price_huf: parseInt(f.price_huf, 10) || 0, minutes: parseInt(f.minutes, 10) || 120, tasks: f.tasksText.split("\n").map((t) => t.trim()).filter(Boolean), is_active: f.is_active !== false, pricing_type: f.pricing_type || "flat", hourly_rate_huf: f.pricing_type === "hourly" ? (parseInt(f.hourly_rate_huf, 10) || 0) : null, min_hours: parseInt(f.min_hours, 10) || 2, max_hours: parseInt(f.max_hours, 10) || 8, period: f.pricing_type === "subscription" ? (f.period || "weekly") : null });
+            upsertService({ id: editing === "edit" ? f.id : undefined, name: f.name, description: f.description, icon: f.icon || "🏠", price_huf: parseInt(f.price_huf, 10) || 0, minutes: parseInt(f.minutes, 10) || 120, tasks: f.tasksText.split("\n").map((t) => t.trim()).filter(Boolean), is_active: f.is_active !== false, pricing_type: f.pricing_type || "flat", hourly_rate_huf: f.pricing_type === "hourly" ? (parseInt(f.hourly_rate_huf, 10) || 0) : null, min_hours: parseInt(f.min_hours, 10) || 2, max_hours: parseInt(f.max_hours, 10) || 8, period: f.pricing_type === "subscription" ? (f.period || "weekly") : null,
+              /* The per-service discount was bound to this form but never sent — a
+                 dead input. Send 0 to clear it, which the server maps to NULL. */
+              promo_pct: f.promo_pct === "" || f.promo_pct == null ? 0 : (parseInt(f.promo_pct, 10) || 0),
+              fulfilment: f.fulfilment || "onsite",
+              turnaround_days: parseInt(f.turnaround_days, 10) || 3,
+              slot_capacity: f.slot_capacity == null || f.slot_capacity === "" ? null : parseInt(f.slot_capacity, 10) });
             toast(editing === "new" ? "Service added" : "Service updated");
             setEditing(null);
           }}>
@@ -2794,7 +3552,7 @@ function CompanyTeam() {
       {employees.length === 0 && !invites.length && (
         <div style={{ textAlign: "center", padding: "44px 24px", background: C.card, borderRadius: 20, boxShadow: "0 2px 10px rgba(20,28,58,.05)", marginBottom: 16 }}>
           <div style={{ fontSize: 34 }}>👥</div>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginTop: 12 }}>No team members yet</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginTop: 12 }}>{L("No team members yet", "Még nincs csapattag")}</div>
           <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>Invite your first cleaner. They sign up with the code and are instantly linked to your company.</div>
         </div>
       )}
@@ -2846,19 +3604,19 @@ function CompanyTeam() {
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{m.full_name}</div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{m.title || "Cleaner"}{m.phone ? ` · ${m.phone}` : ""}</div>
             </div>
-            <Pill bg={C.mintSoft} color={C.green}>Active</Pill>
+            <Pill bg={C.mintSoft} color={C.green}>{L("Active", "Aktív")}</Pill>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
             <Btn small ghost style={{ flex: 1 }} onClick={() => { setShowMsg(m); setMsg(""); }}>💬 Send notice</Btn>
             <Btn small ghost style={{ flex: 1 }}>📋 {bookings.filter((b) => b.assigned_to === m.id && b.status < 4).length} open</Btn>
-            <Btn small ghost style={{ color: C.coral }} onClick={() => setConfirmRm(m)}>Remove</Btn>
+            <Btn small ghost style={{ color: C.coral }} onClick={() => setConfirmRm(m)}>{L("Remove", "Törlés")}</Btn>
           </div>
         </div>
       ))}
 
       {invites.filter((i) => !i.used_by).length > 0 && (
         <>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>Pending invites</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>{L("Pending invites", "Függő meghívók")}</div>
           {invites.filter((i) => !i.used_by).map((i) => (
             <div key={i.code} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2867,7 +3625,7 @@ function CompanyTeam() {
                   {i.label && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>for {i.label}</div>}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <Pill bg={C.amberSoft} color={C.amber}>Waiting</Pill>
+                  <Pill bg={C.amberSoft} color={C.amber}>{L("Waiting", "Várakozik")}</Pill>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -2880,14 +3638,14 @@ function CompanyTeam() {
       )}
 
       {showAdd && (
-        <Sheet title="Invite an employee" close={() => setShowAdd(false)}>
+        <Sheet title={L("Invite an employee", "Munkatárs meghívása")} close={() => setShowAdd(false)}>
           {!newCode ? (
             <>
-              <Field label="Who is this invite for? (optional)" placeholder="e.g. Zoltán Farkas" value={label} onChange={(e) => setLabel(e.target.value)} />
+              <Field label={L("Who is this invite for? (optional)", "Kinek szól a meghívó? (nem kötelező)")} placeholder={L("e.g. Zoltán Farkas", "pl. Farkas Zoltán")} value={label} onChange={(e) => setLabel(e.target.value)} />
               <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.6, background: C.mintSoft, borderRadius: 13, padding: "11px 14px", marginBottom: 16 }}>
                 A one-time <b>invite code</b> is generated. They open Cleano, choose "I'm a cleaner", and sign up with the code — they're instantly linked to your company.
               </div>
-              <Btn full onClick={async () => { const code = await createInvite(label); if (code) setNewCode(code); else toast("Failed to generate code", "error"); }}>Generate invite code</Btn>
+              <Btn full onClick={async () => { const code = await createInvite(label); if (code) setNewCode(code); else toast("Failed to generate code", "error"); }}>{L("Generate invite code", "Meghívókód létrehozása")}</Btn>
             </>
           ) : (
             <div style={{ textAlign: "center" }}>
@@ -2900,7 +3658,7 @@ function CompanyTeam() {
         </Sheet>
       )}
 
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "22px 0 12px" }}>Sent notices</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "22px 0 12px" }}>{L("Sent notices", "Elküldött üzenetek")}</div>
       {notices.filter((n) => n.company_id === session.companyId).length === 0 && (
         <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, background: C.card, borderRadius: 14, padding: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           No notices sent yet — use the 💬 button on a team member.
@@ -2922,7 +3680,7 @@ function CompanyTeam() {
                 ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Seen"}</Pill>
                 : <Pill bg={C.amberSoft} color={C.amber}>✓ Not seen yet</Pill>}
               <button onClick={() => { deleteNotice(n.id); }}
-                title="Clear from my list"
+                title={L("Clear from my list", "Törlés a listámról")}
                 style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: 9, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
             </div>
           </div>
@@ -2949,7 +3707,7 @@ function CompanyTeam() {
               <button key={q} onClick={() => setMsg(q)} style={{ fontFamily: B, fontSize: 11.5, fontWeight: 600, padding: "8px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: msg === q ? C.mintSoft : C.card, color: C.navySoft, cursor: "pointer" }}>{q}</button>
             ))}
           </div>
-          <Field area placeholder="Write your message…" value={msg} onChange={(e) => setMsg(e.target.value)} />
+          <Field area placeholder={L("Write your message…", "Írd meg az üzeneted…")} value={msg} onChange={(e) => setMsg(e.target.value)} />
           <Btn full disabled={!msg.trim()} onClick={() => { sendNotice(showMsg.id, msg); toast(`Notice sent to ${showMsg.full_name.split(" ")[0]}`); setShowMsg(null); }}>Send notice →</Btn>
         </Sheet>
       )}
@@ -2968,7 +3726,7 @@ function JobHistory() {
       <button onClick={() => setOpen(!open)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: 0, textAlign: "left" }}>
         <span style={{ fontSize: 20 }}>🗄</span>
         <span style={{ flex: 1 }}>
-          <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>Completed jobs history</span>
+          <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>{L("Completed jobs history", "Elvégzett munkák előzményei")}</span>
           <span style={{ display: "block", fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>{done.length} jobs · {huf(total)} earned all-time</span>
         </span>
         <span style={{ color: C.inkFaint }}>{open ? "▴" : "▾"}</span>
@@ -2979,7 +3737,7 @@ function JobHistory() {
           <span style={{ color: C.inkSoft, flexShrink: 0 }}>{String(b.scheduled_date).slice(0, 10)} · {huf((b.total_huf || 0) - (b.service_fee_huf || 0))}</span>
         </div>
       ))}
-      {open && done.length === 0 && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, marginTop: 10 }}>Nothing completed yet.</div>}
+      {open && done.length === 0 && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, marginTop: 10 }}>{L("Nothing completed yet.", "Még nincs elvégzett munka.")}</div>}
     </div>
   );
 }
@@ -3032,22 +3790,377 @@ function PayoutSetup() {
   );
 }
 
+/* ── 5.2 User-written text, shown in the reader's language.
+   The server stores a lang → text map on write; we just pick. If there is no
+   translation we show the original silently — never an empty space. Tapping the
+   label reveals what the person actually wrote, which matters for trust. ── */
+function Translated({ map, fallback, style, labelStyle }) {
+  const [showSrc, setShowSrc] = React.useState(false);
+  const lang = getLang();
+  const m = map && typeof map === "object" ? map : null;
+  const src = m ? m[m._src] : null;
+  const mine = m ? m[lang] : null;
+  const text = showSrc ? (src || fallback) : (mine || src || fallback);
+  if (!text) return null;
+  const isTranslated = !!(m && mine && lang !== m._src);
+  return (
+    <span style={style}>
+      {text}
+      {isTranslated && (
+        <button onClick={(e) => { e.stopPropagation(); setShowSrc(!showSrc); }}
+          style={{ border: "none", background: "none", padding: "0 0 0 6px", cursor: "pointer", fontFamily: B, fontSize: 10, fontWeight: 700, color: C.inkFaint, ...labelStyle }}>
+          {showSrc ? L("Show translation", "Fordítás mutatása") : L("Translated", "Fordítva")}
+        </button>
+      )}
+    </span>
+  );
+}
+
+/* ── Subscribe the phone's calendar to Cleano.
+   A one-off .ics is a snapshot; this is a live feed, so when a booking moves or
+   is cancelled the calendar follows without anyone doing anything. The URL holds
+   a secret, so we say so plainly and give a one-tap way to revoke it. ── */
+function CalendarSync() {
+  const toast = useToast();
+  const [link, setLink] = React.useState(null);
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const { api } = await import("./lib/api.js");
+      setLink(await api("/calendar/me"));
+    } catch { toast(L("Could not load your calendar link", "Nem sikerült betölteni a naptár linkedet"), "error"); }
+    finally { setBusy(false); }
+  };
+  React.useEffect(() => { if (open && !link) load(); }, [open]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      toast(L("Link copied", "Link másolva"));
+    } catch { toast(L("Copy failed — select the link and copy it manually", "A másolás nem sikerült — jelöld ki és másold kézzel"), "error"); }
+  };
+
+  const reset = async () => {
+    setBusy(true);
+    try {
+      const { api } = await import("./lib/api.js");
+      setLink(await api("/calendar/reset", { method: "POST" }));
+      toast(L("New link created — the old one no longer works", "Új link készült — a régi már nem működik"));
+    } catch { toast(L("Could not reset the link", "Nem sikerült új linket készíteni"), "error"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ background: C.card, borderRadius: 18, padding: 16, marginTop: 14 }}>
+      <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", padding: 0, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+        <div style={{ textAlign: "left" }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Sync with my calendar", "Szinkronizálás a naptárammal")}</div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
+            {L("Your bookings appear in your phone's calendar and stay up to date on their own.", "A foglalásaid megjelennek a telefonod naptárában, és maguktól frissülnek.")}
+          </div>
+        </div>
+        <span style={{ color: C.inkFaint, fontSize: 15 }}>{open ? "▴" : "▾"}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 13 }}>
+          {busy && !link && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>}
+          {link && (
+            <>
+              <div style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", fontFamily: "monospace", fontSize: 10.5, color: C.inkSoft, wordBreak: "break-all", lineHeight: 1.5 }}>
+                {link.url}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <Btn small onClick={copy}>{L("Copy link", "Link másolása")}</Btn>
+                <Btn small ghost onClick={() => { try { window.open(link.webcal, "_blank"); } catch {} }}>
+                  {L("Open in calendar", "Megnyitás a naptárban")}
+                </Btn>
+              </div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 11, lineHeight: 1.6 }}>
+                <b style={{ color: C.ink }}>{L("iPhone", "iPhone")}:</b> {L("Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar, then paste the link.", "Beállítások → Naptár → Fiókok → Fiók hozzáadása → Egyéb → Feliratkozás naptárra, majd illeszd be a linket.")}
+                <br />
+                <b style={{ color: C.ink }}>{L("Android", "Android")}:</b> {L("Open Google Calendar on a computer → Other calendars → From URL, then paste the link.", "Nyisd meg a Google Naptárt számítógépen → Egyéb naptárak → URL alapján, majd illeszd be a linket.")}
+              </div>
+              <div style={{ background: C.amberSoft, borderRadius: 12, padding: "10px 12px", marginTop: 11, fontFamily: B, fontSize: 10.5, color: C.ink, lineHeight: 1.55 }}>
+                {L("Treat this link like a password — anyone who has it can see your schedule. It cannot be used to log in or change anything.", "Kezeld ezt a linket jelszóként — aki megkapja, látja a beosztásodat. Bejelentkezni vagy módosítani nem lehet vele.")}
+              </div>
+              <button onClick={reset} disabled={busy}
+                style={{ background: "none", border: "none", padding: "10px 0 0", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.coral }}>
+                {L("Create a new link and stop the old one", "Új link készítése, a régi letiltása")}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Add a booking to the phone's calendar.
+   We fetch the .ics from the server (it knows what this role is allowed to see),
+   then hand it to the OS: the share sheet inside the app, a download in a browser.
+   Opening a .ics is what makes iOS and Android offer "Add to Calendar". ── */
+async function addBookingToCalendar(bookingId, orderNo) {
+  const { API_BASE, getToken } = await import("./lib/api.js");
+  const res = await fetch(`${API_BASE}/api/calendar/booking/${bookingId}.ics`, {
+    headers: { Authorization: "Bearer " + getToken() },
+  });
+  if (!res.ok) throw new Error("calendar " + res.status);
+  const text = await res.text();
+  const name = `cleano-booking-${orderNo || "1"}.ics`;
+
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
+      const { Share } = await import("@capacitor/share");
+      const w = await Filesystem.writeFile({ path: name, data: text, directory: Directory.Cache, encoding: Encoding.UTF8 });
+      await Share.share({ title: "Add to calendar", url: w.uri });
+      return;
+    }
+  } catch (e) { /* fall through to the browser path */ }
+
+  const blob = new Blob([text], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* Small button used on every booking card, for all three roles. */
+function AddToCalendar({ booking, small = true }) {
+  const toast = useToast();
+  const [busy, setBusy] = React.useState(false);
+  if (!booking?.id) return null;
+  return (
+    <button
+      disabled={busy}
+      onClick={async (e) => {
+        e.stopPropagation();
+        setBusy(true);
+        try { await addBookingToCalendar(booking.id, booking.order_no); }
+        catch { toast(L("Could not open the calendar file", "Nem sikerült megnyitni a naptárfájlt"), "error"); }
+        finally { setBusy(false); }
+      }}
+      style={{ border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer",
+        fontFamily: B, fontWeight: 700, fontSize: small ? 11 : 12.5, padding: small ? "6px 12px" : "9px 15px",
+        borderRadius: 99, opacity: busy ? .6 : 1 }}>
+      {busy ? "…" : L("Add to calendar", "Naptárhoz adom")}
+    </button>
+  );
+}
+
+/* ── The partner uploads the invoice they issued to the customer.
+   Cleano never issues in their name, so this is the only way the customer gets
+   their invoice in the app — which means the nudge to do it has to be visible
+   on the job itself, not buried in a settings screen. ── */
+function PartnerInvoiceBox({ booking }) {
+  const { fetchInvoices, uploadPartnerInvoice } = useStore();
+  const toast = useToast();
+  const [inv, setInv] = React.useState(undefined);
+  const [open, setOpen] = React.useState(false);
+  const [num, setNum] = React.useState("");
+  const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [pdf, setPdf] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => { fetchInvoices(booking.id).then((r) => setInv(r || null)); }, [booking.id]);
+  if (booking.status !== 4 || booking.payment_status !== "paid") return null;
+  if (inv === undefined) return null;
+
+  if (inv?.partner) {
+    return (
+      <div style={{ background: C.mintSoft, borderRadius: 12, padding: "9px 12px", marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.ink }}>
+        ✓ {L("Invoice uploaded", "Számla feltöltve")} · <b>{inv.partner.number}</b>
+      </div>
+    );
+  }
+
+  const pick = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast(L("That file is too large — 5 MB maximum", "Túl nagy a fájl — legfeljebb 5 MB"), "error"); return; }
+    const r = new FileReader();
+    r.onload = () => setPdf(String(r.result));
+    r.readAsDataURL(file);
+  };
+
+  const send = async () => {
+    setBusy(true);
+    const res = await uploadPartnerInvoice(booking.id, { invoiceNumber: num.trim(), issuedAt: date, pdf });
+    setBusy(false);
+    if (res?.error) { toast(res.error, "error"); return; }
+    toast(L("Invoice saved — the customer can see it now", "Számla mentve — az ügyfél már látja"));
+    setInv({ partner: { number: num.trim() } });
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ background: C.amberSoft, borderRadius: 12, padding: "10px 12px", marginTop: 10 }}>
+      <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.ink }}>
+        {L("This job still needs your invoice", "Ehhez a munkához még hiányzik a számlád")}
+      </div>
+      <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>
+        {L("Issue it in your own system for the full amount, with the Cleano platform fee as a separate intermediated line, then upload it here.", "Állítsd ki a saját rendszeredben a teljes összegről, a Cleano platformdíjjal külön, közvetített szolgáltatásként, majd töltsd fel ide.")}
+      </div>
+      {!open ? (
+        <Btn small style={{ marginTop: 9 }} onClick={() => setOpen(true)}>{L("Upload invoice", "Számla feltöltése")}</Btn>
+      ) : (
+        <div style={{ marginTop: 9 }}>
+          <input value={num} onChange={(e) => setNum(e.target.value)} placeholder={L("Invoice number", "Számla sorszáma")}
+            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 }} />
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 }} />
+          <input type="file" accept="application/pdf" onChange={pick}
+            style={{ width: "100%", fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn small ghost full onClick={() => setOpen(false)}>{L("Cancel", "Mégse")}</Btn>
+            <Btn small full disabled={busy || num.trim().length < 3} onClick={send}>{busy ? "…" : L("Save", "Mentés")}</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* The customer's view: one line, and a download if the partner attached a PDF. */
+function CustomerInvoiceLine({ booking }) {
+  const { fetchInvoices } = useStore();
+  const [inv, setInv] = React.useState(undefined);
+  React.useEffect(() => { fetchInvoices(booking.id).then((r) => setInv(r || null)); }, [booking.id]);
+  if (booking.payment_status !== "paid") return null;
+  if (inv === undefined) return null;
+
+  if (!inv?.partner) {
+    return (
+      <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 8 }}>
+        {L("Your invoice will appear here once the company issues it.", "A számlád itt jelenik meg, amint a cég kiállítja.")}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.bg, borderRadius: 11, padding: "8px 11px", marginTop: 9 }}>
+      <span style={{ fontFamily: B, fontSize: 11.5, color: C.ink }}>🧾 {L("Invoice", "Számla")} {inv.partner.number}</span>
+      {inv.partner.hasPdf && (
+        <button onClick={async () => {
+          const { API_BASE, getToken } = await import("./lib/api.js");
+          const res = await fetch(`${API_BASE}/api/invoices/${booking.id}/partner.pdf`, { headers: { Authorization: "Bearer " + getToken() } });
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.href = url; a.download = `${inv.partner.number}.pdf`;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        }} style={{ border: "none", background: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, color: C.navySoft }}>
+          {L("Download", "Letöltés")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── A company reports a customer. Never shown to the customer: this is a safety
+   channel to the platform, not a public rating. Telling someone they were
+   reported for being abusive is how you make abuse worse. ── */
+function ReportCustomerBox({ booking }) {
+  const { reportCustomer } = useStore();
+  const toast = useToast();
+  const [open, setOpen] = React.useState(false);
+  const [cat, setCat] = React.useState("abusive");
+  const [detail, setDetail] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [sent, setSent] = React.useState(false);
+  if (Number(booking.status) < 2) return null;   // nothing to report before anyone turned up
+
+  const CATS = [
+    ["abusive", L("Abusive or threatening", "Bántalmazó vagy fenyegető")],
+    ["absent", L("Nobody there / no access", "Senki nem volt ott / nem lehetett bejutni")],
+    ["unsafe", L("Unsafe conditions", "Nem biztonságos körülmények")],
+    ["payment", L("Payment problem", "Fizetési probléma")],
+    ["other", L("Something else", "Egyéb")],
+  ];
+
+  if (sent) return (
+    <div style={{ background: C.mintSoft, borderRadius: 12, padding: "9px 12px", marginTop: 9, fontFamily: B, fontSize: 11.5, color: C.ink }}>
+      ✓ {L("Reported to Cleano — we'll look into it", "Bejelentve a Cleanónak — megvizsgáljuk")}
+    </div>
+  );
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)}
+        style={{ border: "none", background: "none", padding: "8px 0 0", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint }}>
+        ⚑ {L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}
+      </button>
+      {open && (
+        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 380, maxHeight: "88vh", overflowY: "auto" }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}</div>
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
+              {L("This goes to Cleano only — the customer is never told and never sees it. Nobody is suspended automatically; a person reads every report.", "Ez csak a Cleanóhoz jut el — az ügyfél nem értesül róla és nem látja. Senkit nem függesztünk fel automatikusan; minden bejelentést ember olvas el.")}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 13 }}>
+              {CATS.map(([id, lbl]) => (
+                <button key={id} onClick={() => setCat(id)}
+                  style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99,
+                    background: cat === id ? C.navy : C.bg, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
+              ))}
+            </div>
+            <textarea rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={2000}
+              placeholder={L("What happened? Dates, times and what was said or done help us act on it.", "Mi történt? A dátum, az időpont és az elhangzottak segítenek intézkedni.")}
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+              <Btn full ghost onClick={() => setOpen(false)}>{L("Cancel", "Mégse")}</Btn>
+              <Btn full disabled={busy || detail.trim().length < 10} onClick={async () => {
+                setBusy(true);
+                const res = await reportCustomer(booking.id, cat, detail.trim());
+                setBusy(false);
+                if (res?.error) { toast(res.error, "error"); return; }
+                setSent(true); setOpen(false);
+                toast(L("Reported to Cleano — we'll look into it", "Bejelentve a Cleanónak — megvizsgáljuk"));
+              }}>{busy ? "…" : L("Send report", "Bejelentés küldése")}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function CompanyReviews() {
-  const { fetchCompanyReviews, dataVersion } = useStore();
+  const { fetchCompanyReviews, dataVersion, reportReview } = useStore();
+  const toast = useToast();
   const [data, setData] = React.useState(null);
   const [filter, setFilter] = React.useState("all");
+  const [reporting, setReporting] = React.useState(null);
+  const [reason, setReason] = React.useState("");
+  const [rBusy, setRBusy] = React.useState(false);
   React.useEffect(() => { fetchCompanyReviews().then(setData); }, [dataVersion]);
   if (!data) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading reviews…</div>;
   const reviews = data.reviews || [];
   const cleaners = data.cleaners || [];
   const shown = filter === "all" ? reviews : reviews.filter((r) => String(r.cleaner_id || "unassigned") === filter);
+  /* Two different numbers, and the difference matters:
+       · the COMPANY rating is what customers see on your card — one figure,
+         no cleaner attached, because a review is of the company;
+       · the per-cleaner averages are yours alone, for managing your team.
+     Take the headline from the server so it matches the marketplace exactly. */
+  const headline = data.company?.rating != null ? Number(data.company.rating) : null;
+  const headlineCount = Number(data.company?.reviewCount ?? reviews.length);
   const avg = reviews.length ? Math.round((reviews.reduce((a, r) => a + (Number(r.rating) || 0), 0) / reviews.length) * 10) / 10 : 0;
   const stars = (n) => "★".repeat(Math.round(n || 0)) + "☆".repeat(Math.max(0, 5 - Math.round(n || 0)));
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Reviews", "Értékelések")}</div>
       <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginBottom: 16 }}>
-        {reviews.length} {L("reviews", "értékelés")} · {L("average", "átlag")} <b style={{ color: C.navy }}>{avg || "—"}</b> <span style={{ color: C.amber }}>{stars(avg)}</span>
+        {headlineCount} {L("reviews", "értékelés")} · {L("average", "átlag")} <b style={{ color: C.navy }}>{(headline ?? avg) || "—"}</b> <span style={{ color: C.amber }}>{stars(avg)}</span>
+      </div>
+
+      <div style={{ background: C.navyChip, borderRadius: 14, padding: "11px 13px", marginBottom: 12, fontFamily: B, fontSize: 11, color: C.inkSoft, lineHeight: 1.55 }}>
+        {L("Customers see one rating for your company — never which cleaner did the job. The breakdown below is yours alone.", "Az ügyfelek egyetlen céges értékelést látnak — azt soha nem, hogy melyik takarító végezte a munkát. Az alábbi bontás csak a tiéd.")}
       </div>
 
       {cleaners.length > 0 && (
@@ -3087,32 +4200,88 @@ function CompanyReviews() {
             {r.cleaner_name ? r.cleaner_name + " · " : ""}
             {(() => { try { return new Date(r.created_at).toLocaleDateString(LOC()); } catch { return ""; } })()}
           </div>
-          {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“{r.comment}”</div>}
+          {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“<Translated map={r.body_i18n} fallback={r.comment} />”</div>}
+          {r.reported_at ? (
+            <div style={{ fontFamily: B, fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 9 }}>
+              ⚑ {L("Reported — an admin is reviewing it", "Bejelentve — az admin átnézi")}
+            </div>
+          ) : (
+            <button onClick={() => setReporting(r)} style={{ border: "none", background: "none", padding: "8px 0 0", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint }}>
+              ⚑ {L("Report this review", "Értékelés bejelentése")}
+            </button>
+          )}
         </div>
       ))}
+
+      {/* report dialog — a real reason, so admins can judge it fairly */}
+      {reporting && (
+        <div onClick={() => setReporting(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Report this review", "Értékelés bejelentése")}</div>
+            <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
+              {L("Tell us what's wrong with it. An admin reads every report. Reviews are only removed if they break the rules — not for being negative.", "Írd le, mi a baj vele. Minden bejelentést admin olvas el. Csak szabálysértő értékelést törlünk — a negatívat nem.")}
+            </div>
+            <textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500}
+              placeholder={L("e.g. abusive language, not a real customer, mentions a different company", "pl. sértő hangnem, nem valódi ügyfél, más céget említ")}
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <Btn full ghost onClick={() => setReporting(null)}>{L("Cancel", "Mégse")}</Btn>
+              <Btn full disabled={reason.trim().length < 5 || rBusy} onClick={async () => {
+                setRBusy(true);
+                const res = await reportReview(reporting.id, reason.trim());
+                setRBusy(false);
+                if (res?.error) { toast(res.error, "error"); return; }
+                toast(L("Reported — thank you", "Bejelentve — köszönjük"));
+                setReporting(null); setReason("");
+              }}>{rBusy ? "…" : L("Report", "Bejelentés")}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function CompanySettings() {
-  const { session, companies, updateCompany } = useStore();
+  const { session, companies, updateCompany, bookings, services } = useStore();
   const toast = useToast();
   const co = companies.find((c) => c.id === session.companyId);
   const [f, setF] = useState({
-    name: co?.name || "", tagline: co?.tagline || "", area: co?.area || "", city: co?.city || "Debrecen",
+    name: co?.name || "", tagline: co?.tagline || "", area: co?.area || "", city: co?.city || "",
+    country: co?.country || "HU",
+    service_lat: co?.service_lat ?? null, service_lng: co?.service_lng ?? null,
+    service_radius_km: co?.service_radius_km || 10,
     emoji: co?.emoji || "🫧", student_discount: co?.student_discount ?? 10,
     promo_on: !!promoOf(co), promo_pct: promoOf(co)?.pct ?? 10, promo_label: promoOf(co)?.label || "", promo_until: promoOf(co)?.until || "",
     cover: co?.cover || COVER_PRESETS[0], logo_url: co?.logo_url || null,
     tax_id: co?.tax_id || "", reg_number: co?.reg_number || "", contact_phone: co?.contact_phone || "", google_place_id: co?.google_place_id || "",
     documents: co?.documents || [],
+    requirements: Array.isArray(co?.requirements) ? co.requirements : [],
+    billing_name: co?.billing_name || "", billing_zip: co?.billing_zip || "",
+    billing_city: co?.billing_city || "", billing_address: co?.billing_address || "",
+    billing_email: co?.billing_email || "",
   });
   const [avail, setAvail] = React.useState(() => {
     const a = co?.availability;
-    if (!a) return { ...JSON.parse(JSON.stringify(DEFAULT_AVAIL)), busy: {} };
-    return { paused: !!a.paused, days: { ...DEFAULT_AVAIL.days, ...(a.days || {}) }, closed: Array.isArray(a.closed) ? a.closed : [], busy: a.busy && typeof a.busy === "object" ? a.busy : {} };
+    if (!a) return { ...JSON.parse(JSON.stringify(DEFAULT_AVAIL)), busy: {}, busyServices: {} };
+    return { paused: !!a.paused, days: { ...DEFAULT_AVAIL.days, ...(a.days || {}) }, closed: Array.isArray(a.closed) ? a.closed : [], busy: a.busy && typeof a.busy === "object" ? a.busy : {}, busyServices: a.busyServices && typeof a.busyServices === "object" ? a.busyServices : {} };
   });
   const [closedDate, setClosedDate] = React.useState("");
   const [busyDate, setBusyDate] = React.useState("");
+  const [busySvc, setBusySvc] = React.useState("");   // "" = blocks every service
+  const myServices = (services || []).filter((x) => x.company_id === session.companyId && x.is_active !== false);
+  /* Which hours on the chosen date already hold a real, live booking. Blocking one
+     of those would hide the job from the company without cancelling it. */
+  const bookedSlots = React.useMemo(() => {
+    const out = new Set();
+    for (const b of bookings || []) {
+      if (b.company_id !== session.companyId) continue;
+      if (Number(b.status) === 8 || Number(b.status) === 9) continue;
+      if (String(b.scheduled_date).slice(0, 10) !== busyDate) continue;
+      out.add(String(b.scheduled_slot).slice(0, 5));
+    }
+    return out;
+  }, [bookings, busyDate, session.companyId]);
   const DAY_NAMES = HUL()
     ? ["Vasárnap", "Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat"]
     : [L("Sunday","Vasárnap"), L("Monday","Hétfő"), L("Tuesday","Kedd"), L("Wednesday","Szerda"), L("Thursday","Csütörtök"), L("Friday","Péntek"), L("Saturday","Szombat")];
@@ -3123,10 +4292,11 @@ function CompanySettings() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) return toast("Please choose a PNG image", "error");
-    if (file.size > 1.5 * 1024 * 1024) return toast("Logo too large — max 1.5 MB", "error");
-    const reader = new FileReader();
-    reader.onload = () => setF((p) => ({ ...p, logo_url: reader.result }));
-    reader.readAsDataURL(file);
+    /* Logos are shrunk too, so a 6 MB export from a design tool just works.
+       A logo is displayed small, so 512px is plenty. */
+    compressImage(file, { maxEdge: 512, maxBytes: 200 * 1024 })
+      .then((data) => setF((p) => ({ ...p, logo_url: data })))
+      .catch(() => toast(L("Could not read that image", "Nem sikerült beolvasni a képet"), "error"));
   };
 
   const save = async () => {
@@ -3134,7 +4304,11 @@ function CompanySettings() {
     const disc = parseInt(f.student_discount, 10);
     if (isNaN(disc) || disc < 0 || disc > 50) return toast("Discount must be 0–50%", "error");
     setBusy(true);
-    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents, availability: avail });
+    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents, availability: avail,
+      billingName: f.billing_name.trim(), billingZip: f.billing_zip.trim(), billingCity: f.billing_city.trim(),
+      billingAddress: f.billing_address.trim(), billingEmail: f.billing_email.trim(),
+      city: (f.city || "").trim(), requirements: (f.requirements || []).map((x) => String(x).trim()).filter(Boolean).slice(0, 12),
+      country: f.country, serviceLat: f.service_lat, serviceLng: f.service_lng, serviceRadiusKm: f.service_radius_km });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else toast("Company profile updated ✓");
@@ -3142,7 +4316,7 @@ function CompanySettings() {
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Company settings</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("Company settings", "Cégbeállítások")}</div>
 
       <div style={{ height: 110, background: f.cover, borderRadius: 20, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
         <div style={{ width: 68, height: 68, borderRadius: 18, background: C.card, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, overflow: "hidden" }}>
@@ -3155,55 +4329,103 @@ function CompanySettings() {
           ⬆️ Upload your logo (PNG)
           <input type="file" accept="image/png,image/*" onChange={onLogoFile} style={{ display: "none" }} />
         </label>
-        {f.logo_url && <Btn small ghost onClick={() => setF({ ...f, logo_url: null })} style={{ color: C.coral }}>Remove</Btn>}
+        {f.logo_url && <Btn small ghost onClick={() => setF({ ...f, logo_url: null })} style={{ color: C.coral }}>{L("Remove", "Törlés")}</Btn>}
       </div>
 
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>Cover colour</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{L("Cover colour", "Borítószín")}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
         {COVER_PRESETS.map((p) => (
           <button key={p} onClick={() => setF({ ...f, cover: p })} style={{ width: 38, height: 38, borderRadius: 11, background: p, border: f.cover === p ? `3px solid ${C.navy}` : "3px solid transparent", cursor: "pointer", outline: f.cover === p ? `2px solid #fff` : "none", outlineOffset: -4 }} />
         ))}
       </div>
 
-      <Field label="Emoji (shown if no logo uploaded)" placeholder="🫧" value={f.emoji} onChange={set("emoji")} />
-      <Field label="Company name *" placeholder="SparkClean Kft." value={f.name} onChange={set("name")} />
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>City served</div>
-      <select value={f.city || "Debrecen"} onChange={(e) => setF({ ...f, city: e.target.value })}
+      <Field label={L("Emoji (shown if no logo uploaded)", "Emoji (ha nincs feltöltött logó)")} placeholder="🫧" value={f.emoji} onChange={set("emoji")} />
+      <Field label={L("Company name *", "Cégnév *")} placeholder="SparkClean Kft." value={f.name} onChange={set("name")} />
+      {/* 4.3 — free text with suggestions, so any city in any country works */}
+      <Field label={L("City served", "Kiszolgált város")} placeholder="Debrecen" list="cleano-cities"
+        value={f.city || ""} onChange={set("city")} />
+      <datalist id="cleano-cities">{ALL_CITIES.map((c) => <option key={c} value={c} />)}</datalist>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Country", "Ország")}</div>
+      <select value={f.country || "HU"} onChange={(e) => setF({ ...f, country: e.target.value })}
         style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
-        {ALL_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        {DIAL_CODES.map((x) => <option key={x.c} value={x.c}>{x.f} {x.n}</option>)}
       </select>
-      <Field label="Tagline" placeholder="What makes you different?" value={f.tagline} onChange={set("tagline")} />
-      <Field label="Service area" placeholder="e.g. Belváros · Nagyerdő" value={f.area} onChange={set("area")} />
+      <Field label={L("Tagline", "Szlogen")} placeholder={L("What makes you different?", "Miben vagytok mások?")} value={f.tagline} onChange={set("tagline")} />
+      <Field label={L("Service area (shown on your card)", "Ellátott terület (a kártyádon látszik)")} placeholder="e.g. Belváros · Nagyerdő" value={f.area} onChange={set("area")} />
+
+      {/* ── 4.6 the circle that actually decides who can book you ── */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("Where you work", "Hol dolgozol")}</div>
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+          {L("Drag the pin to your base and set how far you travel. Only customers inside the circle can book you.", "Húzd a jelölőt a bázisodhoz, és állítsd be, milyen messzire mész el. Csak a körön belüli ügyfelek tudnak foglalni.")}
+        </div>
+        <AreaMap lat={f.service_lat} lng={f.service_lng} radiusKm={f.service_radius_km || 10}
+          onChange={({ lat, lng }) => setF((p) => ({ ...p, service_lat: lat, service_lng: lng }))} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <input type="range" min="1" max="50" value={f.service_radius_km || 10}
+            onChange={(e) => setF((p) => ({ ...p, service_radius_km: Number(e.target.value) }))}
+            style={{ flex: 1, accentColor: C.navy }} />
+          <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, minWidth: 52, textAlign: "right" }}>{f.service_radius_km || 10} km</span>
+        </div>
+      </div>
+
+      {/* ── 5.4 What you need the customer to have ready ── */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("What customers must provide", "Mit kell az ügyfélnek biztosítania")}</div>
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+          {L("Shown before they pay, and they must tick to agree. One per line — e.g. \"Parking space for our van\", \"Hot running water\", \"Someone home to let us in\".", "A fizetés előtt látják, és pipálniuk kell. Soronként egyet — pl. „Parkolóhely a furgonnak”, „Meleg folyóvíz”, „Legyen otthon valaki”.")}
+        </div>
+        <textarea rows={4} value={(f.requirements || []).join("\n")}
+          onChange={(e) => setF((p) => ({ ...p, requirements: e.target.value.split("\n").map((x) => x.slice(0, 160)) }))}
+          placeholder={L("Parking space for our van\nHot running water\nSomeone home to let us in", "Parkolóhely a furgonnak\nMeleg folyóvíz\nLegyen otthon valaki")}
+          style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", lineHeight: 1.7 }} />
+      </div>
+
+      {/* ── Billing address. Cleano invoices you the platform fee, and a Hungarian
+             invoice is not valid without a postcode, town and street. ── */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("Billing address", "Számlázási cím")}</div>
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+          {L("Cleano invoices you for the platform fee, so we need your billing details exactly as they should appear on an invoice.", "A Cleano a platformdíjról számlát állít ki neked, ezért pontosan úgy kérjük az adataidat, ahogy a számlán szerepelniük kell.")}
+        </div>
+        <Field label={L("Billing name (if different from the company name)", "Számlázási név (ha eltér a cégnévtől)")} value={f.billing_name} onChange={set("billing_name")} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ width: 110 }}><Field label={L("Postcode", "Irányítószám")} value={f.billing_zip} onChange={set("billing_zip")} placeholder="4032" /></div>
+          <div style={{ flex: 1 }}><Field label={L("Town", "Település")} value={f.billing_city} onChange={set("billing_city")} placeholder="Debrecen" /></div>
+        </div>
+        <Field label={L("Street and number", "Utca, házszám")} value={f.billing_address} onChange={set("billing_address")} placeholder={L("Bolyai utca 11.", "Bolyai utca 11.")} />
+        <Field label={L("Where should we send invoices?", "Hová küldjük a számlákat?")} value={f.billing_email} onChange={set("billing_email")} placeholder="szamla@ceged.hu" />
+      </div>
 
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>Business details (for verification & invoicing)</div>
-      <Field label="Tax number (adószám)" placeholder="12345678-1-42"
+      <Field label={L("Tax number (adószám)", "Adószám")} placeholder="12345678-1-42"
         hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? "✅ Valid" : "❌ Invalid format — 12345678-1-42") : undefined}
         value={f.tax_id} onChange={set("tax_id")} />
-      <Field label="Company registration no." placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
-      <Field label="Contact phone" placeholder="+36 …" value={f.contact_phone} onChange={set("contact_phone")} />
+      <Field label={L("Company registration no.", "Cégjegyzékszám")} placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
+      <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contact_phone} onChange={(v) => setF((p) => ({ ...p, contact_phone: v }))} />
       <JobHistory />
       <PayoutSetup />
       <Field label="Google Place ID (optional)" hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
       <DocUpload
-        label="Verification documents"
+        label={L("Verification documents", "Igazoló dokumentumok")}
         hint="Cégkivonat, tax certificate, insurance — reviewed by the Cleano admin."
         docs={f.documents || []}
         onChange={(docs) => setF({ ...f, documents: docs })}
       />
 
       <div style={{ marginBottom: 13 }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>Student discount %</div>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Student discount %", "Diákkedvezmény %")}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <input type="range" min={0} max={50} step={5} value={f.student_discount} onChange={set("student_discount")} style={{ flex: 1, accentColor: C.navy }} />
           <span style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.navy, minWidth: 44 }}>{f.student_discount}%</span>
         </div>
-        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5 }}>Students see this as a discount at checkout.</div>
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5 }}>{L("Students see this as a discount at checkout.", "A diákok ezt kedvezményként látják fizetéskor.")}</div>
       </div>
 
       <div style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>Special offer</div>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Special offer", "Akció")}</div>
             <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>A discount for all customers — shown on your card and applied at checkout.</div>
           </div>
           <button onClick={() => setF({ ...f, promo_on: !f.promo_on })} style={{ width: 46, height: 26, borderRadius: 99, border: "none", cursor: "pointer", background: f.promo_on ? C.green : C.line, position: "relative", transition: "background .2s", flexShrink: 0 }}>
@@ -3216,8 +4438,8 @@ function CompanySettings() {
               <input type="range" min={5} max={50} step={5} value={f.promo_pct} onChange={set("promo_pct")} style={{ flex: 1, accentColor: C.green }} />
               <span style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.greenDeep, minWidth: 44 }}>−{f.promo_pct}%</span>
             </div>
-            <Field label="Offer name (optional)" placeholder="e.g. Spring cleaning week" value={f.promo_label} onChange={set("promo_label")} />
-            <Field label="Ends on (optional — empty = until you turn it off)" type="date" value={f.promo_until} onChange={set("promo_until")} />
+            <Field label={L("Offer name (optional)", "Akció neve (nem kötelező)")} placeholder={L("e.g. Spring cleaning week", "pl. Tavaszi nagytakarítás hete")} value={f.promo_label} onChange={set("promo_label")} />
+            <Field label={L("Ends on (optional — empty = until you turn it off)", "Meddig tart (nem kötelező — üresen: amíg ki nem kapcsolod)")} type="date" value={f.promo_until} onChange={set("promo_until")} />
             <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>If a student's discount is higher, they get the better one — never both.</div>
           </div>
         )}
@@ -3322,24 +4544,77 @@ function CompanySettings() {
         <div style={{ marginTop: 16, borderTop: `1px solid ${C.line}55`, paddingTop: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("Busy time slots", "Foglalt időpontok")}</div>
           <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
-            {L("Pick a date, then tap the times you're already busy — customers can't book those.", "Válassz egy dátumot, majd koppints a foglalt időpontokra — azokat nem lehet lefoglalni.")}
+            {L("Pick any date in the next 2 months, then tap the times you're already busy — customers can't book those.", "Válassz bármely dátumot a következő 2 hónapban, majd koppints a foglalt időpontokra — azokat nem lehet lefoglalni.")}
+          </div>
+          {/* Quick jumps, because a native date picker is a lot of taps for "next Saturday". */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {[[0, L("Today", "Ma")], [1, L("Tomorrow", "Holnap")], [7, L("In a week", "Egy hét múlva")], [30, L("In a month", "Egy hónap múlva")]].map(([n, lbl]) => {
+              const iso = (() => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+              return (
+                <button key={n} onClick={() => setBusyDate(iso)}
+                  style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99,
+                    background: busyDate === iso ? C.navy : C.bg, color: busyDate === iso ? "#fff" : C.inkSoft }}>{lbl}</button>
+              );
+            })}
           </div>
           <input type="date" value={busyDate} onChange={(e) => setBusyDate(e.target.value)}
+            min={todayISO()} max={maxBookISO()}
             style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none", marginBottom: 9 }} />
+          {busyDate && myServices.length > 0 && (
+            <div style={{ marginBottom: 9 }}>
+              <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.inkFaint, marginBottom: 5 }}>
+                {L("Block for", "Mire vonatkozik")}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button onClick={() => setBusySvc("")}
+                  style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99,
+                    background: busySvc === "" ? C.navy : C.bg, color: busySvc === "" ? "#fff" : C.inkSoft }}>
+                  {L("Everything", "Minden")}
+                </button>
+                {myServices.map((sv) => (
+                  <button key={sv.id} onClick={() => setBusySvc(sv.id)}
+                    style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99,
+                      background: busySvc === sv.id ? C.navy : C.bg, color: busySvc === sv.id ? "#fff" : C.inkSoft }}>
+                    {sv.icon} {sv.name}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 6, lineHeight: 1.5 }}>
+                {busySvc
+                  ? L("Only this service is blocked — your other services stay bookable at these times.", "Csak ez a szolgáltatás lesz letiltva — a többi ezekben az időpontokban is foglalható marad.")
+                  : L("Blocks every service at these times.", "Ezekben az időpontokban minden szolgáltatást letilt.")}
+              </div>
+            </div>
+          )}
           {busyDate && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7 }}>
               {(daySlots(avail, busyDate).length ? daySlots(avail, busyDate) : HOURS).map((sl) => {
-                const list = avail.busy[busyDate] || [];
+                const list = busySvc
+                  ? ((avail.busyServices?.[busySvc] || {})[busyDate] || [])
+                  : (avail.busy[busyDate] || []);
                 const isBusy = list.includes(sl);
+                /* A slot with a real booking in it is shown as taken and cannot be
+                   toggled — blocking it would not cancel the job, it would just
+                   hide it from you. */
+                const booked = bookedSlots.has(sl);
                 return (
-                  <button key={sl} onClick={() => {
-                    const next = isBusy ? list.filter((x) => x !== sl) : [...list, sl].sort();
-                    const busy = { ...avail.busy };
-                    if (next.length) busy[busyDate] = next; else delete busy[busyDate];
-                    setAvail({ ...avail, busy });
-                  }} style={{ padding: "9px 0", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5,
-                    background: isBusy ? C.coral : C.bg, color: isBusy ? "#fff" : C.inkSoft }}>
-                    {sl}
+                  <button key={sl} disabled={booked} title={booked ? L("Already booked by a customer", "Egy ügyfél már lefoglalta") : undefined}
+                    onClick={() => {
+                      const next = isBusy ? list.filter((x) => x !== sl) : [...list, sl].sort();
+                      if (busySvc) {
+                        const bs = { ...(avail.busyServices || {}) };
+                        const forSvc = { ...(bs[busySvc] || {}) };
+                        if (next.length) forSvc[busyDate] = next; else delete forSvc[busyDate];
+                        if (Object.keys(forSvc).length) bs[busySvc] = forSvc; else delete bs[busySvc];
+                        setAvail({ ...avail, busyServices: bs });
+                      } else {
+                        const busy = { ...avail.busy };
+                        if (next.length) busy[busyDate] = next; else delete busy[busyDate];
+                        setAvail({ ...avail, busy });
+                      }
+                    }} style={{ padding: "9px 0", borderRadius: 12, border: "none", cursor: booked ? "not-allowed" : "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5,
+                      background: booked ? C.navyChip : isBusy ? C.coral : C.bg, color: booked ? C.navy : isBusy ? "#fff" : C.inkSoft }}>
+                    {sl}{booked ? " ✓" : ""}
                   </button>
                 );
               })}
@@ -3382,44 +4657,132 @@ function CompanySettings() {
 ════════════════════════════════════════════════════════════ */
 
 function AnnouncementComposer() {
-  const { adminBroadcast } = useStore();
+  const { adminBroadcast, adminAllUsers: adminUsers, adminFetchUsers } = useStore();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [aud, setAud] = useState("all");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
+  const [person, setPerson] = useState(null);   // { id, name, email }
+  const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(null); // { count }
   const AUDS = [["all", "Everyone"], ["customer", "Customers"], ["company", "Companies"], ["employee", "Cleaners"]];
-  const send = async () => {
+
+  const filters = person ? { userId: person.id }
+    : { city: city.trim() || undefined, country: country.trim() || undefined };
+
+  /* Search people by name or email, from the admin user list already loaded. */
+  const matches = React.useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (t.length < 2) return [];
+    return (adminUsers || []).filter((u) => u.role !== "admin" &&
+      ((u.name || "").toLowerCase().includes(t) || (u.email || "").toLowerCase().includes(t))).slice(0, 6);
+  }, [q, adminUsers]);
+
+  useEffect(() => { if (open && !(adminUsers || []).length) adminFetchUsers?.(); }, [open]);
+
+  const describe = () => {
+    if (person) return `${person.name} (${person.email})`;
+    const bits = [AUDS.find((x) => x[0] === aud)?.[1] || "Everyone"];
+    if (city.trim()) bits.push(`in ${city.trim()}`);
+    if (country.trim()) bits.push(`· ${country.trim().toUpperCase()}`);
+    return bits.join(" ");
+  };
+
+  /* Step 1 — ask the server how many people this actually hits. */
+  const preview = async () => {
     if (!title.trim()) return;
     setBusy(true);
-    const res = await adminBroadcast(title.trim(), body.trim(), aud);
+    const res = await adminBroadcast(title.trim(), body.trim(), aud, { ...filters, preview: true });
     setBusy(false);
     if (res?.error) { toast(res.error); return; }
-    toast(`Announcement sent to ${res.sent} user${res.sent === 1 ? "" : "s"}`);
-    setTitle(""); setBody(""); setOpen(false);
+    if (!res?.count) { toast("That audience matches nobody"); return; }
+    setConfirm({ count: res.count });
   };
+
+  /* Step 2 — only now does anything leave the building. */
+  const send = async () => {
+    setBusy(true);
+    const res = await adminBroadcast(title.trim(), body.trim(), aud, filters);
+    setBusy(false);
+    setConfirm(null);
+    if (res?.error) { toast(res.error); return; }
+    toast(`Sent to ${res.sent} user${res.sent === 1 ? "" : "s"}`);
+    setTitle(""); setBody(""); setCity(""); setCountry(""); setPerson(null); setQ(""); setOpen(false);
+  };
+
+  const inputS = { width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" };
+
   return (
     <div className="cl-card" style={{ background: C.card, borderRadius: 20, padding: 18, marginBottom: 14 }}>
       <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", padding: 0, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
         <div style={{ textAlign: "left" }}>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>Send announcement</div>
-          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>Marketing or news — lands as a banner in every user's app. Push to phones activates with Firebase.</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{L("Send announcement", "Hirdetmény küldése")}</div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>Target everyone, a role, a city, a country — or one person. You see the recipient count before it sends.</div>
         </div>
         <span style={{ color: C.inkFaint, fontSize: 15 }}>{open ? "▴" : "▾"}</span>
       </button>
       {open && (
         <div style={{ marginTop: 14 }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          {/* who */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", opacity: person ? .4 : 1, pointerEvents: person ? "none" : "auto" }}>
             {AUDS.map(([id, label]) => (
               <button key={id} onClick={() => setAud(id)} style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, background: aud === id ? C.navy : C.bg, color: aud === id ? "#fff" : C.inkSoft }}>{label}</button>
             ))}
           </div>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="Title — e.g. 20% off your first clean this week"
-            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", marginBottom: 8 }} />
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} rows={3} placeholder="Message (optional)"
-            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginBottom: 10 }} />
-          <Btn full onClick={send} disabled={busy || !title.trim()}>{busy ? "Sending…" : "Send announcement"}</Btn>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, opacity: person ? .4 : 1, pointerEvents: person ? "none" : "auto" }}>
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder={L("City (optional)", "Város (nem kötelező)")} style={{ ...inputS, flex: 1 }} />
+            <input value={country} onChange={(e) => setCountry(e.target.value.toUpperCase().slice(0, 2))} placeholder="HU" maxLength={2} style={{ ...inputS, width: 74, textAlign: "center", flex: "0 0 auto" }} />
+          </div>
+
+          {/* one person */}
+          {person ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.navySoft, borderRadius: 13, padding: "10px 14px", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{person.name}</div>
+                <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>{person.email}</div>
+              </div>
+              <button onClick={() => { setPerson(null); setQ(""); }} style={{ border: "none", background: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.red }}>{L("Clear", "Törlés")}</button>
+            </div>
+          ) : (
+            <div style={{ position: "relative", marginBottom: 10 }}>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("…or send to one person — search name or email", "…vagy küldd egy embernek — keress névre vagy e-mailre")} style={inputS} />
+              {matches.length > 0 && (
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20, background: C.card, borderRadius: 13, boxShadow: "0 8px 24px rgba(20,28,58,.16)", overflow: "hidden", marginTop: 4 }}>
+                  {matches.map((u) => (
+                    <button key={u.id} onClick={() => { setPerson({ id: u.id, name: u.name, email: u.email }); setQ(""); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", border: "none", background: "none", cursor: "pointer", padding: "10px 14px", fontFamily: B, fontSize: 12.5, color: C.ink }}>
+                      {u.name} <span style={{ color: C.inkFaint }}>· {u.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder={L("Title — e.g. 20% off your first clean this week", "Cím — pl. 20% kedvezmény az első takarításra a héten")} style={{ ...inputS, marginBottom: 8 }} />
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} rows={3} placeholder={L("Message (optional)", "Üzenet (nem kötelező)")} style={{ ...inputS, resize: "vertical", marginBottom: 10 }} />
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 8 }}>Sending to: <b style={{ color: C.ink }}>{describe()}</b></div>
+          <Btn full onClick={preview} disabled={busy || !title.trim()}>{busy ? "Checking…" : "Review before sending"}</Btn>
+        </div>
+      )}
+
+      {/* confirmation — the last stop before a few thousand phones buzz */}
+      {confirm && (
+        <div onClick={() => setConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 340 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>Send to {confirm.count} {confirm.count === 1 ? "person" : "people"}?</div>
+            <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.6 }}>
+              {describe()}<br /><b style={{ color: C.ink }}>{title}</b>{body ? <><br />{body}</> : null}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <Btn full ghost onClick={() => setConfirm(null)}>{L("Cancel", "Mégse")}</Btn>
+              <Btn full onClick={send} disabled={busy}>{busy ? "Sending…" : "Send now"}</Btn>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -3440,7 +4803,7 @@ function AdminDashboard() {
   if (!adminStats)
     return (
       <div style={{ textAlign: "center", padding: 60 }}>
-        <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginBottom: 14 }}>Couldn't load platform stats.</div>
+        <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginBottom: 14 }}>{L("Couldn't load platform stats.", "Nem sikerült betölteni a statisztikákat.")}</div>
         <Btn small onClick={() => setTries(t => t + 1)}>↻ Retry</Btn>
       </div>
     );
@@ -3459,7 +4822,7 @@ function AdminDashboard() {
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>Platform dashboard</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("Platform dashboard", "Platform áttekintés")}</div>
       {useStore().session?.isSuper === true && <AnnouncementComposer />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
@@ -3491,7 +4854,7 @@ function AdminDashboard() {
 
       {s.bookingsByStatus && (
         <>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, margin: "18px 0 10px" }}>Bookings by status</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, margin: "18px 0 10px" }}>{L("Bookings by status", "Foglalások állapot szerint")}</div>
           {Object.entries(s.bookingsByStatus).map(([st, cnt]) => {
             const label = st === "9" ? "Cancelled" : st === "8" ? "Declined" : stageList()[parseInt(st)] || `Status ${st}`;
             return (
@@ -3589,9 +4952,10 @@ function AdminCompanies() {
         </div>
       ))}
       {viewDocs && <DocViewer title={viewDocs.title} docs={viewDocs.docs} close={() => setViewDocs(null)} />}
+      {detail && <AdminUserDetail userId={detail} close={() => setDetail(null)} onChanged={adminFetchUsers} />}
       {svcOpen && (
         <Sheet title={`${svcOpen.name} — listings (${svcOpen.list.length})`} close={() => setSvcOpen(null)}>
-          {svcOpen.list.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>This company has no service listings yet.</div>}
+          {svcOpen.list.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("This company has no service listings yet.", "Ennek a cégnek még nincs szolgáltatása.")}</div>}
           {svcOpen.list.map((sv) => (
             <div key={sv.id} style={{ background: C.bg, borderRadius: 14, padding: "12px 14px", marginBottom: 9 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
@@ -3644,13 +5008,13 @@ function ComplaintThread({ complaint, role, close, onChange }) {
             </div>
           );
         })}
-        {msgs.length === 0 && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint, textAlign: "center", padding: 10 }}>No replies yet.</div>}
+        {msgs.length === 0 && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint, textAlign: "center", padding: 10 }}>{L("No replies yet.", "Még nincs válasz.")}</div>}
       </div>
 
       {/* ── who is talking to the customer ── */}
       {role === "admin" && (
         <div style={{ background: C.card, borderRadius: 16, padding: 14, marginBottom: 12 }}>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>Who replies to the customer?</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Who replies to the customer?", "Ki válaszol az ügyfélnek?")}</div>
           <div style={{ display: "flex", gap: 8 }}>
             {[["admin", "🛡️ Cleano handles it"], ["company", "🏢 Hand to the company"]].map(([id, label]) => (
               <button key={id} onClick={async () => {
@@ -3663,7 +5027,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
             ))}
           </div>
           {handledBy === "company" && !assigned && (
-            <div style={{ fontFamily: B, fontSize: 11, color: C.coral, marginTop: 7 }}>Assign a company above first.</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: C.coral, marginTop: 7 }}>{L("Assign a company above first.", "Előbb rendelj hozzá egy céget fent.")}</div>
           )}
           {coAction && (
             <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 8 }}>
@@ -3684,7 +5048,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
           </div>
           {!coAction && (
             <>
-              <Field label="Note to the customer (optional)" placeholder="e.g. we'll call you within the hour" value={cbNote} onChange={(e) => setCbNote(e.target.value)} />
+              <Field label={L("Note to the customer (optional)", "Üzenet az ügyfélnek (nem kötelező)")} placeholder={L("e.g. we'll call you within the hour", "pl. egy órán belül hívunk")} value={cbNote} onChange={(e) => setCbNote(e.target.value)} />
               <div style={{ display: "flex", gap: 8 }}>
                 <Btn small style={{ flex: 1 }} onClick={async () => {
                   const r = await setCompanyAction(complaint.id, "chat", cbNote);
@@ -3710,7 +5074,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
       )}
       {role === "admin" && status !== "resolved" && (
         <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 12, marginBottom: 12 }}>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>Move to a company to resolve</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{L("Move to a company to resolve", "Céghez rendelés megoldásra")}</div>
           <div style={{ display: "flex", gap: 8 }}>
             <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink }}>
               <option value="">Select a company…</option>
@@ -3722,7 +5086,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
       )}
       {(role === "admin" || role === "company") && status !== "resolved" && (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Resolution note…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink, outline: "none" }} />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={L("Resolution note…", "Megoldás leírása…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink, outline: "none" }} />
           <Btn small mint onClick={doResolve}>✓ Resolve</Btn>
         </div>
       )}
@@ -3740,8 +5104,8 @@ function CompanyComplaints() {
   const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: "To resolve", bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>Issues to resolve</div>
-      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>Complaints Cleano assigned to your company.</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Issues to resolve", "Megoldandó ügyek")}</div>
+      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{L("Complaints Cleano assigned to your company.", "A Cleano által a cégedhez rendelt panaszok.")}</div>
       {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>Nothing assigned to you 🎉</div>}
       {list.map((c) => (
         <div key={c.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
@@ -3766,8 +5130,8 @@ function CustomerReports({ close }) {
   const list = myComplaints || [];
   const stat = { open: "🟠 Open", in_progress: "🔵 In progress", resolved: "🟢 Resolved" };
   return (
-    <Sheet title="🛟 My reports" close={close}>
-      {list.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 24 }}>You haven't filed any reports.</div>}
+    <Sheet title={`🛟 ${L("My reports", "Bejelentéseim")}`} close={close}>
+      {list.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("You haven't filed any reports.", "Még nem küldtél be bejelentést.")}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {list.map((c) => (
           <button key={c.id} onClick={() => setOpen(c)} style={{ textAlign: "left", border: "none", cursor: "pointer", background: C.card, borderRadius: 13, padding: "11px 13px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
@@ -3781,6 +5145,152 @@ function CustomerReports({ close }) {
       </div>
       {open && <ComplaintThread complaint={open} role="customer" close={() => { setOpen(null); fetchMyComplaints(); }} />}
     </Sheet>
+  );
+}
+
+/* ── 5.9 Reported reviews. Lives with Complaints — same job, same instinct. ── */
+function ReviewReports() {
+  const { adminFetchReportedReviews, adminRemoveReview, adminDismissReport } = useStore();
+  const toast = useToast();
+  const [list, setList] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => adminFetchReportedReviews().then(setList);
+  React.useEffect(() => { load(); }, []);
+  if (!list || !list.length) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, marginBottom: 4 }}>Reported reviews · {list.length}</div>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 10 }}>{L("Remove only what breaks the rules. A bad score is not a reason.", "Csak a szabálysértőt töröld. A rossz pontszám nem indok.")}</div>
+      {list.map((r) => (
+        <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.customer_name || "Customer"} → {r.company_name || "—"}</div>
+            <div style={{ color: C.amber, fontSize: 12.5 }}>{stars(r.rating)}</div>
+          </div>
+          {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“<Translated map={r.body_i18n} fallback={r.comment} />”</div>}
+          <div style={{ background: C.amberSoft, borderRadius: 12, padding: "9px 12px", marginTop: 10 }}>
+            <div style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.amber, letterSpacing: .3 }}>{L("REPORTED BY THE COMPANY", "A CÉG JELENTETTE BE")}</div>
+            <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 3, lineHeight: 1.5 }}>{r.reported_reason}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
+            <Btn full ghost onClick={async () => {
+              const res = await adminDismissReport(r.id);
+              if (res?.error) toast(res.error, "error"); else { toast("Report dismissed — review stays up"); load(); }
+            }}>{L("Keep it", "Marad")}</Btn>
+            <Btn full danger onClick={() => { setRemoving(r); setReason(""); }}>{L("Remove", "Törlés")}</Btn>
+          </div>
+        </div>
+      ))}
+      {removing && (
+        <div onClick={() => setRemoving(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Remove this review", "Értékelés törlése")}</div>
+            <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
+              Your reason is logged permanently against your admin account, and the company's rating is recalculated.
+            </div>
+            <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={400}
+              placeholder={L("Why it breaks the rules", "Miért sérti a szabályokat")}
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <Btn full ghost onClick={() => setRemoving(null)}>{L("Cancel", "Mégse")}</Btn>
+              <Btn full danger disabled={reason.trim().length < 5 || busy} onClick={async () => {
+                setBusy(true);
+                const res = await adminRemoveReview(removing.id, reason.trim());
+                setBusy(false);
+                if (res?.error) { toast(res.error, "error"); return; }
+                toast("Review removed"); setRemoving(null); load();
+              }}>{busy ? "…" : "Remove"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── The admin's queue of customers a company has reported. Sits with the other
+   abuse handling, because it is the same job: read it, decide, write down why. ── */
+function CustomerReportQueue() {
+  const { adminCustomerReports, adminHandleCustomerReport } = useStore();
+  const toast = useToast();
+  const [list, setList] = React.useState(null);
+  const [acting, setActing] = React.useState(null);   // { id, decision }
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const load = () => adminCustomerReports().then(setList);
+  React.useEffect(() => { load(); }, []);
+  if (!list || !list.length) return null;
+  const open = list.filter((r) => r.status === "open");
+
+  const CAT = { abusive: "Abusive or threatening", absent: "Nobody there / no access", unsafe: "Unsafe conditions", payment: "Payment problem", other: "Something else" };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, marginBottom: 4 }}>
+        Customers reported by companies · {open.length} open
+      </div>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 10 }}>
+        The customer is never told they were reported. Nobody is suspended automatically — you decide.
+      </div>
+      {list.slice(0, 40).map((r) => (
+        <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)", opacity: r.status === "open" ? 1 : .6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.customer_name || "—"}</div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>
+                {r.company_name} · {r.order_no != null ? `#${r.order_no}` : ""} · {(() => { try { return new Date(r.created_at).toLocaleDateString(LOC()); } catch { return ""; } })()}
+              </div>
+            </div>
+            <Pill bg={r.status === "open" ? C.amberSoft : C.bg} color={r.status === "open" ? C.amber : C.inkFaint}>
+              {r.status === "open" ? "Open" : r.status === "reviewed" ? "Actioned" : "Dismissed"}
+            </Pill>
+          </div>
+          <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.coral, marginTop: 8 }}>{CAT[r.category] || r.category}</div>
+          <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 4, lineHeight: 1.55 }}>{r.detail}</div>
+          {Number(r.reports_about_them) > 1 && (
+            <div style={{ background: C.coralSoft, borderRadius: 10, padding: "7px 10px", marginTop: 8, fontFamily: B, fontWeight: 700, fontSize: 11, color: C.coral }}>
+              ⚠ {r.reports_about_them} reports about this customer
+            </div>
+          )}
+          {r.admin_note && (
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 8, fontStyle: "italic" }}>Your note: {r.admin_note}</div>
+          )}
+          {r.status === "open" && (
+            <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
+              <Btn full ghost onClick={() => { setActing({ id: r.id, decision: "dismissed" }); setNote(""); }}>No action</Btn>
+              <Btn full danger onClick={() => { setActing({ id: r.id, decision: "reviewed" }); setNote(""); }}>Record action</Btn>
+            </div>
+          )}
+        </div>
+      ))}
+      {acting && (
+        <div onClick={() => setActing(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>
+              {acting.decision === "reviewed" ? "Record what you did" : "Close without action"}
+            </div>
+            <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
+              Your note is kept permanently against this report and signed with your name.
+            </div>
+            <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
+              placeholder={acting.decision === "reviewed" ? "e.g. called the customer, warned them, company reassigned" : "e.g. spoke to both sides, misunderstanding"}
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+              <Btn full ghost onClick={() => setActing(null)}>Cancel</Btn>
+              <Btn full disabled={busy || note.trim().length < 5} onClick={async () => {
+                setBusy(true);
+                const res = await adminHandleCustomerReport(acting.id, acting.decision, note.trim());
+                setBusy(false);
+                if (res?.error) { toast(res.error, "error"); return; }
+                toast("Saved"); setActing(null); load();
+              }}>{busy ? "…" : "Save"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3815,6 +5325,171 @@ function AdminComplaints() {
   );
 }
 
+/* ── 5.10 Everything we hold on one person, in one place. 5.11 lets an admin
+   correct a company's details — never its prices, its Stripe account or its
+   password. Every edit is written to the audit log with before → after. ── */
+function AdminUserDetail({ userId, close, onChanged }) {
+  const { adminUserFull, adminEditCompanyDetails } = useStore();
+  const toast = useToast();
+  const [d, setD] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [f, setF] = useState({});
+  const [busy, setBusy] = useState(false);
+  React.useEffect(() => { adminUserFull(userId).then(setD); }, [userId]);
+
+  const startEdit = () => {
+    const c = d.company || {};
+    setF({ name: c.name || "", tagline: c.tagline || "", area: c.area || "", city: c.city || "",
+      country: c.country || "HU", contact_phone: c.contact_phone || "", tax_id: c.tax_id || "",
+      reg_number: c.reg_number || "", service_radius_km: c.service_radius_km || 10,
+      is_listed: c.is_listed !== false, is_approved: c.is_approved === true });
+    setEditing(true);
+  };
+  const save = async () => {
+    setBusy(true);
+    const res = await adminEditCompanyDetails(d.company.id, f);
+    setBusy(false);
+    if (res?.error) { toast(res.error, "error"); return; }
+    toast(res.changed ? `Saved · ${res.changed} field${res.changed === 1 ? "" : "s"} changed` : "No changes");
+    setEditing(false);
+    adminUserFull(userId).then(setD);
+    onChanged?.();
+  };
+
+  const Row = ({ k, v }) => v === null || v === undefined || v === "" ? null : (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
+      <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, flexShrink: 0 }}>{k}</span>
+      <span style={{ fontFamily: B, fontSize: 11.5, color: C.ink, fontWeight: 600, textAlign: "right", wordBreak: "break-word" }}>{String(v)}</span>
+    </div>
+  );
+  const Sec = ({ t, children }) => (
+    <div style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 6 }}>{t}</div>
+      {children}
+    </div>
+  );
+  const inputS = { width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 };
+  const dt = (x) => { try { return new Date(x).toLocaleDateString(LOC()); } catch { return "—"; } };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: C.bg, zIndex: 500, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ position: "sticky", top: 0, background: C.bg, padding: "calc(14px + env(safe-area-inset-top)) 18px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 2 }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{L("Full record", "Teljes adatlap")}</div>
+        <button onClick={close} style={{ border: "none", background: C.card, borderRadius: 99, width: 34, height: 34, fontSize: 15, color: C.inkSoft, cursor: "pointer" }}>✕</button>
+      </div>
+      <div style={{ padding: "0 18px calc(30px + env(safe-area-inset-bottom))" }}>
+        {!d ? <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div> : (
+          <>
+            <Sec t="Account">
+              <Row k={L("Name", "Név")} v={d.user?.full_name} /><Row k={L("Email", "E-mail")} v={d.user?.email} />
+              <Row k={L("Phone", "Telefon")} v={d.user?.phone} /><Row k={L("Address", "Cím")} v={d.user?.address} />
+              <Row k={L("City", "Város")} v={d.user?.city} /><Row k={L("Country", "Ország")} v={d.user?.country} />
+              <Row k={L("Role", "Szerep")} v={d.user?.role} /><Row k={L("Customer type", "Ügyfél típusa")} v={d.user?.customer_type} />
+              <Row k={L("Phone verified", "Telefon ellenőrizve")} v={d.user?.phone_verified ? "yes" : "no"} />
+              <Row k={L("Email verified", "E-mail ellenőrizve")} v={d.user?.email_verified ? "yes" : "no"} />
+              <Row k={L("Active", "Aktív")} v={d.user?.is_active === false ? "suspended" : "yes"} />
+              <Row k={L("Joined", "Csatlakozott")} v={d.user?.created_at ? dt(d.user.created_at) : null} />
+            </Sec>
+
+            {d.company && (
+              <Sec t="Company">
+                {!editing ? (
+                  <>
+                    <Row k={L("Name", "Név")} v={d.company.name} /><Row k={L("Tagline", "Szlogen")} v={d.company.tagline} />
+                    <Row k={L("Area", "Terület")} v={d.company.area} /><Row k={L("City", "Város")} v={d.company.city} />
+                    <Row k={L("Country", "Ország")} v={d.company.country} /><Row k={L("Phone", "Telefon")} v={d.company.contact_phone} />
+                    <Row k={L("Tax ID", "Adószám")} v={d.company.tax_id} /><Row k={L("Reg. number", "Cégjegyzékszám")} v={d.company.reg_number} />
+                    <Row k={L("Radius", "Sugár")} v={d.company.service_radius_km ? d.company.service_radius_km + " km" : null} />
+                    <Row k={L("Currency", "Pénznem")} v={d.company.currency} />
+                    <Row k={L("Rating", "Értékelés")} v={d.company.rating ? `${d.company.rating} (${d.company.review_count || 0})` : "—"} />
+                    <Row k={L("Listed", "Listázva")} v={d.company.is_listed === false ? "no" : "yes"} />
+                    <Row k={L("Approved", "Jóváhagyva")} v={d.company.is_approved ? "yes" : "no"} />
+                    <Row k={L("Payouts set up", "Kifizetés beállítva")} v={d.company.stripe_ready ? "yes" : "no"} />
+                    <div style={{ marginTop: 11 }}><Btn full ghost onClick={startEdit}>{L("Edit these details", "Adatok szerkesztése")}</Btn></div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.5 }}>
+                      Prices, services and payout accounts are not editable here on purpose — only the company can change those.
+                    </div>
+                    <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={L("Name", "Név")} style={inputS} />
+                    <input value={f.tagline} onChange={(e) => setF({ ...f, tagline: e.target.value })} placeholder={L("Tagline", "Szlogen")} style={inputS} />
+                    <input value={f.area} onChange={(e) => setF({ ...f, area: e.target.value })} placeholder={L("Service area", "Ellátott terület")} style={inputS} />
+                    <div style={{ display: "flex", gap: 7 }}>
+                      <input value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} placeholder={L("City", "Város")} style={{ ...inputS, flex: 1 }} />
+                      <input value={f.country} onChange={(e) => setF({ ...f, country: e.target.value.toUpperCase().slice(0, 2) })} maxLength={2} placeholder="HU" style={{ ...inputS, width: 68, textAlign: "center" }} />
+                    </div>
+                    <input value={f.contact_phone} onChange={(e) => setF({ ...f, contact_phone: e.target.value })} placeholder={L("Contact phone", "Kapcsolattartó telefon")} style={inputS} />
+                    <div style={{ display: "flex", gap: 7 }}>
+                      <input value={f.tax_id} onChange={(e) => setF({ ...f, tax_id: e.target.value })} placeholder={L("Tax ID", "Adószám")} style={{ ...inputS, flex: 1 }} />
+                      <input value={f.reg_number} onChange={(e) => setF({ ...f, reg_number: e.target.value })} placeholder={L("Reg. number", "Cégjegyzékszám")} style={{ ...inputS, flex: 1 }} />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "3px 0 9px" }}>
+                      <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>{L("Radius", "Sugár")}</span>
+                      <input type="range" min="1" max="200" value={f.service_radius_km} onChange={(e) => setF({ ...f, service_radius_km: Number(e.target.value) })} style={{ flex: 1, accentColor: C.navy }} />
+                      <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, minWidth: 48, textAlign: "right" }}>{f.service_radius_km} km</span>
+                    </div>
+                    {[["is_approved", "Approved"], ["is_listed", "Listed publicly"]].map(([k, label]) => (
+                      <label key={k} style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 0", cursor: "pointer" }}>
+                        <input type="checkbox" checked={!!f[k]} onChange={(e) => setF({ ...f, [k]: e.target.checked })} style={{ width: 17, height: 17, accentColor: C.navy }} />
+                        <span style={{ fontFamily: B, fontWeight: 700, fontSize: 12, color: C.ink }}>{label}</span>
+                      </label>
+                    ))}
+                    <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
+                      <Btn full ghost onClick={() => setEditing(false)}>{L("Cancel", "Mégse")}</Btn>
+                      <Btn full onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Btn>
+                    </div>
+                  </>
+                )}
+              </Sec>
+            )}
+
+            <Sec t={`Bookings · ${(d.bookings || []).length}`}>
+              {!(d.bookings || []).length && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint }}>{L("None.", "Nincs.")}</div>}
+              {(d.bookings || []).slice(0, 40).map((b) => (
+                <React.Fragment key={b.id}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderBottom: (b.started_at || b.finished_at || b.collected_at || b.returned_at) ? "none" : `1px solid ${C.line}` }}>
+                  <span style={{ fontFamily: B, fontSize: 11.5, color: C.ink }}>#{b.order_no} · {b.scheduled_date} {b.scheduled_slot}</span>
+                  <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, textAlign: "right" }}>{b.total_huf != null ? huf(b.total_huf) : "—"} · {b.payment_status || "—"}</span>
+                </div>
+                {(b.started_at || b.finished_at || b.collected_at || b.returned_at) && (
+                  <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, paddingBottom: 5 }}>
+                    {[[b.started_at, "started"], [b.finished_at, "finished"], [b.collected_at, "collected"], [b.returned_at, "returned"]]
+                      .filter(([t]) => t)
+                      .map(([t, lbl]) => `${lbl} ${(() => { try { return new Date(t).toLocaleString(LOC(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}`)
+                      .join(" · ")}
+                  </div>
+                )}
+                </React.Fragment>
+              ))}
+            </Sec>
+
+            <Sec t={`Reviews · ${(d.reviews || []).length}`}>
+              {!(d.reviews || []).length && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint }}>{L("None.", "Nincs.")}</div>}
+              {(d.reviews || []).map((r) => (
+                <div key={r.id} style={{ padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ color: C.amber, fontSize: 12 }}>{stars(r.stars ?? r.rating)}{r.removed_at ? <span style={{ color: C.red, fontFamily: B, fontSize: 10.5, fontWeight: 700 }}> · REMOVED</span> : null}</div>
+                  {(r.body || r.comment) && <div style={{ fontFamily: B, fontSize: 11.5, color: C.ink, marginTop: 2 }}>“{r.body || r.comment}”</div>}
+                </div>
+              ))}
+            </Sec>
+
+            <Sec t={`Complaints · ${(d.complaints || []).length}`}>
+              {!(d.complaints || []).length && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint }}>{L("None.", "Nincs.")}</div>}
+              {(d.complaints || []).map((x) => (
+                <div key={x.id} style={{ padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.ink }}>{x.subject || x.status}</div>
+                  {x.body && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>{x.body}</div>}
+                </div>
+              ))}
+            </Sec>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminUsers() {
   const { adminAllUsers, adminFetchUsers, adminUpdateUser, adminDeleteUser , session } = useStore();
   const isCeo = session?.isSuper === true;
@@ -3823,6 +5498,7 @@ function AdminUsers() {
   const [q, setQ] = useState("");
   const [viewDocs, setViewDocs] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [detail, setDetail] = useState(null);   // user id whose full record is open
 
   React.useEffect(() => {
     if (!adminAllUsers) adminFetchUsers().finally(() => setBusy(false));
@@ -3832,8 +5508,8 @@ function AdminUsers() {
 
   const filtered = (adminAllUsers || []).filter((u) =>
     (isCeo || u.role !== "admin") &&
-    (u.full_name || "").toLowerCase().includes(q.toLowerCase()) ||
-    (u.email || "").toLowerCase().includes(q.toLowerCase())
+    ((u.full_name || "").toLowerCase().includes(q.toLowerCase()) ||
+     (u.email || "").toLowerCase().includes(q.toLowerCase()))
   );
 
   const roleColor = { customer: C.navySoft, employee: C.green, company: "#7B4DE0" };
@@ -3843,7 +5519,7 @@ function AdminUsers() {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>Users ({(adminAllUsers || []).length})</div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 14, padding: "11px 14px", marginBottom: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
         <span style={{ opacity: .45 }}>🔍</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email…" style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("Search name or email…", "Keresés név vagy e-mail alapján…")} style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
         {q && <button onClick={() => setQ("")} style={{ border: "none", background: "none", color: C.inkFaint, cursor: "pointer" }}>✕</button>}
       </div>
       {filtered.map((u) => (
@@ -3852,7 +5528,7 @@ function AdminUsers() {
             <Avatar name={u.full_name || "?"} size={38} color={roleColor[u.role] || C.navySoft} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>
-                {u.deleted_name ? `Deleted user (${u.deleted_name})` : (u.full_name || "—")}
+                {u.deleted_name ? `${u.deleted_name} (deleted)` : (u.full_name || "—")}
               </div>
               <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.deleted_email || u.email}</div>
               {(u.phone || u.address || u.company_name) && (
@@ -3875,6 +5551,9 @@ function AdminUsers() {
           </div>
           {u.company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, marginLeft: 48 }}>🏢 {u.company_name}</div>}
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+            <button onClick={() => setDetail(u.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: "none", background: C.navyChip, color: C.navy, cursor: "pointer" }}>
+              📋 Full record
+            </button>
             {(u.documents || []).length > 0 && (
               <button onClick={() => setViewDocs({ title: `${u.full_name} — documents`, docs: u.documents })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
                 🪪 Docs ({u.documents.length})
@@ -3940,8 +5619,9 @@ function AdminUsers() {
           </div>
         </div>
       ))}
-      {filtered.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>No users found.</div>}
+      {filtered.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>{L("No users found.", "Nincs találat.")}</div>}
       {viewDocs && <DocViewer title={viewDocs.title} docs={viewDocs.docs} close={() => setViewDocs(null)} />}
+      {detail && <AdminUserDetail userId={detail} close={() => setDetail(null)} onChanged={adminFetchUsers} />}
       {confirmDel && (
         <ConfirmDialog
           title={L("Delete this account?", "Fiók törlése?")}
@@ -3980,7 +5660,7 @@ function AdminBookings() {
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>Orders by customer</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Orders by customer", "Rendelések ügyfelenként")}</div>
       <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{shown.length} order{shown.length === 1 ? "" : "s"} across {people.length} {people.length === 1 ? "person" : "people"} — tap a person to see their orders.</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
         {[{ id: "all", label: "All" }, { id: "active", label: "Active" }, { id: "done", label: "Done" }, { id: "cancelled", label: "Cancelled / Declined" }].map((f) => (
@@ -4016,7 +5696,7 @@ function AdminBookings() {
                           </div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          <StatusPill status={b.status} />
+                          <StatusPill status={b.status} fulfilment={b.fulfilment} />
                           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.navy, marginTop: 6 }}>{huf(b.total_huf)}</div>
                         </div>
                       </div>
@@ -4028,7 +5708,7 @@ function AdminBookings() {
           </div>
         );
       })}
-      {people.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>No orders in this filter.</div>}
+      {people.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>{L("No orders in this filter.", "Nincs rendelés ebben a szűrőben.")}</div>}
     </div>
   );
 }
@@ -4041,9 +5721,9 @@ function AdminLog() {
   const LBL = { company_approved: "✅ Approved company", company_rejected: "⛔ Rejected company", company_listed: "👁️ Listed company", company_unlisted: "🚫 Unlisted company", student_approved: "🎓 Approved student", student_rejected: "⛔ Rejected student", student_pending: "↩️ Reset student to pending", admin_granted: "🛡️ Granted admin access", admin_revoked: "🛡️ Revoked admin access", user_activated: "🔓 Reactivated account", user_deactivated: "🔒 Deactivated account", complaint_resolved: "🛟 Resolved complaint", complaint_in_progress: "🛟 Complaint in progress", complaint_open: "🛟 Reopened complaint", account_deleted: "🗑️ Deleted account" };
   return (
     <div style={{ padding: "16px 18px 40px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginBottom: 4 }}>Decision log</div>
-      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>Every admin decision, signed by who made it.</div>
-      {rows.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>No decisions logged yet.</div>}
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginBottom: 4 }}>{L("Decision log", "Döntési napló")}</div>
+      <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{L("Every admin decision, signed by who made it.", "Minden admin döntés, aláírva azzal, aki hozta.")}</div>
+      {rows.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("No decisions logged yet.", "Még nincs naplózott döntés.")}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {rows.map((e) => (
           <div key={e.id} style={{ background: C.card, borderRadius: 14, padding: "11px 14px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
@@ -4052,6 +5732,192 @@ function AdminLog() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* What to invoice — CEO only.
+
+   Cleano's commission is already collected: Stripe splits it before the
+   partner's money lands. What is left is paperwork, and this screen exists to
+   make that paperwork a copy-and-paste job rather than a reconciliation
+   exercise across the bookings table and the Stripe dashboard.
+
+   Everything an invoice needs is on the card: who to bill, their tax number and
+   address, which jobs it covers, and the net/VAT/gross split. Record the number
+   afterwards and the jobs move out of the list. */
+function BillingList() {
+  const { billingList, markInvoiced, unmarkInvoiced } = useStore();
+  const toast = useToast();
+  const [data, setData] = React.useState(null);
+  const [settled, setSettled] = React.useState(false);
+  const [openCo, setOpenCo] = React.useState(null);
+  const [num, setNum] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const load = () => billingList(settled).then(setData);
+  React.useEffect(() => { setData(null); load(); }, [settled]);
+  if (!data) return null;
+
+  const ft = (n) => `${Math.round(Number(n) || 0).toLocaleString("hu-HU")} Ft`;
+  const money = (n) => (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("hu-HU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  /* Everything an invoice needs, as plain text. Faster than reading it off a
+     screen and typing it into another one. */
+  const asText = (c) => [
+    `${L("Bill to", "Számlázási név")}: ${c.name}`,
+    c.tradingName && c.tradingName !== c.name ? `${L("Trading name", "Cégnév")}: ${c.tradingName}` : null,
+    `${L("Tax number", "Adószám")}: ${c.taxId || "—"}`,
+    `${L("Address", "Cím")}: ${c.address || "—"}`,
+    `${L("Email", "E-mail")}: ${c.email || "—"}`,
+    "",
+    `${L("Item", "Tétel")}: ${L("Cleano platform commission", "Cleano platform jutalék")}`,
+    `${L("Jobs covered", "Érintett munkák")}: ${c.jobs.length}`,
+    ...c.jobs.map((jb) => `  #${jb.orderNo} · ${jb.date} · ${ft(jb.keptHuf)}`),
+    "",
+    `${L("Net", "Nettó")}: ${money(c.net)} Ft`,
+    `${L("VAT", "ÁFA")} ${data.vatPct}%: ${money(c.vat)} Ft`,
+    `${L("Gross", "Bruttó")}: ${money(c.gross)} Ft`,
+  ].filter(Boolean).join("\n");
+
+  const copy = async (c) => {
+    try { await navigator.clipboard.writeText(asText(c)); toast(L("Copied", "Kimásolva")); }
+    catch { toast(L("Could not copy — select the text instead", "Nem sikerült másolni — jelöld ki a szöveget")); }
+  };
+
+  const doMark = async (c) => {
+    if (!num.trim()) return toast(L("Enter the invoice number you issued", "Írd be a kiállított számla számát"));
+    setBusy(true);
+    const r = await markInvoiced(c.jobs.map((jb) => jb.id), num.trim(), new Date().toISOString().slice(0, 10));
+    setBusy(false);
+    if (r?.error) return toast(r.error);
+    toast(L(`Recorded on ${r.marked} job(s)`, `${r.marked} munkán rögzítve`));
+    setOpenCo(null); setNum(""); load();
+  };
+
+  const doUnmark = async (c) => {
+    setBusy(true);
+    const r = await unmarkInvoiced(c.jobs.map((jb) => jb.id));
+    setBusy(false);
+    if (r?.error) return toast(r.error);
+    toast(L("Undone", "Visszavonva")); load();
+  };
+
+  /* A plain <a href> would arrive without the auth header and bounce off the
+     endpoint, so fetch it with the token and hand the browser a blob. */
+  const downloadCsv = async () => {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/invoices/admin/billing.csv${settled ? "?settled=1" : ""}`,
+        { headers: { Authorization: "Bearer " + getToken() } });
+      if (!r.ok) throw new Error(String(r.status));
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cleano-billing-${settled ? "invoiced" : "to-invoice"}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch { toast(L("Could not build the export", "Az exportot nem sikerült elkészíteni")); }
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>
+        {settled ? L("Already invoiced", "Már kiszámlázva") : L("To invoice", "Kiszámlázandó")}
+      </div>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.55 }}>
+        {settled
+          ? L("Commission you have already billed.", "Az általad már kiszámlázott jutalék.")
+          : L("Commission already collected through Stripe. Raise your invoice, then record the number here.",
+              "A Stripe-on már beszedett jutalék. Állítsd ki a számlát, majd rögzítsd itt a számát.")}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, margin: "10px 0 12px", flexWrap: "wrap" }}>
+        {[{ id: false, label: L("To invoice", "Kiszámlázandó") }, { id: true, label: L("Done", "Kész") }].map((f) => (
+          <button key={String(f.id)} onClick={() => setSettled(f.id)}
+            style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: settled === f.id ? C.navy : C.card, color: settled === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
+            {f.label}
+          </button>
+        ))}
+        {data.companies.length > 0 && (
+          <button onClick={downloadCsv} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: C.card, color: C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
+            ⬇ {L("Spreadsheet", "Táblázat")}
+          </button>
+        )}
+      </div>
+
+      {data.companies.length === 0 && (
+        <div style={{ background: C.card, borderRadius: 18, padding: 28, textAlign: "center", fontFamily: B, fontSize: 12.5, color: C.inkSoft, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>
+          {settled ? L("Nothing recorded yet.", "Még nincs rögzítve semmi.") : L("Nothing to invoice. Finished, paid jobs appear here.", "Nincs kiszámlázandó. A befejezett, kifizetett munkák itt jelennek meg.")}
+        </div>
+      )}
+
+      {data.companies.map((c) => (
+        <div key={c.companyId} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{c.name}</div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
+                {L("Tax number", "Adószám")}: {c.taxId || "—"}<br />
+                {c.address || <span style={{ color: C.coral }}>{L("no billing address on file", "nincs számlázási cím")}</span>}<br />
+                {c.email || "—"}
+              </div>
+            </div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.navy }}>{money(c.gross)} Ft</div>
+              <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 2 }}>{c.jobs.length} {L("jobs", "munka")}</div>
+            </div>
+          </div>
+
+          <div style={{ background: C.bg, borderRadius: 12, padding: "9px 11px", marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.ink, lineHeight: 1.75 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span>{L("Net", "Nettó")}</span><b>{money(c.net)} Ft</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span>{L("VAT", "ÁFA")} {data.vatPct}%</span><b>{money(c.vat)} Ft</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.line}`, marginTop: 4, paddingTop: 4 }}><span>{L("Gross", "Bruttó")}</span><b>{money(c.gross)} Ft</b></div>
+            {c.absorbed > 0 && (
+              <div style={{ fontSize: 10.5, color: C.inkFaint, marginTop: 5, lineHeight: 1.5 }}>
+                {L("Headline commission was", "A jutalék névlegesen")} {ft(c.totalCommission)} — {ft(c.absorbed)} {L("of card costs were absorbed by Cleano and are not income.", "kártyaköltséget a Cleano vállalt, ez nem bevétel.")}
+              </div>
+            )}
+          </div>
+
+          <details style={{ marginTop: 9 }}>
+            <summary style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.navySoft, cursor: "pointer" }}>
+              {L("Jobs on this invoice", "A számla tételei")}
+            </summary>
+            <div style={{ marginTop: 6 }}>
+              {c.jobs.map((jb) => (
+                <div key={jb.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 11, color: C.inkSoft, padding: "3px 0" }}>
+                  <span>#{jb.orderNo} · {jb.date}</span>
+                  <span>{ft(jb.keptHuf)}{jb.invoiceNo ? ` · ${jb.invoiceNo}` : ""}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+
+          {!c.billable && !settled && (
+            <div style={{ background: C.coralSoft, borderRadius: 10, padding: "7px 10px", marginTop: 9, fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.coralText || C.coral }}>
+              {L("Ask this partner for their billing address before invoicing.", "Kérd el a partner számlázási címét a számlázás előtt.")}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
+            <Btn full ghost onClick={() => copy(c)}>{L("Copy details", "Adatok másolása")}</Btn>
+            {settled
+              ? <Btn full ghost disabled={busy} onClick={() => doUnmark(c)}>{L("Undo", "Visszavonás")}</Btn>
+              : <Btn full onClick={() => { setOpenCo(c.companyId); setNum(""); }}>{L("Record invoice", "Számla rögzítése")}</Btn>}
+          </div>
+
+          {openCo === c.companyId && (
+            <div style={{ marginTop: 10 }}>
+              <input value={num} onChange={(e) => setNum(e.target.value)} placeholder={L("Invoice number you issued", "A kiállított számla száma")}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: `1px solid ${C.line}`, fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink }} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <Btn full ghost onClick={() => setOpenCo(null)}>{L("Cancel", "Mégse")}</Btn>
+                <Btn full disabled={busy} onClick={() => doMark(c)}>{busy ? L("Saving...", "Mentés...") : L("Save", "Mentés")}</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -4065,7 +5931,7 @@ function AdminPanel({ tab }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>Admin panel</div>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{L("Admin panel", "Admin felület")}</div>
             <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? "CEO admin · Cleano Magyarország" : "Company review team"}</div>
           </div>
           <button onClick={logout} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 99, padding: "7px 14px", fontFamily: B, fontWeight: 700, fontSize: 11, color: "#C9D2F5", cursor: "pointer" }}>
@@ -4074,11 +5940,11 @@ function AdminPanel({ tab }) {
         </div>
       </div>
       <div style={{ flex: 1 }}>
-        {(tab === "home" || tab === "dashboard") && <AdminDashboard />}
+        {(tab === "home" || tab === "dashboard") && <><AdminDashboard />{isCeo && <div style={{ padding: "0 20px" }}><BillingList /></div>}</>}
         {tab === "companies" && <AdminCompanies />}
         {tab === "users" && <AdminUsers />}
         {tab === "bookings" && <AdminBookings />}
-        {tab === "complaints" && <AdminComplaints />}
+        {tab === "complaints" && <><CustomerReportQueue /><ReviewReports /><AdminComplaints /></>}
         {tab === "log" && <AdminLog />}
       </div>
     </div>
@@ -4223,10 +6089,10 @@ function Shell() {
               {justBooked?.pricing_type === "subscription"
                 ? (HUL()
                     ? <>Az előfizetésed aktív ({everyP(justBooked.period)}).<br />Első alkalom: {dayLabel(justBooked.scheduled_date)}, utána automatikusan ismétlődik.<br />A Foglalások fül alatt bármikor módosíthatod.</>
-                    : <>Your {periodLabel(justBooked.period)} plan is active.<br />First visit {dayLabel(justBooked.scheduled_date)}, then it repeats automatically.<br />Manage or cancel anytime under Bookings.</>)
+                    : <>Your {periodLabel(justBooked.period)} plan is active.<br />First visit {dayLabel(justBooked.scheduled_date)}, then it repeats automatically.<br />{L("Manage or cancel anytime under Bookings.", "Bármikor kezelheted vagy lemondhatod a Foglalásoknál.")}</>)
                 : (HUL()
                     ? <>A cég már látja a kérésedet,<br />hamarosan takarítót jelöl ki.</>
-                    : <>The company sees your request now and<br />will assign a cleaner shortly.</>)}
+                    : <>{L("The company sees your request now and will assign a cleaner shortly.", "A cég most látja a kérésedet, és hamarosan kioszt egy takarítót.")}</>)}
             </div>
             <div className="cl-rise" style={{ marginTop: 32, width: "100%", maxWidth: 300, animationDelay: ".3s" }}>
               <Btn full mint onClick={() => { setJustBooked(false); setTab("bookings"); }}>{L("Track my booking", "Foglalás követése")}</Btn>
@@ -4256,11 +6122,51 @@ function Shell() {
   );
 }
 
+function UpdateGate({ children }) {
+  const [blocked, setBlocked] = useState(false);
+  const urlsRef = React.useRef({});
+  React.useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch((API_BASE || "") + "/api/app/version");
+        const d = await r.json();
+        if (alive && d) { urlsRef.current = d; if (d.min && verLt(APP_VERSION, d.min)) setBlocked(true); }
+      } catch { /* offline or endpoint missing — never block on failure */ }
+    };
+    check();
+    const t = setInterval(check, 6 * 3600e3);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (!blocked) return children;
+  return (
+    <div style={{ minHeight: "100vh", background: C.navyDeep, display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
+      <div style={{ textAlign: "center", maxWidth: 340 }}>
+        <Octo size={64} />
+        <div style={{ fontFamily: F, fontWeight: 800, fontSize: 20, color: "#fff", marginTop: 18 }}>{L("Please update Cleano", "Kérjük, frissítsd a Cleanót")}</div>
+        <div style={{ fontFamily: B, fontSize: 13.5, color: "#B9C0DF", marginTop: 10, lineHeight: 1.6 }}>
+          {L("This version is too old to work safely with our servers. Update from the store and you're straight back in.", "Ez a verzió már túl régi a biztonságos működéshez. Frissíts az áruházból, és máris folytathatod.")}
+        </div>
+        <Btn full style={{ marginTop: 22 }} onClick={() => {
+          const ua = navigator.userAgent || "";
+          const ios = /iPhone|iPad|iPod/.test(ua);
+          const u = ios
+            ? (urlsRef.current.iosUrl || "itms-apps://search.itunes.apple.com/WebObjects/MZSearch.woa/wa/search?media=software&term=Cleano%20Cleaning")
+            : (urlsRef.current.androidUrl || "https://play.google.com/store/apps/details?id=com.cleano.app");
+          window.open(u, "_blank");
+        }}>{L("Open the store", "Áruház megnyitása")}</Btn>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <StoreProvider>
       <ToastProvider>
-        <Shell />
+        <UpdateGate>
+          <Shell />
+        </UpdateGate>
       </ToastProvider>
     </StoreProvider>
   );

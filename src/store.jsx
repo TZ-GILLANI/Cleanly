@@ -198,8 +198,12 @@ export function StoreProvider({ children }) {
   /* language (en | hu) — persisted, synced to a customer's profile when they change it */
   const [lang, setLangState] = useState(getLang);
   const [feePct, setFeePct] = useState(10);
+  const [cancelPolicy, setCancelPolicy] = useState({ freeH: 24, halfH: 2, halfPct: 50 });
   const t = (key, vars) => translate(lang, key, vars);
-  const setLang = (l) => { setLangState(l); saveLang(l); if (session?.role === "customer") updateProfile({ lang: l }); };
+  /* Every role needs their language on the server, because that is what decides
+     the language of push notifications — which never pass through the app. It was
+     only being saved for customers, so companies and cleaners got English. */
+  const setLang = (l) => { setLangState(l); saveLang(l); if (session?.userId) updateProfile({ lang: l }); };
 
   /* persist demo db */
   useEffect(() => {
@@ -251,13 +255,21 @@ export function StoreProvider({ children }) {
   }, [session]);
 
   const loadFee = async () => {
-    try { const c = await api("/payments/config"); if (c && c.feePct != null) setFeePct(Number(c.feePct)); } catch {}
+    try {
+      const c = await api("/payments/config");
+      if (c && c.feePct != null) setFeePct(Number(c.feePct));
+      if (c && c.cancelPolicy) setCancelPolicy(c.cancelPolicy);
+    } catch {}
   };
   const loadAllData = useCallback(async (sess) => {
     loadFee();
     const next = { companies: [], services: [], employees: [], bookings: [], notices: [], invites: [], reviews: [] };
+    // 4.6 — ask the server to filter by service area using the customer's own
+    // address. Companies without coordinates are never hidden (server-side).
+    const nearQ = (sess.role === "customer" && sess.address)
+      ? "?near=" + encodeURIComponent(String(sess.address).slice(0, 200)) : "";
     const [companies, services, reviews] = await Promise.all([
-      api("/companies"),
+      api("/companies" + nearQ),
       api("/services"),
       api("/reviews"),
     ]);
@@ -402,7 +414,7 @@ export function StoreProvider({ children }) {
   const updateCompany = async (fields) => {
     if (isApiMode) {
       try {
-        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability } });
+        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability, country: fields.country, serviceLat: fields.serviceLat, serviceLng: fields.serviceLng, serviceRadiusKm: fields.serviceRadiusKm, currency: fields.currency, requirements: fields.requirements, billingName: fields.billingName, billingZip: fields.billingZip, billingCity: fields.billingCity, billingAddress: fields.billingAddress, billingEmail: fields.billingEmail } });
         setDb(d => ({ ...d, companies: d.companies.map(c => c.id === session.companyId ? company : c) }));
         return {};
       } catch (e) { return { error: e.message }; }
@@ -417,7 +429,7 @@ export function StoreProvider({ children }) {
     if (isApiMode) {
       try {
         // the server derives snapshot, pricing type, period and TOTAL from the service row — clients can't set prices
-        const { booking } = await api("/bookings", { method: "POST", body: { companyId: b.companyId, serviceId: b.service.id, scheduledDate: b.date, scheduledSlot: b.slot, address: b.address, note: b.note, hours: b.hours || null } });
+        const { booking } = await api("/bookings", { method: "POST", body: { companyId: b.companyId, serviceId: b.service.id, scheduledDate: b.date, scheduledSlot: b.slot, address: b.address, note: b.note, hours: b.hours || null, units: b.units || null, requirementsAck: b.requirementsAck === true } });
         setDb(d => ({ ...d, bookings: [booking, ...d.bookings] }));
         return booking;
       } catch (e) { setError(e.message); return null; }
@@ -432,6 +444,16 @@ export function StoreProvider({ children }) {
   };
 
   /* ── Card payments (Barion, API mode only) ── */
+  const fetchSubscriptions = async () => {
+    if (!isApiMode) return [];
+    try { const r = await api("/subscriptions"); return r.subscriptions || []; } catch { return []; }
+  };
+  const subscriptionAction = async (id, action) => {
+    if (!isApiMode) return { error: "offline" };
+    try { return await api(`/subscriptions/${id}/${action}`, { method: "POST" }); }
+    catch (e) { return { error: e.message }; }
+  };
+
   const startPayment = async (bookingId) => {
     if (!isApiMode) return { error: "demo" };
     try { return await api("/payments/start", { method: "POST", body: { bookingId } }); }
@@ -646,7 +668,7 @@ export function StoreProvider({ children }) {
   const upsertService = async (svc) => {
     if (isApiMode) {
       try {
-        const body = { name: svc.name, description: svc.description, icon: svc.icon, priceHuf: svc.price_huf, minutes: svc.minutes, tasks: svc.tasks, isActive: svc.is_active, pricingType: svc.pricing_type, hourlyRateHuf: svc.hourly_rate_huf, minHours: svc.min_hours, maxHours: svc.max_hours, period: svc.period , promoPct: svc.promo_pct === undefined ? undefined : (svc.promo_pct || 0) };
+        const body = { name: svc.name, description: svc.description, icon: svc.icon, priceHuf: svc.price_huf, minutes: svc.minutes, tasks: svc.tasks, isActive: svc.is_active, pricingType: svc.pricing_type, hourlyRateHuf: svc.hourly_rate_huf, minHours: svc.min_hours, maxHours: svc.max_hours, unitLabel: svc.unit_label, unitPriceHuf: svc.unit_price_huf, minUnits: svc.min_units, maxUnits: svc.max_units, period: svc.period , promoPct: svc.promo_pct === undefined ? undefined : (svc.promo_pct || 0), fulfilment: svc.fulfilment, turnaroundDays: svc.turnaround_days, slotCapacity: svc.slot_capacity };
         if (svc.id) {
           const { service } = await api("/services/" + svc.id, { method: "PUT", body });
           setDb(d => ({ ...d, services: d.services.map(s => s.id === svc.id ? service : s) }));
@@ -866,9 +888,90 @@ export function StoreProvider({ children }) {
     try { const d = await api(`/admin/companies/${companyId}/services`); return d.services || []; }
     catch (e) { return []; }
   };
-  const adminBroadcast = async (title, body, audience) => {
+  /* ── Reporting a customer (company → admin, never shown to the customer) ── */
+  const reportCustomer = async (bookingId, category, detail) => {
     if (!isApiMode) return { error: "Live mode only" };
-    try { return await api("/notifications/broadcast", { method: "POST", body: { title, body, audience } }); }
+    try { await api("/customer-reports", { method: "POST", body: { bookingId, category, detail } }); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+  const adminCustomerReports = async () => {
+    if (!isApiMode) return [];
+    try { const r = await api("/customer-reports"); return r.reports || []; } catch { return []; }
+  };
+  const adminHandleCustomerReport = async (id, decision, note) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { await api(`/customer-reports/${id}/handle`, { method: "POST", body: { decision, note } }); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+
+  /* ── Invoices ──
+     Nothing is issued from here. These read the list of commission that has
+     been collected but not yet invoiced, and record the numbers afterwards. */
+  const billingList = async (settled = false) => {
+    if (!isApiMode) return null;
+    try { return await api(`/invoices/admin/billing${settled ? "?settled=1" : ""}`); } catch { return null; }
+  };
+  const markInvoiced = async (bookingIds, invoiceNumber, issuedAt) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { return await api("/invoices/admin/mark-invoiced", { method: "POST", body: { bookingIds, invoiceNumber, issuedAt } }); }
+    catch (e) { return { error: e.message }; }
+  };
+  const unmarkInvoiced = async (bookingIds) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { return await api("/invoices/admin/unmark", { method: "POST", body: { bookingIds } }); }
+    catch (e) { return { error: e.message }; }
+  };
+
+  const fetchInvoices = async (bookingId) => {
+    if (!isApiMode) return null;
+    try { return await api(`/invoices/${bookingId}`); } catch { return null; }
+  };
+  const uploadPartnerInvoice = async (bookingId, body) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { await api(`/invoices/${bookingId}/partner`, { method: "POST", body }); setDataVersion(v => v + 1); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+  const fetchOutstandingInvoices = async () => {
+    if (!isApiMode) return [];
+    try { const r = await api("/invoices/company/outstanding"); return r.bookings || []; } catch { return []; }
+  };
+
+  /* ── 5.10 / 5.11 admin: see everything, and fix a company's details ── */
+  const adminUserFull = async (id) => {
+    if (!isApiMode) return null;
+    try { return await api(`/admin/users/${id}/full`); } catch (e) { setError(e.message); return null; }
+  };
+  const adminEditCompanyDetails = async (id, fields) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { const r = await api(`/admin/companies/${id}/details`, { method: "PUT", body: fields }); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+
+  /* ── 5.9 review moderation ── */
+  const reportReview = async (id, reason) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { await api(`/reviews/${id}/report`, { method: "POST", body: { reason } }); setDataVersion((v) => v + 1); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+  const adminFetchReportedReviews = async () => {
+    if (!isApiMode) return [];
+    try { const r = await api("/reviews/reported"); return r.reviews || []; } catch { return []; }
+  };
+  const adminDismissReport = async (id) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { await api(`/reviews/${id}/dismiss`, { method: "POST" }); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+  const adminRemoveReview = async (id, reason) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { await api(`/reviews/${id}/remove`, { method: "POST", body: { reason } }); return {}; }
+    catch (e) { return { error: e.message }; }
+  };
+
+  const adminBroadcast = async (title, body, audience, extra = {}) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    // extra: { city, country, userId, preview }  — preview returns only a recipient count
+    try { return await api("/notifications/broadcast", { method: "POST", body: { title, body, audience, ...extra } }); }
     catch (e) { return { error: e.message }; }
   };
 
@@ -877,13 +980,13 @@ export function StoreProvider({ children }) {
 
   const value = {
     isLive: isApiMode, session, loading, error, clearError: () => setError(null),
-    feePct,
+    feePct, cancelPolicy,
     lang, setLang, t, refreshData, dataVersion,
     companies: db.companies, services: db.services, employees: visibleEmployees, allEmployees: db.employees,
     bookings: db.bookings, notices: db.notices, invites: db.invites, reviews: db.reviews,
     signupCustomer, signupCompany, signupEmployee, login, logout,
     updateProfile, changePassword, updateCompany,
-    createBooking, cancelBooking, addReview, declineBooking,
+    createBooking, cancelBooking, addReview, declineBooking, fetchSubscriptions, subscriptionAction,
     startPayment, getPaymentStatus, deleteAccount,
     fetchNotifications, markNotificationsRead, clearNotifications, adminBroadcast, adminFetchCompanyServices, notifications: notif.notifications, unreadNotif: notif.unread,
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
@@ -894,6 +997,11 @@ export function StoreProvider({ children }) {
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService, removeEmployee, fetchPendingCleaners, decideCleaner, setComplaintHandler, setCompanyAction, fetchCompanyReviews, hideDeletedIdentity,
     adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
+    reportReview, adminFetchReportedReviews, adminRemoveReview, adminDismissReport,
+    adminUserFull, adminEditCompanyDetails,
+    fetchInvoices, uploadPartnerInvoice, fetchOutstandingInvoices,
+    reportCustomer, adminCustomerReports, adminHandleCustomerReport,
+    billingList, markInvoiced, unmarkInvoiced,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */
     adminStats:        isApiMode ? adminApi.stats     : demoAdminStats(db),

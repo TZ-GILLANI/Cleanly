@@ -108,10 +108,25 @@ async function sendPush(userId, title, body) {
 export async function notify(userId, type, title, body, bookingId) {
   try {
     if (!userId) return;
+
+    /* Translate to the RECIPIENT's language, not the sender's. A push notification
+       is read on a locked phone and never passes through the app, so if it isn't
+       translated here it is never translated at all. */
+    let t = title || "", b = body || null;
+    try {
+      const { tr } = await import("./i18n-server.js");
+      const u = await query("SELECT lang FROM users WHERE id = $1", [userId]);
+      const lang = u.rows[0]?.lang;
+      if (lang && String(lang).slice(0, 2).toLowerCase() !== "en") {
+        t = tr(lang, t);
+        if (b) b = tr(lang, b);
+      }
+    } catch (e) { console.error("notify translate:", e.message); }
+
     await query(
       "INSERT INTO notifications (user_id, type, title, body, booking_id) VALUES ($1,$2,$3,$4,$5)",
-      [userId, type, title || "", body || null, bookingId || null]
+      [userId, type, t, b, bookingId || null]
     );
-    sendPush(userId, title, body); // fire-and-forget
+    sendPush(userId, t, b); // fire-and-forget
   } catch (e) { console.error("notify failed:", e.message); }
 }

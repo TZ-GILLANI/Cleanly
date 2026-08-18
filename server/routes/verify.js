@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "./auth.js";
 import { sendEmail, mailerConfigured } from "../lib/mailer.js";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 
@@ -96,6 +97,97 @@ router.post("/email/check", requireAuth, async (req, res) => {
     res.json({ verified: true });
   } catch (err) {
     res.status(500).json({ error: "Verification check failed" });
+  }
+});
+
+
+/* ── 5.9 SIGNUP verification — unauthenticated by design ─────────────
+   Verification happens ON the signup form, before any account exists, so a
+   mistyped number can simply be corrected instead of creating a dead account.
+   Returns a short-lived signed token proving "this exact number was verified";
+   /auth/register then requires that token.
+
+   These endpoints send SMS without a login, so the abuse limits below are
+   mandatory, not optional — every message costs real money.               */
+
+const signupToken = (kind, value) => jwt.sign(
+  { k: kind, v: String(value).toLowerCase().trim(), t: "signup-verify" },
+  process.env.JWT_SECRET, { expiresIn: "15m" });
+
+export function verifySignupToken(token, kind, value) {
+  try {
+    const d = jwt.verify(String(token || ""), process.env.JWT_SECRET);
+    return d && d.t === "signup-verify" && d.k === kind &&
+           d.v === String(value || "").toLowerCase().trim();
+  } catch { return false; }
+}
+
+router.post("/signup/start", async (req, res) => {
+  const { phone, email } = req.body || {};
+  const target = phone || email;
+  if (!target) return res.status(400).json({ error: "Phone or email required" });
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "ip";
+
+  // hard caps: per target, per IP, per day — SMS pumping is a real attack
+  if (!rateLimit("su:t:" + target, 3, 60 * 60e3))
+    return res.status(429).json({ error: "Too many codes for this number — try again in an hour" });
+  if (!rateLimit("su:ip:" + ip, 10, 60 * 60e3))
+    return res.status(429).json({ error: "Too many attempts — try again later" });
+  if (!rateLimit("su:tday:" + target, 6, 24 * 3600e3))
+    return res.status(429).json({ error: "Daily limit reached for this number" });
+
+  try {
+    if (phone) {
+      const dup = await query("SELECT 1 FROM users WHERE phone = $1", [String(phone).trim()]);
+      if (dup.rows.length) return res.status(409).json({ error: "That phone number already has an account" });
+      if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
+      const body = new URLSearchParams({ To: String(phone).trim(), Channel: req.body.channel === "sms" ? "sms" : "whatsapp" });
+      const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/Verifications`, {
+        method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body });
+      const data = await r.json();
+      if (!r.ok) return res.status(502).json({ error: data.message || "Could not send code" });
+      return res.json({ sent: true, channel: data.channel });
+    }
+    // email path — 6-digit code held in a short-lived signed cookie-free token
+    const dup = await query("SELECT 1 FROM users WHERE LOWER(email) = LOWER($1)", [String(email).trim()]);
+    if (dup.rows.length) return res.status(409).json({ error: "That email already has an account" });
+    if (!mailerConfigured()) return res.status(503).json({ error: "verification_not_configured" });
+    const code = String(crypto.randomInt(100000, 999999));
+    const ticket = jwt.sign({ e: String(email).toLowerCase().trim(), c: code, t: "signup-code" },
+      process.env.JWT_SECRET, { expiresIn: "15m" });
+    sendEmail(String(email).trim(), "Your Cleano code",
+      `<div style="font-family:sans-serif"><p>Your Cleano verification code:</p>
+       <p style="font-size:28px;font-weight:800;letter-spacing:4px">${code}</p>
+       <p style="color:#777">It expires in 15 minutes. If you didn't request it, ignore this email.</p></div>`);
+    res.json({ sent: true, ticket });
+  } catch (e) {
+    console.error("signup verify start:", e.message);
+    res.status(500).json({ error: "Could not send the code" });
+  }
+});
+
+router.post("/signup/check", async (req, res) => {
+  const { phone, email, code, ticket } = req.body || {};
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "ip";
+  if (!rateLimit("suc:ip:" + ip, 20, 60 * 60e3))
+    return res.status(429).json({ error: "Too many attempts — try again later" });
+  try {
+    if (phone) {
+      if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
+      const body = new URLSearchParams({ To: String(phone).trim(), Code: String(code || "").trim() });
+      const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/VerificationCheck`, {
+        method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body });
+      const data = await r.json();
+      if (!r.ok || data.status !== "approved") return res.status(400).json({ error: "That code didn't match" });
+      return res.json({ verified: true, token: signupToken("phone", phone) });
+    }
+    const d = jwt.verify(String(ticket || ""), process.env.JWT_SECRET);
+    if (!d || d.t !== "signup-code" || d.e !== String(email || "").toLowerCase().trim())
+      return res.status(400).json({ error: "Please request a new code" });
+    if (String(d.c) !== String(code || "").trim()) return res.status(400).json({ error: "That code didn't match" });
+    res.json({ verified: true, token: signupToken("email", email) });
+  } catch {
+    res.status(400).json({ error: "That code didn't match, or it expired" });
   }
 });
 

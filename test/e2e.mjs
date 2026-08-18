@@ -7,13 +7,17 @@ process.env.PORT = "3399";
 
 const BASE = "http://localhost:3399";
 let passed = 0, failed = 0;
+/* Dates must be relative: a hard-coded 2026 date silently became "in the past"
+   and started failing the new past-date guard. */
+const dPlus = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+
 const ok = (name, cond, extra = "") => {
   if (cond) { passed++; console.log(`  ✅ ${name}`); }
   else { failed++; console.log(`  ❌ ${name} ${extra}`); }
 };
 const j = async (path, { method = "GET", token, body } = {}) => {
   const res = await fetch(BASE + path, {
-    method,
+    method, signal: AbortSignal.timeout(8000),
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -126,7 +130,7 @@ const svc = await j("/api/services", { method: "POST", token: coTok, body: { nam
 ok("company creates service", svc.status === 201, JSON.stringify(svc.data));
 const svcId = svc.data.service?.id;
 
-const bk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: "2026-07-20", scheduledSlot: "09:30", address: "Piac utca 1, Debrecen", hours: null } });
+const bk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: dPlus(7), scheduledSlot: "09:30", address: "Piac utca 1, Debrecen", hours: null } });
 ok("customer books", bk.status === 201, JSON.stringify(bk.data));
 ok("booking gets a sequential order number", typeof bk.data.booking?.order_no === "number" && bk.data.booking.order_no >= 1, `order_no ${bk.data.booking?.order_no}`);
 ok("student discount + 10% fee on top (20000 → 18000 + 1800 = 19800)", bk.data.booking?.total_huf === 19800 && bk.data.booking?.service_fee_huf === 1800, `got ${bk.data.booking?.total_huf} fee ${bk.data.booking?.service_fee_huf}`);
@@ -148,7 +152,7 @@ await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [bkId])
 const coPaid = await j("/api/bookings", { token: coTok });
 ok("company sees the order once it is paid", (coPaid.data.bookings || []).some((b) => b.id === bkId));
 // company declines a PAID booking -> refund path runs (Stripe not configured in tests -> no-op, must not crash)
-const declBk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: "2026-07-24", scheduledSlot: "10:00", address: "Piac utca 1, Debrecen" } });
+const declBk = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: svcId, scheduledDate: dPlus(9), scheduledSlot: "10:00", address: "Piac utca 1, Debrecen" } });
 await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [declBk.data.booking.id]);
 const declined = await j(`/api/bookings/${declBk.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 8, declineReason: "Unavailable" } });
 ok("company can decline a paid booking without error (refund path)", declined.status === 200 && declined.data.booking?.status === 8, JSON.stringify(declined.data).slice(0,100));
@@ -156,15 +160,19 @@ ok("company can decline a paid booking without error (refund path)", declined.st
 console.log("\n── subscription lifecycle ──");
 const sub = await j("/api/services", { method: "POST", token: coTok, body: { name: "Weekly plan", description: "sub", priceHuf: 12000, minutes: 90, pricingType: "subscription", period: "weekly" } });
 const subSvcId = sub.data.service?.id;
-const sb = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: "2026-07-21", scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
+const sb = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: dPlus(11), scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
 ok("subscription booked", sb.status === 201);
-const dup = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: "2026-07-28", scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
+const dup = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: dPlus(13), scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
 ok("duplicate active subscription blocked", dup.status === 400, JSON.stringify(dup.data));
 
+// UPDATE 1 (3.4): the old "chain" is gone. Completing a visit must NOT create
+// the next one — the scheduler owns the schedule. See test/subscriptions.mjs.
 const done = await j(`/api/bookings/${sb.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
-ok("completing visit auto-schedules next (weekly +7d)", done.data.next?.scheduled_date?.slice?.(0, 10) === "2026-07-28" || String(done.data.next?.scheduled_date).startsWith("2026-07-28"), JSON.stringify(done.data.next?.scheduled_date));
+ok("completing a visit no longer chains a new booking", done.status === 200 && !done.data.next, JSON.stringify(done.data.next));
 const again = await j(`/api/bookings/${sb.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
-ok("re-completing does NOT duplicate next visit", again.data.next === null);
+ok("re-completing stays harmless", again.status === 200 && !again.data.next);
+const subsList = await j("/api/subscriptions", { token: custTok });
+ok("subscriptions endpoint responds for the customer", subsList.status === 200 && Array.isArray(subsList.data.subscriptions), JSON.stringify(subsList.data).slice(0, 80));
 
 console.log("\n── invoices & archiving ──");
 const invEarly = await j(`/api/bookings/${bkId}/invoice`, { method: "PUT", token: coTok, body: { invoice: { name: "szamla.pdf", type: "application/pdf", data: "data:application/pdf;base64,x" } } });

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db.js";
+import { verifySignupToken } from "./verify.js";
 import { notify } from "../lib/notify.js";
 import { signToken, requireAuth } from "../middleware/auth.js";
 import { huTaxIdValid, huRegNumberValid, formatTaxId } from "../lib/validate.js";
@@ -25,7 +26,8 @@ const router = Router();
 /* Strip everything the client must never see from a user row. */
 function safeUser(u) {
   if (!u) return u;
-  const { password_hash, email_code, email_code_expires, push_token, stripe_customer_id, default_payment_method, ...rest } = u;
+  const { password_hash, email_code, email_code_expires, push_token, stripe_customer_id,
+          default_payment_method, calendar_token, ...rest } = u;
   return rest;
 }
 
@@ -41,6 +43,18 @@ router.post("/register", async (req, res) => {
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
   if (!["customer", "employee", "company"].includes(role)) return res.status(400).json({ error: "Invalid role" });
   if (termsAccepted !== true) return res.status(400).json({ error: "You must accept the Terms of Service and Privacy Policy" });
+
+  /* ── 5.9 The account is created ONLY after the phone was verified on the
+     signup form. REQUIRE_SIGNUP_VERIFY=0 keeps older clients working, since
+     1.0 apps can't produce a token (2.1). ── */
+  const needProof = process.env.REQUIRE_SIGNUP_VERIFY === "1";
+  // 5.5: keep the person's city on the person, so announcements can target it
+  const cityVal = city ? String(city).trim().slice(0, 60) : null;
+  let phoneVerified = false, emailVerified = false;
+  if (req.body.phoneToken && phone && verifySignupToken(req.body.phoneToken, "phone", phone)) phoneVerified = true;
+  if (req.body.emailToken && email && verifySignupToken(req.body.emailToken, "email", email)) emailVerified = true;
+  if (needProof && !phoneVerified && !emailVerified)
+    return res.status(400).json({ error: "Please verify your phone number before creating the account." });
   if (["customer", "employee"].includes(role)) {
     if (!normPhone || normPhone.replace(/[^0-9]/g, "").length < 8) return res.status(400).json({ error: "A valid phone number is required" });
     const phoneTaken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true", [normPhone]);
@@ -62,8 +76,8 @@ router.post("/register", async (req, res) => {
       if (!huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42 — check the digits." });
       if (regNumber?.trim() && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid company registration number (cégjegyzékszám). Format: 09-09-123456." });
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, phone, approval_status, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW()) RETURNING id",
-        [email.toLowerCase(), hash, "company", fullName, contactPhone || null]
+        "INSERT INTO users (email, password_hash, role, full_name, phone, city, approval_status, terms_accepted_at, phone_verified, email_verified) VALUES ($1,$2,$3,$4,$5,$6,'pending',NOW(),$7,$8) RETURNING id",
+        [email.toLowerCase(), hash, "company", fullName, contactPhone || null, cityVal, phoneVerified, emailVerified]
       );
       const userId = userRes.rows[0].id;
       // New companies start unlisted/pending until an admin reviews their documents.
@@ -87,8 +101,8 @@ router.post("/register", async (req, res) => {
 
       const companyId = invite.rows[0].company_id;
       const userRes = await query(
-        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone, approval_status, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW()) RETURNING id",
-        [email.toLowerCase(), hash, "employee", fullName, companyId, docsJson, address ? String(address).slice(0, 300) : null, normPhone]
+        "INSERT INTO users (email, password_hash, role, full_name, company_id, documents, address, phone, city, approval_status, terms_accepted_at, phone_verified, email_verified) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',NOW(),$10,$11) RETURNING id",
+        [email.toLowerCase(), hash, "employee", fullName, companyId, docsJson, address ? String(address).slice(0, 300) : null, normPhone, cityVal, phoneVerified, emailVerified]
       );
       const userId = userRes.rows[0].id;
       // atomic claim — a code can only ever be consumed once, even under concurrent signups
@@ -113,8 +127,8 @@ router.post("/register", async (req, res) => {
     // customer
     const isStudent = customerType === "student";
     const userRes = await query(
-      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, documents, approval_status, terms_accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) RETURNING *",
-      [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null, normPhone, docsJson, isStudent ? "pending" : "approved"]
+      "INSERT INTO users (email, password_hash, role, full_name, customer_type, address, phone, city, documents, approval_status, terms_accepted_at, phone_verified, email_verified) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,$12) RETURNING *",
+      [email.toLowerCase(), hash, "customer", fullName, customerType || "resident", address ? String(address).slice(0, 300) : null, normPhone, cityVal, docsJson, isStudent ? "pending" : "approved", phoneVerified, emailVerified]
     );
     const user = userRes.rows[0];
     // Student accounts wait for admin review of the card photo — no session yet.

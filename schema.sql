@@ -341,3 +341,215 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_cleaner_at TIMESTAMPTZ;
 --     "closed": ["2026-08-20", "2026-12-24"] }
 -- Weekday keys are JS getDay(): 0=Sunday … 6=Saturday.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS availability JSONB;
+
+-- ═══ UPDATE 1 · Part 3: currency + real subscriptions ═══════════════
+-- Per-company currency (3.2). Existing *_huf columns stay for old clients;
+-- *_minor columns are the forward-looking truth (integer minor units).
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'HUF';
+ALTER TABLE services  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'HUF';
+ALTER TABLE bookings  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'HUF';
+ALTER TABLE bookings  ADD COLUMN IF NOT EXISTS total_minor BIGINT;
+ALTER TABLE bookings  ADD COLUMN IF NOT EXISTS service_fee_minor BIGINT;
+UPDATE bookings SET total_minor = total_huf * 100 WHERE total_minor IS NULL AND total_huf IS NOT NULL;
+UPDATE bookings SET service_fee_minor = COALESCE(service_fee_huf,0) * 100 WHERE service_fee_minor IS NULL;
+
+-- Real subscription schedules (3.4) — replaces the old "chain" design.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company_id    UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  service_id    UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  frequency     TEXT NOT NULL,                    -- weekly | biweekly | monthly
+  slot          TEXT NOT NULL,                    -- "09:00"
+  address       TEXT NOT NULL,
+  note          TEXT,
+  hours         INT,
+  currency      TEXT NOT NULL DEFAULT 'HUF',
+  amount_minor  BIGINT NOT NULL,                  -- per occurrence, incl. fee
+  fee_minor     BIGINT NOT NULL DEFAULT 0,
+  stripe_customer_id TEXT,                        -- on the COMPANY's connected account
+  payment_method_id  TEXT,                        -- saved card on that account
+  stripe_account_id  TEXT,                        -- the connected account
+  status        TEXT NOT NULL DEFAULT 'active',   -- active | paused | cancelled
+  next_booking_date DATE,                         -- next date to materialise
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  cancelled_at  TIMESTAMPTZ
+);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL;
+-- 'scheduled' = future occurrence, will be auto-charged 24-48h before
+-- (payment_status values in use: unpaid | pending | paid | refunded | scheduled | failed)
+
+-- ═══ UPDATE 1 · Part 4: country + service areas + geocode cache ═════
+ALTER TABLE users     ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'HU';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'HU';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS service_lat DOUBLE PRECISION;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS service_lng DOUBLE PRECISION;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS service_radius_km INT NOT NULL DEFAULT 10;
+ALTER TABLE users     ADD COLUMN IF NOT EXISTS address_lat DOUBLE PRECISION;
+ALTER TABLE users     ADD COLUMN IF NOT EXISTS address_lng DOUBLE PRECISION;
+
+-- 4.6: geocode an address once, never look it up again (respects OSM's policy)
+CREATE TABLE IF NOT EXISTS geocache (
+  q          TEXT PRIMARY KEY,
+  lat        DOUBLE PRECISION,
+  lng        DOUBLE PRECISION,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Collection services (laundry, ironing, anything taken away and brought back) ──
+-- The platform only understood one shape of job: someone comes to your address,
+-- works there, leaves. A laundry round is two visits with days in between, so it
+-- needs its own fulfilment type and its own idea of "finished".
+ALTER TABLE services ADD COLUMN IF NOT EXISTS fulfilment TEXT NOT NULL DEFAULT 'onsite';
+ALTER TABLE services ADD COLUMN IF NOT EXISTS turnaround_days INT NOT NULL DEFAULT 3;
+-- How many jobs of this service one team can take in a single hour. A cleaning
+-- slot is exclusive; a collection round can call at several houses. NULL = use
+-- the team size, which is the old behaviour.
+ALTER TABLE services ADD COLUMN IF NOT EXISTS slot_capacity INT;
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fulfilment  TEXT NOT NULL DEFAULT 'onsite';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS return_date DATE;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS return_slot TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS collected_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS returned_at  TIMESTAMPTZ;
+
+-- Status ladder, by fulfilment type:
+--   onsite      0 New  1 Assigned  2 On the way  3 Cleaning        4 Done
+--   collection  0 New  1 Assigned  2 On the way  5 Collected
+--                                  3 In progress 6 Out for return  4 Returned
+-- 8 Declined and 9 Cancelled apply to both. Review and invoicing still key off
+-- 4, so nothing downstream had to learn a new "finished" signal.
+
+-- ── Priced by the unit: laundry by the kilo, carpets by the square metre ──
+-- Same shape as hourly pricing (customer picks a quantity, price = rate x quantity),
+-- but with a label the company chooses, because "3 hours" and "3 kg" are the same
+-- arithmetic and should not be two different code paths.
+ALTER TABLE services ADD COLUMN IF NOT EXISTS unit_label    TEXT;      -- 'kg', 'm²', 'item'…
+ALTER TABLE services ADD COLUMN IF NOT EXISTS unit_price_huf INT;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS min_units     NUMERIC(8,2);
+ALTER TABLE services ADD COLUMN IF NOT EXISTS max_units     NUMERIC(8,2);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS units         NUMERIC(8,2);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS unit_label    TEXT;
+
+-- ── When the work actually happened ──────────────────────────────
+-- The company and the admin need the real clock times, not just the slot that
+-- was booked: a job booked for 10:00 that started at 11:40 is the thing a
+-- customer complains about, and without a timestamp it is one person's word
+-- against another's.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS started_at  TIMESTAMPTZ;   -- work began
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;   -- work ended
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS enroute_at  TIMESTAMPTZ;   -- set off
+
+-- ── Reporting a customer ─────────────────────────────────────────
+-- Reviews run one way: customers rate companies. A company with a customer who
+-- was abusive, absent, or whose home was unsafe had nowhere to say so, and no
+-- record if it happened again.
+CREATE TABLE IF NOT EXISTS customer_reports (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id   UUID REFERENCES bookings(id) ON DELETE SET NULL,
+  customer_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company_id   UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  reported_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+  category     TEXT NOT NULL,          -- 'abusive' | 'absent' | 'unsafe' | 'payment' | 'other'
+  detail       TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'reviewed' | 'dismissed'
+  admin_note   TEXT,
+  handled_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+  handled_at   TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_customer_reports_customer ON customer_reports (customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_reports_open ON customer_reports (status);
+
+-- What Cleano actually keeps after covering Stripe on the partner's behalf.
+-- The customer's invoice still shows a 500 Ft platform fee; the partner's cost
+-- breaks down as (this) to Cleano plus Stripe's cut, which sums back to 500.
+-- Our fee invoice must be for what we really received, or nothing reconciles.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS platform_net_minor INT;
+
+-- ── Invoicing ──────────────────────────────────────────────────────
+-- Billing address for the partner company. A Hungarian invoice is not valid
+-- without the buyer's postcode, town and street, and we were only storing city.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_name    TEXT;   -- legal name, if it differs from the trading name
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_zip     TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_city    TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_address TEXT;   -- street and number
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_email   TEXT;   -- where invoices are sent
+
+-- Our own invoice to the partner for the platform fee, issued automatically.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fee_invoice_no   TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fee_invoice_at   TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fee_invoice_pdf  TEXT;   -- base64
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fee_invoice_error TEXT;  -- last failure, so it can be retried and chased
+
+-- The partner's own invoice to the customer, uploaded by the partner.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS partner_invoice_no  TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS partner_invoice_at  TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS partner_invoice_pdf TEXT;   -- base64
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS partner_invoice_nudged_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_bookings_fee_invoice_missing ON bookings (company_id) WHERE fee_invoice_no IS NULL;
+
+-- Calendar sync. The token is a read-only secret that lives in a subscription
+-- URL. It is not the login token, and rotating it kills every old link at once.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_token TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_token ON users (calendar_token);
+
+-- Calendars only replace an event when SEQUENCE moves, so a booking needs to
+-- remember when it last changed.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE OR REPLACE FUNCTION touch_booking_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END $$;
+
+DROP TRIGGER IF EXISTS trg_bookings_touch ON bookings;
+CREATE TRIGGER trg_bookings_touch BEFORE UPDATE ON bookings
+  FOR EACH ROW EXECUTE FUNCTION touch_booking_updated_at();
+
+-- 5.2 live translation of user-entered text. One JSONB map of lang → text next
+-- to each source field, filled on write. Legal pages are deliberately excluded.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS tagline_i18n      JSONB;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS requirements_i18n JSONB;
+ALTER TABLE services  ADD COLUMN IF NOT EXISTS name_i18n         JSONB;
+ALTER TABLE services  ADD COLUMN IF NOT EXISTS description_i18n  JSONB;
+ALTER TABLE reviews   ADD COLUMN IF NOT EXISTS body_i18n         JSONB;
+
+-- 5.9: a review an admin removed must stay out of the average forever.
+-- Without this, the next new review re-runs the trigger and resurrects it.
+CREATE OR REPLACE FUNCTION refresh_company_rating()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE companies SET
+    rating       = COALESCE((SELECT ROUND(AVG(stars)::NUMERIC, 1) FROM reviews
+                              WHERE company_id = NEW.company_id AND removed_at IS NULL), 0),
+    review_count = (SELECT COUNT(*) FROM reviews
+                     WHERE company_id = NEW.company_id AND removed_at IS NULL)
+  WHERE id = NEW.company_id;
+  RETURN NEW;
+END $$;
+
+-- 5.5 targeted announcements need a city on the person, not just the company.
+-- Backfilled from the company for owners/cleaners so targeting works on day one.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT;
+UPDATE users u SET city = c.city
+  FROM companies c WHERE u.city IS NULL AND c.id = u.company_id AND c.city IS NOT NULL;
+UPDATE users u SET city = c.city
+  FROM companies c WHERE u.city IS NULL AND c.owner_id = u.id AND c.city IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_city ON users (city);
+
+-- 5.11 booking-acceptance timeout
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS accept_nudged_at TIMESTAMPTZ;
+
+-- ═══ UPDATE 1 · Part 5: moderation, requirements, admin audit ═══════
+-- 5.3 review moderation: companies REPORT, admins remove, every removal logged
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reported_at     TIMESTAMPTZ;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reported_reason TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS removed_at      TIMESTAMPTZ;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS removed_by      UUID;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS removed_reason  TEXT;
+
+-- 5.4 company requirements the customer must acknowledge before paying
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS requirements JSONB;   -- ["parking", ...]
+ALTER TABLE services  ADD COLUMN IF NOT EXISTS requirements JSONB;   -- extra, per service
+ALTER TABLE bookings  ADD COLUMN IF NOT EXISTS requirements_ack_at TIMESTAMPTZ;

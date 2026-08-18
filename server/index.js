@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { startReminders } from "./lib/reminders.js";
+import { wire as wireAlerts, alert } from "./lib/alerts.js";
+import { startSubscriptions } from "./lib/subscriptions.js";
 import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "url";
@@ -60,8 +62,22 @@ app.use("/api/payments", paymentsRouter);
 app.use("/api/complaints", complaintsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/verify", verifyRouter);
+app.use("/api/subscriptions", (await import("./routes/subscriptions.js")).default);
+app.use("/api/calendar", (await import("./routes/calendar.js")).default);
+app.use("/api/invoices", (await import("./routes/invoices.js")).default);
+app.use("/api/customer-reports", (await import("./routes/customer-reports.js")).default);
 
 app.get("/api/health", (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+
+/* ── 2.1 minimum supported app version. Old builds show a blocking update
+      screen. Raise MIN_APP_VERSION only after the force-update screen has
+      shipped and most users have moved. ── */
+app.get("/api/app/version", (req, res) => res.json({
+  min: process.env.MIN_APP_VERSION || "0.0.0",
+  latest: process.env.LATEST_APP_VERSION || "7.0.0",
+  iosUrl: process.env.APP_STORE_URL || "",
+  androidUrl: process.env.PLAY_STORE_URL || "https://play.google.com/store/apps/details?id=com.cleano.app",
+}));
 
 /* Privacy policy — required by Google Play & the App Store */
 app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "privacy.html")));
@@ -83,13 +99,76 @@ app.get("/payment-result", (req, res) => {
 // unknown /api paths must return JSON 404, never the SPA shell
 app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));
 
-/* ── Serve built frontend in production ──────────────────── */
-if (process.env.NODE_ENV === "production") {
+/* ── Cleano is not a website ──────────────────────────────────────────────
+   This address used to serve the whole app to anyone who found the URL. That
+   was never the product: Cleano ships through the App Store and Play Store,
+   the apps are what get reviewed and updated, and a second unversioned copy on
+   the open web is a support burden and an attack surface for no revenue.
+
+   What still has to be public, because the stores require it or a payment
+   provider redirects to it: the legal pages and /payment-result, both defined
+   above. Everything else gets a plain page pointing at the stores.
+
+   Set SERVE_WEB_APP=1 to put the browser build back — useful for a demo to a
+   partner, and the one-line way to reverse this decision.                    */
+if (process.env.SERVE_WEB_APP === "1") {
   const distPath = path.join(__dirname, "..", "dist");
   app.use(express.static(distPath));
   app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+} else {
+  const IOS = process.env.APP_STORE_URL || "";
+  const PLAY = process.env.PLAY_STORE_URL || "https://play.google.com/store/apps/details?id=com.cleano.app";
+  const landing = `<!doctype html><html lang="hu"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cleano</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:radial-gradient(140% 100% at 20% 0%,#233073,#131A3D 75%);
+       font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;padding:28px}
+  .c{max-width:360px;text-align:center}
+  h1{font-size:26px;margin:0 0 10px;font-weight:700}
+  p{color:#B9C0DF;font-size:15px;line-height:1.6;margin:0 0 22px}
+  a.btn{display:block;margin:10px 0;padding:14px 18px;border-radius:14px;background:#fff;color:#131A3D;
+        text-decoration:none;font-weight:700;font-size:15px}
+  .f{margin-top:26px;font-size:12px;color:#7E88B5}
+  .f a{color:#7E88B5;margin:0 7px}
+</style></head><body><div class="c">
+<h1>Cleano</h1>
+<p>Takarítás, mosás és vasalás Debrecenben — a Cleano alkalmazásban.<br>
+Cleaning, laundry and ironing in Debrecen — in the Cleano app.</p>
+${IOS ? `<a class="btn" href="${IOS}">App Store</a>` : ""}
+<a class="btn" href="${PLAY}">Google Play</a>
+<div class="f"><a href="/terms">ÁSZF</a><a href="/privacy">Adatkezelés</a><a href="/partner-terms">Partner</a></div>
+</div></body></html>`;
+
+  app.get("/", (req, res) => res.type("html").send(landing));
+  /* Anything else is not a page we publish. Say so plainly rather than handing
+     back an app shell that then fails to load. */
+  app.use((req, res) => res.status(404).type("html").send(
+    `<!doctype html><meta charset="utf-8"><title>Cleano</title>
+     <body style="font-family:system-ui;padding:40px;text-align:center;background:#131A3D;color:#B9C0DF">
+     <p>Nincs ilyen oldal. / No such page.</p><p><a style="color:#fff" href="/">Cleano</a></p>`));
 }
 
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+
+  /* A file bigger than the body limit is the user's problem, not a server fault.
+     Without this a partner uploading a large scanned invoice gets an opaque 500
+     and no idea what to do about it. Not worth alerting on either. */
+  if (err?.type === "entity.too.large" || err?.status === 413) {
+    return res.status(413).json({ error: "That file is too large — please upload something smaller." });
+  }
+  /* Malformed JSON is likewise a bad request, not a crash. */
+  if (err instanceof SyntaxError && "body" in (err || {})) {
+    return res.status(400).json({ error: "That request could not be read." });
+  }
+
+  alert("express:" + (req.path || ""), `500 on ${req.method} ${req.path}`, err?.stack || err);
+  res.status(500).json({ error: "Something went wrong on our side — we have been notified." });
+});
+
+wireAlerts();
 app.listen(PORT, () => {
   console.log(`\n🐙 Cleano API running on http://localhost:${PORT}`);
   console.log(`   Mode: ${process.env.NODE_ENV || "development"}`);
@@ -97,4 +176,13 @@ app.listen(PORT, () => {
   if (process.env.JWT_SECRET === undefined) console.warn("   ⚠️  JWT_SECRET not set — using insecure default");
   // Day-of reminders (customer ~40min before, company at each booking time).
   if (!process.env.PGMEM) startReminders();
+  startSubscriptions();
+
+  /* Local walkthrough only. Both switches are required, and PGMEM means the
+     database is in memory — there is no path from here to real data. */
+  if (process.env.DEMO_SEED === "1" && process.env.PGMEM === "1") {
+    import("../scripts/demo-seed.mjs")
+      .then((m) => m.seedDemo())
+      .catch((e) => console.error("demo seed failed:", e?.stack || e));
+  }
 });
