@@ -138,5 +138,19 @@ ok("mixed localizations are allowed, so nothing falls back blank", /CFBundleAllo
 ok("and the build prints what it declared, so a silent failure is visible",
    /plutil -extract CFBundleLocalizations/.test(cm));
 
+
+console.log("\n── no hardcoded English left on any of the four interfaces ──");
+/* The drift checker answers "is every translated string present in every
+   language". It cannot answer the prior question — "is every string the user
+   reads wrapped for translation at all". A hardcoded label is invisible to it:
+   the dictionary reads 100%, and the screen is still half English. */
+const { execFileSync } = await import("child_process");
+const sweep = execFileSync("node", ["scripts/untranslated.mjs"], { encoding: "utf8" });
+for (const role of ["customer", "company", "cleaner", "admin", "shared"]) {
+  const m = new RegExp(`${role}\\s+(\\d+)`).exec(sweep);
+  ok(`${role} has no hardcoded English`, m && Number(m[1]) === 0, m ? m[1] + " found" : "not reported");
+}
+ok("the sweep looks past leading emoji", /const strip = /.test(fsL.readFileSync("scripts/untranslated.mjs", "utf8")));
+
 console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

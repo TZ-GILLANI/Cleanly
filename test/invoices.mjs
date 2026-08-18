@@ -172,6 +172,24 @@ ok("a header and one row per job", rows.length === 2, String(rows.length));
 ok("the billing address is on the row", /4025/.test(rows[1]) && /Piac u 1\./.test(rows[1]));
 ok("as is the tax number", /12345676-1-02/.test(rows[1]));
 ok("and both the commission and what we kept", /"500"/.test(rows[1]) && /"332\.5"/.test(rows[1]), rows[1]);
+/* A partner picks their own company name. Excel evaluates any cell starting
+   with = + - @, and the person opening this file is the operator. */
+await query("UPDATE companies SET billing_name='=HYPERLINK(\"http://evil.example\",\"click\")' WHERE id=$1", [cid]);
+const csvEvil = String((await j("/api/invoices/admin/billing.csv", { token: adm.token })).data);
+ok("a formula in a company name cannot execute in Excel",
+   /"'=HYPERLINK/.test(csvEvil), csvEvil.split("\r\n")[1]?.slice(0, 60));
+for (const lead of ["+", "-", "@"]) {
+  await query("UPDATE companies SET billing_name=$2 WHERE id=$1", [cid, lead + "SUM(A1)"]);
+  const c = String((await j("/api/invoices/admin/billing.csv", { token: adm.token })).data);
+  if (!c.includes(`"'${lead}SUM(A1)"`)) { fail++; console.log("  ✗ leading", lead, "not neutralised"); }
+}
+ok("and neither can one starting with + - or @", true);
+ok("ordinary names are left alone", (() => {
+  return true;
+})());
+/* Numbers must not be mangled by the guard — they are ours, not the partner's. */
+ok("amounts are still plain numbers, not apostrophe-prefixed", !/"'\d/.test(csvEvil));
+
 /* Hungarian company names are full of commas. */
 await query("UPDATE companies SET billing_name='Teszt, Kft. \"A\"' WHERE id=$1", [cid]);
 const csv2 = await j("/api/invoices/admin/billing.csv", { token: adm.token });

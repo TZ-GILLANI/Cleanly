@@ -345,8 +345,24 @@ router.get("/admin/billing.csv", requireAuth, requireRole("admin"), async (req, 
         LIMIT 5000`, [settled]);
 
     /* Quote everything and double any quote inside. Hungarian company names
-       contain commas ("Kft., Bt.") far too often to risk bare fields. */
-    const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+       contain commas ("Kft., Bt.") far too often to risk bare fields.
+
+       And guard against formula injection. Excel and LibreOffice evaluate any
+       cell beginning with = + - @ or a control character, and the partner
+       chooses their own company name and address. Quoting protects the FILE
+       format; it does nothing about the spreadsheet's formula parser, which
+       strips the quotes before it looks. The person who opens this file is the
+       operator — the single account worth attacking on the platform.
+
+       A leading apostrophe makes the cell literal text. Numbers are ours, not
+       theirs, so they pass through untouched and stay right-aligned. */
+    const RISKY = /^[=+\-@\t\r]/;
+    const q = (v) => {
+      if (typeof v === "number") return `"${v}"`;
+      const raw = String(v == null ? "" : v);
+      const safe = RISKY.test(raw) ? "'" + raw : raw;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
     const head = ["Partner (billing name)", "Trading name", "Tax number", "Postcode", "City",
                   "Address", "Email", "Booking no", "Job date", "Customer paid (HUF)",
                   "Commission 10% (HUF)", "Cleano kept (HUF)", "Card cost absorbed (HUF)",

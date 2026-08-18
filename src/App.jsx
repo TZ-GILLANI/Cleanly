@@ -1459,7 +1459,7 @@ function ProfileSheet({ close }) {
         </div>
       </div>
 
-      <Field label={t("profile.fullName")} placeholder="Your name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+      <Field label={t("profile.fullName")} placeholder={L("Your name", "A neved")} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
 
       {session.role === "customer" && (
         <div style={{ marginBottom: 13 }}>
@@ -1690,7 +1690,7 @@ function Auth() {
         <div style={{ marginTop: 22 }}>
           {!isLive && (
             <div style={{ background: C.mintSoft, borderRadius: 14, padding: "11px 14px", marginBottom: 14, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.55 }}>
-              <b>Demo mode</b> — no email needed. Run the backend (see README) and set VITE_USE_API=true for real accounts.
+              <b>{L("Demo mode", "Demó mód")}</b> — {L("no email needed. Run the backend (see README) and set VITE_USE_API=true for real accounts.", "nincs szükség e-mailre. Indítsd el a szervert (lásd README), és állítsd be a VITE_USE_API=true értéket az éles fiókokhoz.")}
             </div>
           )}
           {mode === "signup" && role === "customer" && (
@@ -1722,7 +1722,7 @@ function Auth() {
           {mode === "signup" && role === "employee" && (
             <>
               <Field label={L("Company invite code", "Céges meghívókód")} placeholder={L("e.g. SPARK-7K4D", "pl. SPARK-7K4D")} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} />
-              {isLive && <Field label="Your name" placeholder="Full name" value={f.name} onChange={set("name")} />}
+              {isLive && <Field label={L("Your name", "A neved")} placeholder={L("Full name", "Teljes név")} value={f.name} onChange={set("name")} />}
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Residence address *", "Lakcím *")}</div>
               <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
               <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account.", "Egy szám = egy fiók.")} value={f.phone} onChange={set("phone")} />
@@ -2845,7 +2845,7 @@ function EmployeeNotices() {
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={L("Message your company…", "Írj a cégednek…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 14, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
-        <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast("Message sent to your company"); setReply(""); } }}>Send</Btn>
+        <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast(L("Message sent to your company", "Üzenet elküldve a cégednek")); setReply(""); } }}>Send</Btn>
       </div>
       {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>{L("No messages from your company yet.", "Még nincs üzenet a cégedtől.")}</div>}
       {mine.map((n) => (
@@ -2933,7 +2933,13 @@ function CompanyJobs({ openProfile }) {
     const t = slotStartMs(b);
     return t != null && t < Date.now() && Number(b.status) < 2;
   });
-  const attention = [...unaccepted, ...unassignedSoon, ...overdue];
+  /* One job can land in two buckets — an unaccepted booking whose slot has
+     already passed is both unaccepted AND overdue. Counting the raw
+     concatenation told the owner "4 need you" when three jobs did, and a count
+     that overstates is a count nobody trusts. Dedupe by id; the per-bucket
+     lines below still explain the same job twice, which is correct because it
+     is wrong in two ways. */
+  const attention = [...new Map([...unaccepted, ...unassignedSoon, ...overdue].map((b) => [b.id, b])).values()];
   const needsAttention = attention.length;
 
   const shownOpen = open.filter((b) =>
@@ -3006,7 +3012,7 @@ function CompanyJobs({ openProfile }) {
       {subs.length > 0 && (
         <div style={{ background: "linear-gradient(135deg,#EAFBF2,#E7F0FF)", borderRadius: 16, padding: "12px 15px", marginBottom: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>🔁 {subs.length} active subscription{subs.length > 1 ? "s" : ""} — recurring revenue {huf(subs.reduce((a, b) => a + (b.total_huf || 0), 0))} / cycle</div>
-          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3 }}>Each completed visit automatically schedules the next one with the same cleaner.</div>
+          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3 }}>{L("Each completed visit automatically schedules the next one with the same cleaner.", "Minden teljesített alkalom automatikusan időpontot foglal a következőre, ugyanazzal a takarítóval.")}</div>
         </div>
       )}
 
@@ -3167,7 +3173,7 @@ function CompanyJobs({ openProfile }) {
                     }} />
                   </label>
                 )}
-                <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast("Moved to history (Settings)"); }}
+                <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast(L("Moved to history (Settings)", "Áthelyezve az előzményekbe (Beállítások)")); }}
                   style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{L("Clear", "Törlés")}</button>
               </div>
             </div>
@@ -3189,7 +3195,7 @@ function CompanyJobs({ openProfile }) {
             ))}
           </div>
           <Field area placeholder={L("Add a note (optional)…", "Megjegyzés (nem kötelező)…")} value={reason} onChange={(e) => setReason(e.target.value)} />
-          <Btn full danger onClick={() => { declineBooking(declining.id, reason || "Not available for this time"); toast("Booking declined"); setDeclining(null); }}>
+          <Btn full danger onClick={() => { declineBooking(declining.id, reason || L("Not available for this time", "Ebben az időpontban nem elérhető")); toast(L("Booking declined", "Foglalás elutasítva")); setDeclining(null); }}>
             Decline booking
           </Btn>
         </Sheet>
@@ -3227,11 +3233,11 @@ function CompanyClients() {
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{huf(totalSpend)}</div>
-          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>lifetime revenue</div>
+          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>{L("lifetime revenue", "teljes bevétel")}</div>
         </div>
         <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{clients.filter((c) => c.hasSub).length}</div>
-          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>active subscribers</div>
+          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>{L("active subscribers", "aktív előfizető")}</div>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 14, padding: "11px 14px", marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
@@ -3328,7 +3334,7 @@ function CompanyServices() {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>Services & prices</div>
-        <Btn small onClick={() => openEditor(null)}>+ New service</Btn>
+        <Btn small onClick={() => openEditor(null)}>+ {L("New service", "Új szolgáltatás")}</Btn>
       </div>
       <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, lineHeight: 1.6, marginBottom: 16 }}>
         What customers see when they book you. The task checklist becomes your cleaner's on-site to-do list.
@@ -3536,9 +3542,9 @@ function CompanyTeam() {
 
   const copyCode = (code) => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(code).then(() => toast("Code copied to clipboard!")).catch(() => toast("Copy failed", "error"));
+      navigator.clipboard.writeText(code).then(() => toast(L("Code copied to clipboard!", "Kód a vágólapra másolva!"))).catch(() => toast(L("Copy failed", "A másolás nem sikerült"), "error"));
     } else {
-      toast("Code: " + code);
+      toast(L("Code: ", "Kód: ") + code);
     }
   };
 
@@ -3546,7 +3552,7 @@ function CompanyTeam() {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>Team</div>
-        <Btn small onClick={() => { setShowAdd(true); setNewCode(null); setLabel(""); }}>+ Invite employee</Btn>
+        <Btn small onClick={() => { setShowAdd(true); setNewCode(null); setLabel(""); }}>+ {L("Invite employee", "Munkatárs meghívása")}</Btn>
       </div>
 
       {employees.length === 0 && !invites.length && (
@@ -3607,7 +3613,7 @@ function CompanyTeam() {
             <Pill bg={C.mintSoft} color={C.green}>{L("Active", "Aktív")}</Pill>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
-            <Btn small ghost style={{ flex: 1 }} onClick={() => { setShowMsg(m); setMsg(""); }}>💬 Send notice</Btn>
+            <Btn small ghost style={{ flex: 1 }} onClick={() => { setShowMsg(m); setMsg(""); }}>💬 {L("Send notice", "Üzenet küldése")}</Btn>
             <Btn small ghost style={{ flex: 1 }}>📋 {bookings.filter((b) => b.assigned_to === m.id && b.status < 4).length} open</Btn>
             <Btn small ghost style={{ color: C.coral }} onClick={() => setConfirmRm(m)}>{L("Remove", "Törlés")}</Btn>
           </div>
@@ -3629,8 +3635,8 @@ function CompanyTeam() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <Btn small ghost style={{ flex: 1 }} onClick={() => copyCode(i.code)}>📋 Copy code</Btn>
-                <Btn small ghost style={{ flex: 1, color: C.coral }} onClick={() => { deleteInvite(i.code); toast("Invite deleted"); }}>✕ Revoke</Btn>
+                <Btn small ghost style={{ flex: 1 }} onClick={() => copyCode(i.code)}>📋 {L("Copy code", "Kód másolása")}</Btn>
+                <Btn small ghost style={{ flex: 1, color: C.coral }} onClick={() => { deleteInvite(i.code); toast(L("Invite deleted", "Meghívó törölve")); }}>✕ Revoke</Btn>
               </div>
             </div>
           ))}
@@ -3643,15 +3649,15 @@ function CompanyTeam() {
             <>
               <Field label={L("Who is this invite for? (optional)", "Kinek szól a meghívó? (nem kötelező)")} placeholder={L("e.g. Zoltán Farkas", "pl. Farkas Zoltán")} value={label} onChange={(e) => setLabel(e.target.value)} />
               <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.6, background: C.mintSoft, borderRadius: 13, padding: "11px 14px", marginBottom: 16 }}>
-                A one-time <b>invite code</b> is generated. They open Cleano, choose "I'm a cleaner", and sign up with the code — they're instantly linked to your company.
+                {L("A one-time invite code is generated. They open Cleano, choose \"I'm a cleaner\", and sign up with the code — they're instantly linked to your company.", "Egyszer használatos meghívókód készül. Megnyitják a Cleanót, a „Takarító vagyok” lehetőséget választják, és a kóddal regisztrálnak — azonnal a céghez kerülnek.")}
               </div>
-              <Btn full onClick={async () => { const code = await createInvite(label); if (code) setNewCode(code); else toast("Failed to generate code", "error"); }}>{L("Generate invite code", "Meghívókód létrehozása")}</Btn>
+              <Btn full onClick={async () => { const code = await createInvite(label); if (code) setNewCode(code); else toast(L("Failed to generate code", "A kód létrehozása nem sikerült"), "error"); }}>{L("Generate invite code", "Meghívókód létrehozása")}</Btn>
             </>
           ) : (
             <div style={{ textAlign: "center" }}>
               <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 12 }}>Share this code with {label || "your employee"}:</div>
               <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 26, color: C.navy, letterSpacing: 3, background: C.card, borderRadius: 16, padding: "18px 0", boxShadow: "0 2px 12px rgba(20,28,58,.07)", marginBottom: 14 }}>{newCode}</div>
-              <Btn ghost full onClick={() => copyCode(newCode)} style={{ marginBottom: 10 }}>📋 Copy to clipboard</Btn>
+              <Btn ghost full onClick={() => copyCode(newCode)} style={{ marginBottom: 10 }}>📋 {L("Copy to clipboard", "Másolás a vágólapra")}</Btn>
               <Btn full mint onClick={() => setShowAdd(false)}>Done</Btn>
             </div>
           )}
@@ -3678,7 +3684,7 @@ function CompanyTeam() {
                 ? <Pill bg={C.mintSoft} color={C.green}>💬 Reply</Pill>
                 : n.is_read
                 ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Seen"}</Pill>
-                : <Pill bg={C.amberSoft} color={C.amber}>✓ Not seen yet</Pill>}
+                : <Pill bg={C.amberSoft} color={C.amber}>✓ {L("Not seen yet", "Még nem látta")}</Pill>}
               <button onClick={() => { deleteNotice(n.id); }}
                 title={L("Clear from my list", "Törlés a listámról")}
                 style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: 9, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
@@ -4291,7 +4297,7 @@ function CompanySettings() {
   const onLogoFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) return toast("Please choose a PNG image", "error");
+    if (!file.type.startsWith("image/")) return toast(L("Please choose a PNG image", "Válassz PNG képet"), "error");
     /* Logos are shrunk too, so a 6 MB export from a design tool just works.
        A logo is displayed small, so 512px is plenty. */
     compressImage(file, { maxEdge: 512, maxBytes: 200 * 1024 })
@@ -4300,9 +4306,9 @@ function CompanySettings() {
   };
 
   const save = async () => {
-    if (!f.name.trim()) return toast("Company name is required", "error");
+    if (!f.name.trim()) return toast(L("Company name is required", "A cégnév kötelező"), "error");
     const disc = parseInt(f.student_discount, 10);
-    if (isNaN(disc) || disc < 0 || disc > 50) return toast("Discount must be 0–50%", "error");
+    if (isNaN(disc) || disc < 0 || disc > 50) return toast(L("Discount must be 0–50%", "A kedvezmény 0–50% között lehet"), "error");
     setBusy(true);
     const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents, availability: avail,
       billingName: f.billing_name.trim(), billingZip: f.billing_zip.trim(), billingCity: f.billing_city.trim(),
@@ -4311,7 +4317,7 @@ function CompanySettings() {
       country: f.country, serviceLat: f.service_lat, serviceLng: f.service_lng, serviceRadiusKm: f.service_radius_km });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
-    else toast("Company profile updated ✓");
+    else toast(L("Company profile updated ✓", "Cégprofil frissítve ✓"));
   };
 
   return (
@@ -4340,7 +4346,7 @@ function CompanySettings() {
       </div>
 
       <Field label={L("Emoji (shown if no logo uploaded)", "Emoji (ha nincs feltöltött logó)")} placeholder="🫧" value={f.emoji} onChange={set("emoji")} />
-      <Field label={L("Company name *", "Cégnév *")} placeholder="SparkClean Kft." value={f.name} onChange={set("name")} />
+      <Field label={L("Company name *", "Cégnév *")} placeholder={L("SparkClean Kft.", "Ragyogó Kft.")} value={f.name} onChange={set("name")} />
       {/* 4.3 — free text with suggestions, so any city in any country works */}
       <Field label={L("City served", "Kiszolgált város")} placeholder="Debrecen" list="cleano-cities"
         value={f.city || ""} onChange={set("city")} />
@@ -4699,7 +4705,7 @@ function AnnouncementComposer() {
     const res = await adminBroadcast(title.trim(), body.trim(), aud, { ...filters, preview: true });
     setBusy(false);
     if (res?.error) { toast(res.error); return; }
-    if (!res?.count) { toast("That audience matches nobody"); return; }
+    if (!res?.count) { toast(L("That audience matches nobody", "Ehhez a körhöz senki nem tartozik")); return; }
     setConfirm({ count: res.count });
   };
 
@@ -4989,8 +4995,8 @@ function ComplaintThread({ complaint, role, close, onChange }) {
   React.useEffect(() => { load(); }, [dataVersion]);
   React.useEffect(() => { if (role === "admin" && (!adminAllCompanies || adminAllCompanies.length === 0)) adminFetchAllCompanies(); }, []);
   const send = async () => { if (!text.trim()) return; const r = await sendComplaintMessage(complaint.id, text.trim()); if (r?.error) toast(r.error, "error"); else { setText(""); load(); } };
-  const doResolve = async () => { const r = await adminUpdateComplaint(complaint.id, { status: "resolved", resolution: note }); if (r?.error) toast(r.error, "error"); else { setStatus("resolved"); toast("Marked resolved"); onChange && onChange(); } };
-  const doAssign = async () => { if (!assignTo) return; const r = await assignComplaint(complaint.id, assignTo); if (r?.error) toast(r.error, "error"); else { const co = (adminAllCompanies || []).find((c) => c.id === assignTo); setAssigned(co?.name || "company"); setStatus("in_progress"); toast("Assigned to " + (co?.name || "company")); onChange && onChange(); } };
+  const doResolve = async () => { const r = await adminUpdateComplaint(complaint.id, { status: "resolved", resolution: note }); if (r?.error) toast(r.error, "error"); else { setStatus("resolved"); toast(L("Marked resolved", "Megoldottnak jelölve")); onChange && onChange(); } };
+  const doAssign = async () => { if (!assignTo) return; const r = await assignComplaint(complaint.id, assignTo); if (r?.error) toast(r.error, "error"); else { const co = (adminAllCompanies || []).find((c) => c.id === assignTo); setAssigned(co?.name || "company"); setStatus("in_progress"); toast(L("Assigned to ", "Kiosztva: ") + (co?.name || L("company", "cég"))); onChange && onChange(); } };
   return (
     <Sheet title={`🛟 ${complaint.subject}`} close={close}>
       <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 10 }}>
@@ -5052,12 +5058,12 @@ function ComplaintThread({ complaint, role, close, onChange }) {
               <div style={{ display: "flex", gap: 8 }}>
                 <Btn small style={{ flex: 1 }} onClick={async () => {
                   const r = await setCompanyAction(complaint.id, "chat", cbNote);
-                  if (r?.error) toast(r.error, "error"); else { setCoAction("chat"); toast("Replying here"); load(); onChange && onChange(); }
-                }}>💬 Solve in chat</Btn>
+                  if (r?.error) toast(r.error, "error"); else { setCoAction("chat"); toast(L("Replying here", "Válasz itt")); load(); onChange && onChange(); }
+                }}>💬 {L("Solve in chat", "Megoldás chatben")}</Btn>
                 <Btn small ghost style={{ flex: 1 }} onClick={async () => {
                   const r = await setCompanyAction(complaint.id, "callback", cbNote);
-                  if (r?.error) toast(r.error, "error"); else { setCoAction("callback"); toast("Customer told you'll call"); load(); onChange && onChange(); }
-                }}>📞 Call back</Btn>
+                  if (r?.error) toast(r.error, "error"); else { setCoAction("callback"); toast(L("Customer told you'll call", "Az ügyfél értesítve, hogy telefonálsz")); load(); onChange && onChange(); }
+                }}>📞 {L("Call back", "Visszahívás")}</Btn>
               </div>
             </>
           )}
@@ -5177,7 +5183,7 @@ function ReviewReports() {
           <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
             <Btn full ghost onClick={async () => {
               const res = await adminDismissReport(r.id);
-              if (res?.error) toast(res.error, "error"); else { toast("Report dismissed — review stays up"); load(); }
+              if (res?.error) toast(res.error, "error"); else { toast(L("Report dismissed — review stays up", "Bejelentés elutasítva — az értékelés marad")); load(); }
             }}>{L("Keep it", "Marad")}</Btn>
             <Btn full danger onClick={() => { setRemoving(r); setReason(""); }}>{L("Remove", "Törlés")}</Btn>
           </div>
@@ -5200,7 +5206,7 @@ function ReviewReports() {
                 const res = await adminRemoveReview(removing.id, reason.trim());
                 setBusy(false);
                 if (res?.error) { toast(res.error, "error"); return; }
-                toast("Review removed"); setRemoving(null); load();
+                toast(L("Review removed", "Értékelés eltávolítva")); setRemoving(null); load();
               }}>{busy ? "…" : "Remove"}</Btn>
             </div>
           </div>
@@ -5259,8 +5265,8 @@ function CustomerReportQueue() {
           )}
           {r.status === "open" && (
             <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
-              <Btn full ghost onClick={() => { setActing({ id: r.id, decision: "dismissed" }); setNote(""); }}>No action</Btn>
-              <Btn full danger onClick={() => { setActing({ id: r.id, decision: "reviewed" }); setNote(""); }}>Record action</Btn>
+              <Btn full ghost onClick={() => { setActing({ id: r.id, decision: "dismissed" }); setNote(""); }}>{L("No action", "Nincs teendő")}</Btn>
+              <Btn full danger onClick={() => { setActing({ id: r.id, decision: "reviewed" }); setNote(""); }}>{L("Record action", "Intézkedés rögzítése")}</Btn>
             </div>
           )}
         </div>
@@ -5284,7 +5290,7 @@ function CustomerReportQueue() {
                 const res = await adminHandleCustomerReport(acting.id, acting.decision, note.trim());
                 setBusy(false);
                 if (res?.error) { toast(res.error, "error"); return; }
-                toast("Saved"); setActing(null); load();
+                toast(L("Saved", "Mentve")); setActing(null); load();
               }}>{busy ? "…" : "Save"}</Btn>
             </div>
           </div>
@@ -5561,18 +5567,18 @@ function AdminUsers() {
             )}
             {u.student_upgrade && (
               <>
-                <Pill bg={C.amberSoft} color={C.amber}>🎓 Upgrade requested</Pill>
+                <Pill bg={C.amberSoft} color={C.amber}>🎓 {L("Upgrade requested", "Igényelt átsorolás")}</Pill>
                 <button onClick={async () => {
                   const res = await adminUpdateUser(u.id, { upgradeDecision: "approve" });
                   if (res?.error) toast(res.error, "error");
-                  else { toast("Student discount activated for them 🎓"); adminFetchUsers(); }
+                  else { toast(L("Student discount activated for them 🎓", "Diákkedvezmény aktiválva 🎓")); adminFetchUsers(); }
                 }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.green}`, background: C.card, color: C.green, cursor: "pointer" }}>
                   ✓ Approve card
                 </button>
                 <button onClick={async () => {
                   const res = await adminUpdateUser(u.id, { upgradeDecision: "reject" });
                   if (res?.error) toast(res.error, "error");
-                  else { toast("Upgrade declined"); adminFetchUsers(); }
+                  else { toast(L("Upgrade declined", "Átsorolás elutasítva")); adminFetchUsers(); }
                 }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.card, color: C.coral, cursor: "pointer" }}>
                   ✕ Decline
                 </button>
@@ -5580,18 +5586,18 @@ function AdminUsers() {
             )}
             {u.approval_status === "pending" && (
               <>
-                <Pill bg={C.amberSoft} color={C.amber}>🎓 Pending review</Pill>
+                <Pill bg={C.amberSoft} color={C.amber}>🎓 {L("Pending review", "Elbírálás alatt")}</Pill>
                 <button onClick={async () => {
                   const res = await adminUpdateUser(u.id, { approvalStatus: "approved" });
                   if (res?.error) toast(res.error, "error");
-                  else { toast("Student approved — email sent ✉️"); adminFetchUsers(); }
+                  else { toast(L("Student approved — email sent ✉️", "Diák jóváhagyva — e-mail elküldve ✉️")); adminFetchUsers(); }
                 }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.green}`, background: C.card, color: C.green, cursor: "pointer" }}>
                   ✓ Approve
                 </button>
                 <button onClick={async () => {
                   const res = await adminUpdateUser(u.id, { approvalStatus: "rejected" });
                   if (res?.error) toast(res.error, "error");
-                  else { toast("Application rejected"); adminFetchUsers(); }
+                  else { toast(L("Application rejected", "Jelentkezés elutasítva")); adminFetchUsers(); }
                 }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.card, color: C.coral, cursor: "pointer" }}>
                   ✕ Reject
                 </button>
@@ -6086,13 +6092,15 @@ function Shell() {
             <div className="cl-pop" style={{ width: 92, height: 92, borderRadius: "50%", background: C.mint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, boxShadow: `0 0 0 14px ${C.mint}26, 0 0 0 28px ${C.mint}12` }}>✓</div>
             <div className="cl-rise" style={{ fontFamily: F, fontWeight: 700, fontSize: 24, color: "#fff", marginTop: 26 }}>{justBooked?.pricing_type === "subscription" ? L("Subscription set! 🔁", "Előfizetés beállítva! 🔁") : L("You're booked!", "Lefoglalva!")}</div>
             <div className="cl-rise" style={{ fontFamily: B, fontSize: 13, color: "#9FB0E8", marginTop: 10, lineHeight: 1.7, animationDelay: ".15s" }}>
+              {/* This used to branch on HUL(): a hand-written Hungarian version and an
+                  English one. Every other language fell to the English branch, so a
+                  German customer finishing a booking read one translated sentence
+                  wrapped in two English ones. Wrapped properly, all twelve work. */}
               {justBooked?.pricing_type === "subscription"
-                ? (HUL()
-                    ? <>Az előfizetésed aktív ({everyP(justBooked.period)}).<br />Első alkalom: {dayLabel(justBooked.scheduled_date)}, utána automatikusan ismétlődik.<br />A Foglalások fül alatt bármikor módosíthatod.</>
-                    : <>Your {periodLabel(justBooked.period)} plan is active.<br />First visit {dayLabel(justBooked.scheduled_date)}, then it repeats automatically.<br />{L("Manage or cancel anytime under Bookings.", "Bármikor kezelheted vagy lemondhatod a Foglalásoknál.")}</>)
-                : (HUL()
-                    ? <>A cég már látja a kérésedet,<br />hamarosan takarítót jelöl ki.</>
-                    : <>{L("The company sees your request now and will assign a cleaner shortly.", "A cég most látja a kérésedet, és hamarosan kioszt egy takarítót.")}</>)}
+                ? <>{L("Your plan is active", "Az előfizetésed aktív")} ({HUL() ? everyP(justBooked.period) : periodLabel(justBooked.period)}).<br />
+                    {L("First visit", "Első alkalom")} {dayLabel(justBooked.scheduled_date)}, {L("then it repeats automatically.", "utána automatikusan ismétlődik.")}<br />
+                    {L("Manage or cancel anytime under Bookings.", "Bármikor kezelheted vagy lemondhatod a Foglalásoknál.")}</>
+                : <>{L("The company sees your request now and will assign a cleaner shortly.", "A cég most látja a kérésedet, és hamarosan kioszt egy takarítót.")}</>}
             </div>
             <div className="cl-rise" style={{ marginTop: 32, width: "100%", maxWidth: 300, animationDelay: ".3s" }}>
               <Btn full mint onClick={() => { setJustBooked(false); setTab("bookings"); }}>{L("Track my booking", "Foglalás követése")}</Btn>
