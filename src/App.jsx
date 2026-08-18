@@ -2020,11 +2020,6 @@ function CustomerHome({ openBooking, openProfile }) {
 function BookingFlow({ company, close, onBooked }) {
   const { session, services, reviews, createBooking, startPayment, getPaymentStatus, feePct, cancelBooking, cancelPolicy } = useStore();
   const [reqAck, setReqAck] = useState(false);
-  const reqList = React.useMemo(() => {
-    const a = Array.isArray(company?.requirements) ? company.requirements : [];
-    const b = Array.isArray(svc?.requirements) ? svc.requirements : [];
-    return [...a, ...b].map((x) => String(x).trim()).filter(Boolean).slice(0, 12);
-  }, [company, svc]);
   const reqMaps = Array.isArray(company?.requirements_i18n) ? company.requirements_i18n : [];
   const toast = useToast();
   const svcs = services.filter((s) => s.company_id === company.id && s.is_active);
@@ -2041,6 +2036,17 @@ function BookingFlow({ company, close, onBooked }) {
   const [busy, setBusy] = useState(false);
   const [payWait, setPayWait] = useState(null);
   const isStudent = session.custType === "student";
+  /* The notice the customer ticks before paying: the company's own rules plus
+     anything this particular service adds. It has to be declared AFTER svc —
+     it reads it, and a const referenced above its own declaration throws
+     "Cannot access 'svc' before initialization" the moment the screen opens.
+     That is what crashed the app whenever anyone tapped a company. */
+  const reqList = React.useMemo(() => {
+    const a = Array.isArray(company?.requirements) ? company.requirements : [];
+    const b = Array.isArray(svc?.requirements) ? svc.requirements : [];
+    return [...a, ...b].map((x) => String(x).trim()).filter(Boolean).slice(0, 12);
+  }, [company, svc]);
+
   const isHourly = svc?.pricing_type === "hourly";
   const isUnit = svc?.pricing_type === "unit";
   const unitMin = Number(svc?.min_units) || 1;
@@ -3322,7 +3328,7 @@ function CompanyServices() {
   const [editing, setEditing] = useState(null);
   const [f, setF] = useState({});
   const openEditor = (svc) => {
-    setF(svc ? { ...svc, tasksText: (svc.tasks || []).join("\n") } : { name: "", description: "", icon: "🏠", price_huf: "", minutes: 120, tasksText: "", pricing_type: "flat", hourly_rate_huf: "", min_hours: 2, max_hours: 8, period: "weekly", promo_pct: 0,
+    setF(svc ? { ...svc, tasksText: (svc.tasks || []).join("\n"), reqText: (Array.isArray(svc.requirements) ? svc.requirements : []).join("\n") } : { name: "", description: "", icon: "🏠", price_huf: "", minutes: 120, tasksText: "", reqText: "", pricing_type: "flat", hourly_rate_huf: "", min_hours: 2, max_hours: 8, period: "weekly", promo_pct: 0,
       fulfilment: "onsite", turnaround_days: 3, slot_capacity: null, dur_unit: "min" });
     setEditing(svc ? "edit" : "new");
   };
@@ -3504,8 +3510,15 @@ function CompanyServices() {
           )}
 
           <Field area rows={5} label={L("Cleaner task checklist (one per line)", "Takarítói feladatlista (soronként egy)")} placeholder={"Kitchen surfaces & sink\nBathroom full clean\nVacuum & mop"} value={f.tasksText} onChange={(e) => setF({ ...f, tasksText: e.target.value })} />
+          <Field area rows={3}
+            label={L("What the customer must agree to — for this service only (one per line)", "Amit az ügyfélnek el kell fogadnia — csak ehhez a szolgáltatáshoz (soronként egy)")}
+            hint={L("Added to your company-wide notice. Shown before payment, and the customer has to tick it.",
+                    "A cég általános tájékoztatójához adódik. Fizetés előtt jelenik meg, és az ügyfélnek el kell fogadnia.")}
+            placeholder={L("Leave the laundry bag outside the door\nWe cannot wash items marked dry-clean only",
+                           "A mosnivalót tedd ki az ajtó elé\nA kizárólag vegytisztítható darabokat nem mossuk")}
+            value={f.reqText || ""} onChange={(e) => setF({ ...f, reqText: e.target.value })} />
           <Btn full disabled={!f.name || (f.pricing_type === "hourly" ? !f.hourly_rate_huf : !f.price_huf)} onClick={() => {
-            upsertService({ id: editing === "edit" ? f.id : undefined, name: f.name, description: f.description, icon: f.icon || "🏠", price_huf: parseInt(f.price_huf, 10) || 0, minutes: parseInt(f.minutes, 10) || 120, tasks: f.tasksText.split("\n").map((t) => t.trim()).filter(Boolean), is_active: f.is_active !== false, pricing_type: f.pricing_type || "flat", hourly_rate_huf: f.pricing_type === "hourly" ? (parseInt(f.hourly_rate_huf, 10) || 0) : null, min_hours: parseInt(f.min_hours, 10) || 2, max_hours: parseInt(f.max_hours, 10) || 8, period: f.pricing_type === "subscription" ? (f.period || "weekly") : null,
+            upsertService({ id: editing === "edit" ? f.id : undefined, requirements: String(f.reqText || "").split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 8), name: f.name, description: f.description, icon: f.icon || "🏠", price_huf: parseInt(f.price_huf, 10) || 0, minutes: parseInt(f.minutes, 10) || 120, tasks: f.tasksText.split("\n").map((t) => t.trim()).filter(Boolean), is_active: f.is_active !== false, pricing_type: f.pricing_type || "flat", hourly_rate_huf: f.pricing_type === "hourly" ? (parseInt(f.hourly_rate_huf, 10) || 0) : null, min_hours: parseInt(f.min_hours, 10) || 2, max_hours: parseInt(f.max_hours, 10) || 8, period: f.pricing_type === "subscription" ? (f.period || "weekly") : null,
               /* The per-service discount was bound to this form but never sent — a
                  dead input. Send 0 to clear it, which the server maps to NULL. */
               promo_pct: f.promo_pct === "" || f.promo_pct == null ? 0 : (parseInt(f.promo_pct, 10) || 0),

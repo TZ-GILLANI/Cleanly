@@ -670,7 +670,11 @@ export function StoreProvider({ children }) {
   const upsertService = async (svc) => {
     if (isApiMode) {
       try {
-        const body = { name: svc.name, description: svc.description, icon: svc.icon, priceHuf: svc.price_huf, minutes: svc.minutes, tasks: svc.tasks, isActive: svc.is_active, pricingType: svc.pricing_type, hourlyRateHuf: svc.hourly_rate_huf, minHours: svc.min_hours, maxHours: svc.max_hours, unitLabel: svc.unit_label, unitPriceHuf: svc.unit_price_huf, minUnits: svc.min_units, maxUnits: svc.max_units, period: svc.period , promoPct: svc.promo_pct === undefined ? undefined : (svc.promo_pct || 0), fulfilment: svc.fulfilment, turnaroundDays: svc.turnaround_days, slotCapacity: svc.slot_capacity };
+        const body = { name: svc.name, description: svc.description, icon: svc.icon, priceHuf: svc.price_huf, minutes: svc.minutes, tasks: svc.tasks, isActive: svc.is_active, pricingType: svc.pricing_type, hourlyRateHuf: svc.hourly_rate_huf, minHours: svc.min_hours, maxHours: svc.max_hours, unitLabel: svc.unit_label, unitPriceHuf: svc.unit_price_huf, minUnits: svc.min_units, maxUnits: svc.max_units, period: svc.period , promoPct: svc.promo_pct === undefined ? undefined : (svc.promo_pct || 0), fulfilment: svc.fulfilment, turnaroundDays: svc.turnaround_days, slotCapacity: svc.slot_capacity,
+          /* The whitelist below is why this codebase keeps growing dead inputs:
+             a field the form collects but this object omits is silently thrown
+             away, and the screen looks like it worked. */
+          requirements: svc.requirements };
         if (svc.id) {
           const { service } = await api("/services/" + svc.id, { method: "PUT", body });
           setDb(d => ({ ...d, services: d.services.map(s => s.id === svc.id ? service : s) }));

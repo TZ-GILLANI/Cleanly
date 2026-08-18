@@ -125,9 +125,30 @@ if (!jsdomOk) {
     ok(`${role} mounts without throwing`, thrown.length === 0, thrown[0]?.message || "");
     ok(`${role} renders something, not a blank screen`, html.length > 500, `${html.length} chars`);
 
+    const nav = w.document.querySelector(".cl-nav");
+
+    /* Tabs are not enough. Tapping a company opens the booking flow, and that
+       screen crashed for every customer on `Cannot access 'svc' before
+       initialization` — a const read nine lines above its own declaration.
+       No linter worth keeping catches that; opening the screen does. */
+    if (role === "customer") {
+      const before = thrown.length;
+      const card = [...w.document.querySelectorAll("button, div.cl-card, [role='button']")]
+        .filter((el) => !nav || !nav.contains(el))
+        .filter((el) => (el.textContent || "").length > 20)
+        .pop();
+      if (card) {
+        try { card.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); } catch (e) { thrown.push(e); }
+        await new Promise((r) => setTimeout(r, 1600));
+        const body = w.document.getElementById("root").textContent || "";
+        ok("opening a company does not crash the booking flow",
+           thrown.length === before && !/Something broke|Valami elromlott/.test(body),
+           thrown[thrown.length - 1]?.message || "error screen");
+      } else ok("a company card is on the customer's home screen", false, "none found");
+    }
+
     /* The landing screen is the one screen most likely to be right. Every crash
        found today was one tab deeper. */
-    const nav = w.document.querySelector(".cl-nav");
     const tabs = nav ? [...nav.querySelectorAll("button")] : [];
     let broken = [];
     for (let i = 1; i < tabs.length; i++) {
@@ -140,6 +161,8 @@ if (!jsdomOk) {
       }
     }
     ok(`${role} — all ${Math.max(0, tabs.length - 1)} other tabs open cleanly`, broken.length === 0, broken.slice(0, 2).join(" | "));
+
+
   }
 }
 

@@ -16,13 +16,24 @@ async function flagFailure(status, detail) {
   } catch { /* never let the reporter break the sender */ }
 }
 
-export async function sendEmail(to, subject, html) {
+/* attachments: [{ filename, content }] where content is bare base64.
+   Used for the partner's invoice, which the customer should receive rather than
+   having to open the app and go looking for. */
+export async function sendEmail(to, subject, html, attachments) {
   if (!mailerConfigured()) return { skipped: true };
   try {
+    const payload = { from: process.env.EMAIL_FROM, to, subject, html };
+    if (Array.isArray(attachments) && attachments.length) {
+      /* Resend rejects the whole message if an attachment is oversized, which
+         would lose the email as well as the file. Drop anything implausible and
+         still send the text — the invoice is also in the app. */
+      const ok = attachments.filter((a) => a && a.content && String(a.content).length * 0.75 < 8e6);
+      if (ok.length) payload.attachments = ok.map((a) => ({ filename: a.filename || "invoice.pdf", content: a.content }));
+    }
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: process.env.EMAIL_FROM, to, subject, html }),
+      body: JSON.stringify(payload),
     });
     if (!r.ok) {
       const body = await r.text();

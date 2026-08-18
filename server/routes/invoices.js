@@ -23,6 +23,11 @@ const router = Router();
 
 const MAX_PDF_BYTES = 5 * 1024 * 1024;
 
+/* Names come from a signup form and end up inside an HTML email. */
+const escapeHtml = (v) => String(v == null ? "" : v)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 /* Only the people actually involved in a booking may see its paperwork. */
 async function loadBooking(req, id) {
   const r = await query(
@@ -72,6 +77,44 @@ router.post("/:bookingId/partner", requireAuth, requireRole("company"), async (r
       await notify(a.b.customer_id, "invoice", "Your invoice is ready",
         `Invoice ${number} for booking #${a.b.order_no} is now in the app.`, a.b.id);
     } catch {}
+
+    /* And send it to them. An invoice that only exists inside an app is an
+       invoice the customer cannot forward to their accountant, find in a search,
+       or read after they have uninstalled us. Attach the PDF the partner just
+       uploaded; if there is no PDF, the number and date still go out.
+
+       Deliberately after the row is saved and never awaited into the response:
+       the upload has already succeeded, and a mail outage must not tell the
+       partner their invoice failed to save. */
+    (async () => {
+      try {
+        const { sendEmail, mailerConfigured } = await import("../lib/mailer.js");
+        if (!mailerConfigured()) return;
+        const r = await query(
+          `SELECT u.email, u.full_name, COALESCE(u.lang,'en') AS lang, c.name AS company_name
+             FROM bookings b
+             JOIN users u ON u.id = b.customer_id
+             LEFT JOIN companies c ON c.id = b.company_id
+            WHERE b.id = $1`, [req.params.bookingId]);
+        const row = r.rows[0];
+        if (!row?.email) return;
+
+        const { tr } = await import("../lib/i18n-server.js");
+        const L = (en) => tr(row.lang, en);
+        const subject = `${L("Your invoice")} · ${number}`;
+        const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#131A3D">
+          <p>${L("Hello")} ${escapeHtml(row.full_name || "")},</p>
+          <p>${escapeHtml(row.company_name || "")} ${L("has issued your invoice for booking")} #${a.b.order_no}.</p>
+          <p><b>${L("Invoice number")}:</b> ${escapeHtml(number)}<br>
+             <b>${L("Issued")}:</b> ${escapeHtml(issuedAt)}</p>
+          <p>${b64 ? L("The invoice is attached to this email.") : L("You can view it in the Cleano app.")}</p>
+          <p style="color:#6B7599;font-size:13px">${L("This invoice is issued by the cleaning company, not by Cleano.")}</p>
+        </div>`;
+
+        await sendEmail(row.email, subject, html,
+          b64 ? [{ filename: `${String(number).replace(/[^\w.-]+/g, "_")}.pdf`, content: b64.replace(/\s/g, "") }] : undefined);
+      } catch (e) { console.error("invoice email:", e.message); }
+    })();
 
     res.json({ ok: true });
   } catch (e) {

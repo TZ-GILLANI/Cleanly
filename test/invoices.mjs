@@ -106,6 +106,28 @@ ok("the PDF is stored without the data-URL prefix", stored.partner_invoice_pdf =
 ok("a customer cannot upload on the partner's behalf",
    (await j(`/api/invoices/${bk.id}/partner`, { method: "POST", token: cu.token, body: { invoiceNumber: "X", issuedAt: dPlus(0) } })).status === 403);
 
+console.log("\n── the customer is sent their invoice ──");
+/* An invoice that only exists inside an app is one the customer cannot forward
+   to their accountant, search for, or read after uninstalling us. The partner
+   uploads it here; it has to leave the building. */
+const invSrcE = (await import("fs")).readFileSync("server/routes/invoices.js", "utf8");
+ok("uploading emails the customer", /sendEmail\(row\.email/.test(invSrcE));
+ok("with the PDF attached when there is one", /filename: `\$\{String\(number\)/.test(invSrcE));
+ok("in the customer's own language, not the partner's", /tr\(row\.lang, en\)/.test(invSrcE));
+ok("names are escaped before going into the HTML", /escapeHtml\(row\.full_name/.test(invSrcE));
+ok("and it says plainly who issued it",
+   /This invoice is issued by the cleaning company, not by Cleano/.test(invSrcE));
+ok("the send is not awaited into the response — a mail outage must not fail the upload",
+   /\(async \(\) => \{[\s\S]{0,400}sendEmail/.test(invSrcE));
+const mailSrc = (await import("fs")).readFileSync("server/lib/mailer.js", "utf8");
+ok("the mailer accepts attachments", /attachments/.test(mailSrc));
+ok("and drops an oversized one rather than losing the whole email",
+   /String\(a\.content\)\.length \* 0\.75 < 8e6/.test(mailSrc));
+const { tr } = await import("../server/lib/i18n-server.js");
+ok("the email text is translated", tr("hu", "Invoice number") === "Számlaszám", tr("hu", "Invoice number"));
+ok("including for Turkish and Chinese",
+   tr("tr", "Your invoice") !== "Your invoice" && tr("zh", "Your invoice") !== "Your invoice");
+
 console.log("\n── the billing list: what to invoice, and everything needed to do it ──");
 await query("UPDATE bookings SET platform_net_minor = 33250 WHERE id=$1", [bk.id]);
 let bill = (await j("/api/invoices/admin/billing", { token: adm.token })).data;

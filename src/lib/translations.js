@@ -6,6 +6,9 @@
 
 export const EXTRA = {
   de: {
+    "What the customer must agree to — for this service only (one per line)": "Was der Kunde akzeptieren muss — nur für diese Leistung (eine pro Zeile)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Wird zu Ihrem allgemeinen Hinweis hinzugefügt. Erscheint vor der Zahlung und muss angehakt werden.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Wäschesack vor die Tür stellen\\nNur chemisch zu reinigende Teile können wir nicht waschen",
     "Something broke": "Etwas ist schiefgelaufen",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Auf diesem Bildschirm ist ein Fehler aufgetreten. Wir wurden benachrichtigt. Ein Neustart hilft meist.",
     "Reload Cleano": "Cleano neu laden",
@@ -705,6 +708,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Blick ins Admin-Panel der Plattform →",
   },
   ro: {
+    "What the customer must agree to — for this service only (one per line)": "Ce trebuie să accepte clientul — doar pentru acest serviciu (câte unul pe rând)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Se adaugă la informarea generală a firmei. Apare înainte de plată și clientul trebuie să o bifeze.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Lasă sacul cu rufe în fața ușii\\nNu putem spăla articolele marcate doar pentru curățare chimică",
     "Something broke": "Ceva s-a stricat",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Ecranul acesta a întâmpinat o problemă. Am fost anunțați. De obicei redeschiderea rezolvă.",
     "Reload Cleano": "Reîncarcă Cleano",
@@ -1404,6 +1410,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Aruncă o privire în panoul de admin →",
   },
   sk: {
+    "What the customer must agree to — for this service only (one per line)": "S čím musí zákazník súhlasiť — len pri tejto službe (jedno na riadok)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Pridá sa k všeobecnému oznámeniu firmy. Zobrazí sa pred platbou a zákazník ho musí odkliknúť.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Vrece s bielizňou nechajte pred dverami\\nVeci určené len na chemické čistenie nepereme",
     "Something broke": "Niečo sa pokazilo",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Na tejto obrazovke nastala chyba. Boli sme upozornení. Zvyčajne pomôže znovuotvorenie.",
     "Reload Cleano": "Znovu načítať Cleano",
@@ -2103,6 +2112,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Nahliadnite do admin panela →",
   },
   pl: {
+    "What the customer must agree to — for this service only (one per line)": "Na co klient musi się zgodzić — tylko dla tej usługi (po jednym w wierszu)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Dodawane do ogólnej informacji firmy. Pokazuje się przed płatnością i klient musi to zaznaczyć.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Zostaw worek z praniem pod drzwiami\\nNie pierzemy rzeczy tylko do czyszczenia chemicznego",
     "Something broke": "Coś poszło nie tak",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Na tym ekranie wystąpił problem. Zostaliśmy powiadomieni. Zwykle pomaga ponowne otwarcie.",
     "Reload Cleano": "Załaduj Cleano ponownie",
@@ -2802,6 +2814,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Zajrzyj do panelu administratora →",
   },
   uk: {
+    "What the customer must agree to — for this service only (one per line)": "З чим клієнт має погодитися — лише для цієї послуги (по одному в рядку)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Додається до загального повідомлення компанії. З'являється перед оплатою, клієнт має підтвердити.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Залиште мішок з білизною під дверима\\nРечі лише для хімчистки ми не перемо",
     "Something broke": "Щось зламалося",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "На цьому екрані сталася помилка. Нас уже сповіщено. Зазвичай допомагає перезапуск.",
     "Reload Cleano": "Перезавантажити Cleano",
@@ -3501,6 +3516,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Зазирнути в адмін-панель →",
   },
   fr: {
+    "What the customer must agree to — for this service only (one per line)": "Ce que le client doit accepter — pour cette prestation seulement (un par ligne)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Ajouté à votre note générale. Affiché avant le paiement, le client doit le cocher.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Laissez le sac de linge devant la porte\\nNous ne lavons pas les articles nettoyage à sec uniquement",
     "Something broke": "Un problème est survenu",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Cet écran a rencontré un problème. Nous en avons été informés. Rouvrir suffit généralement.",
     "Reload Cleano": "Recharger Cleano",
@@ -4200,6 +4218,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Jetez un œil au panneau admin →",
   },
   es: {
+    "What the customer must agree to — for this service only (one per line)": "Lo que el cliente debe aceptar — solo para este servicio (uno por línea)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Se añade al aviso general de tu empresa. Aparece antes del pago y el cliente debe marcarlo.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Deja la bolsa de ropa en la puerta\\nNo lavamos prendas de solo limpieza en seco",
     "Something broke": "Algo se ha roto",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Esta pantalla ha tenido un problema. Ya nos hemos enterado. Reabrir suele solucionarlo.",
     "Reload Cleano": "Recargar Cleano",
@@ -4899,6 +4920,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Echa un vistazo al panel de administración →",
   },
   tr: {
+    "What the customer must agree to — for this service only (one per line)": "Müşterinin kabul etmesi gerekenler — yalnızca bu hizmet için (her satıra bir tane)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Şirketinin genel bildirimine eklenir. Ödemeden önce görünür ve müşterinin onaylaması gerekir.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Çamaşır torbasını kapının önüne bırak\\nYalnızca kuru temizleme etiketli ürünleri yıkayamayız",
     "Something broke": "Bir şeyler bozuldu",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Bu ekranda bir sorun oluştu. Bilgilendirildik. Genelde yeniden açmak sorunu giderir.",
     "Reload Cleano": "Cleano'yu yeniden yükle",
@@ -5526,6 +5550,9 @@ export const EXTRA = {
     "💵 Cash each visit (demo)": "💵 Her ziyarette nakit (demo)",
   },
   zh: {
+    "What the customer must agree to — for this service only (one per line)": "客户需要同意的事项 — 仅限此服务（每行一条）",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "会附加到公司的通用须知中。付款前显示，客户必须勾选确认。",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "请将待洗衣物袋放在门外\\n仅可干洗的衣物我们无法清洗",
     "Something broke": "出了点问题",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "此页面出现了问题。我们已收到通知。重新打开通常即可解决。",
     "Reload Cleano": "重新加载 Cleano",
@@ -6153,6 +6180,9 @@ export const EXTRA = {
     "💵 Cash each visit (demo)": "💵 每次服务付现（演示）",
   },
   it: {
+    "What the customer must agree to — for this service only (one per line)": "Cosa deve accettare il cliente — solo per questo servizio (uno per riga)",
+    "Added to your company-wide notice. Shown before payment, and the customer has to tick it.": "Si aggiunge all'avviso generale dell'azienda. Compare prima del pagamento e il cliente deve spuntarlo.",
+    "Leave the laundry bag outside the door\\nWe cannot wash items marked dry-clean only": "Lascia il sacco della biancheria fuori dalla porta\\nNon laviamo capi solo lavaggio a secco",
     "Something broke": "Qualcosa si è rotto",
     "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Questa schermata ha avuto un problema. Siamo stati avvisati. Riaprire di solito risolve.",
     "Reload Cleano": "Ricarica Cleano",

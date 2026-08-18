@@ -177,5 +177,42 @@ ok("an ignored booking is auto-cancelled, not left in limbo", Number(swept.statu
 const accepted = await query("SELECT status FROM bookings WHERE id = $1", [bId]);
 ok("an accepted booking is left alone", Number(accepted.rows[0].status) === 4, JSON.stringify(accepted.rows[0]));
 
+
+console.log("\n── the notice, per service ──");
+/* The company has one notice for everything it does. A service can add its own,
+   because "leave the laundry bag outside the door" belongs to the laundry, not
+   to the company. The column existed from the start and nothing ever wrote to
+   it: the route ignored the field, the store's whitelist dropped it, and the
+   booking screen read svc.requirements nine lines above svc was declared —
+   which threw the moment anyone tapped a company. */
+const reqSvc = (await j("/api/services", { method: "POST", token: coTok.token, body: {
+  name: "Laundry", pricingType: "flat", priceHuf: 6000,
+  requirements: ["  Leave the bag outside the door  ", "", "No dry-clean-only items"] } })).data.service;
+ok("a service stores its own notice", Array.isArray(reqSvc.requirements) && reqSvc.requirements.length === 2, JSON.stringify(reqSvc.requirements));
+ok("blank lines are dropped and the rest trimmed", reqSvc.requirements[0] === "Leave the bag outside the door", JSON.stringify(reqSvc.requirements[0]));
+
+const many = (await j("/api/services", { method: "POST", token: coTok.token, body: {
+  name: "Wordy", pricingType: "flat", priceHuf: 6000,
+  requirements: Array.from({ length: 20 }, (_, i) => "rule " + i) } })).data.service;
+ok("the list is capped so it cannot fill the booking screen", many.requirements.length === 8, String(many.requirements.length));
+const longOne = (await j("/api/services", { method: "POST", token: coTok.token, body: {
+  name: "Long", pricingType: "flat", priceHuf: 6000, requirements: ["x".repeat(400)] } })).data.service;
+ok("and each line is capped", longOne.requirements[0].length === 140, String(longOne.requirements[0].length));
+
+const upd = (await j(`/api/services/${reqSvc.id}`, { method: "PUT", token: coTok.token, body: { requirements: ["Only one rule now"] } })).data.service;
+ok("editing replaces the list", upd.requirements.length === 1 && upd.requirements[0] === "Only one rule now", JSON.stringify(upd.requirements));
+const untouched = (await j(`/api/services/${reqSvc.id}`, { method: "PUT", token: coTok.token, body: { name: "Renamed" } })).data.service;
+ok("an edit that does not mention it leaves it alone", untouched.requirements.length === 1, JSON.stringify(untouched.requirements));
+const cleared = (await j(`/api/services/${reqSvc.id}`, { method: "PUT", token: coTok.token, body: { requirements: [] } })).data.service;
+ok("but an empty list really does clear it", Array.isArray(cleared.requirements) && cleared.requirements.length === 0, JSON.stringify(cleared.requirements));
+
+const appSrcR = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("the booking screen merges the company's notice with the service's",
+   /Array\.isArray\(company\?\.requirements\)[\s\S]{0,200}Array\.isArray\(svc\?\.requirements\)/.test(appSrcR));
+ok("and reads svc only after it is declared",
+   appSrcR.indexOf("const [svc, setSvc] = useState(null)") < appSrcR.indexOf("Array.isArray(svc?.requirements)"));
+ok("the store actually sends the field", /requirements: svc\.requirements/.test((await import("fs")).readFileSync("src/store.jsx", "utf8")));
+ok("and the company has somewhere to type it", /f\.reqText/.test(appSrcR));
+
 console.log(`\n════ PART 5: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

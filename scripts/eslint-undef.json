@@ -3,5 +3,6 @@
   "env": { "browser": true, "es2022": true },
   "parserOptions": { "ecmaVersion": 2022, "sourceType": "module", "ecmaFeatures": { "jsx": true } },
   "rules": { "no-undef": "error" },
-  "globals": { "L": "readonly", "process": "readonly" }
+  "globals": { "process": "readonly" },
+  "//": "no-use-before-define was tried and removed: at module scope it fires on every shared constant used inside a component, which is legal and safe. Twelve false alarms to one real bug is a rule people switch off. The temporal-dead-zone case that actually bit us (a const read above its own declaration inside the SAME component body) is caught empirically by test/render.mjs, which opens the booking flow and would have thrown."
 }

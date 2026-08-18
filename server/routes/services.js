@@ -51,6 +51,17 @@ function validateService(b, ptype) {
 
 const router = Router();
 
+/* The notice a customer must tick before paying. The company has one that
+   applies to everything it does; a service can add its own, because "leave the
+   laundry bag outside the door" belongs to the laundry, not to the company.
+   Same shape and same limits as the company list, so the two can be merged and
+   shown as one. */
+function cleanRequirements(v) {
+  if (!Array.isArray(v)) return undefined;                 // undefined = leave alone
+  return v.map((x) => String(x).trim().slice(0, 140)).filter(Boolean).slice(0, 8);
+}
+
+
 /* GET /api/services — public: all active services */
 router.get("/", async (req, res) => {
   try {
@@ -84,6 +95,7 @@ router.get("/company/:companyId", requireAuth, requireRole("company"), async (re
 
 /* POST /api/services */
 router.post("/", requireAuth, requireRole("company"), async (req, res) => {
+  const { requirements } = req.body;
   const { name, description, icon, priceHuf, minutes, tasks, pricingType, hourlyRateHuf, minHours, maxHours, period, promoPct,
           fulfilment, turnaroundDays, slotCapacity,
           unitLabel, unitPriceHuf, minUnits, maxUnits } = req.body;
@@ -122,8 +134,8 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
     const result = await query(
       `INSERT INTO services
         (company_id, name, description, icon, price_huf, minutes, tasks, pricing_type, hourly_rate_huf, min_hours, max_hours, period, promo_pct,
-         fulfilment, turnaround_days, slot_capacity, unit_label, unit_price_huf, min_units, max_units)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+         fulfilment, turnaround_days, slot_capacity, unit_label, unit_price_huf, min_units, max_units, requirements)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
       [req.user.companyId, name, description, icon || "🏠", priceHuf || 0, minutes || 120, JSON.stringify(tasks || []),
        ptype, ptype === "hourly" ? hourlyRateHuf : null, minHours || 2, maxHours || 8, ptype === "subscription" ? period : null, promo,
        ["onsite", "collection"].includes(fulfilment) ? fulfilment : "onsite",
@@ -132,7 +144,8 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
        ptype === "unit" ? String(unitLabel).trim().slice(0, 12) : null,
        ptype === "unit" ? parseInt(unitPriceHuf, 10) : null,
        ptype === "unit" ? (minUnits != null ? Number(minUnits) : 1) : null,
-       ptype === "unit" ? (maxUnits != null ? Number(maxUnits) : 50) : null]
+       ptype === "unit" ? (maxUnits != null ? Number(maxUnits) : 50) : null,
+       (() => { const r = cleanRequirements(requirements); return r ? JSON.stringify(r) : null; })()]
     );
     translateService(result.rows[0], req.user?.lang);
     res.status(201).json({ service: result.rows[0] });
@@ -144,6 +157,7 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
 
 /* PUT /api/services/:id */
 router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
+  const { requirements } = req.body;
   const { name, description, icon, priceHuf, minutes, tasks, isActive, pricingType, hourlyRateHuf, minHours, maxHours, period, promoPct,
           fulfilment, turnaroundDays, slotCapacity,
           unitLabel, unitPriceHuf, minUnits, maxUnits } = req.body;
@@ -190,7 +204,8 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         unit_label = COALESCE($18, unit_label),
         unit_price_huf = COALESCE($19, unit_price_huf),
         min_units = COALESCE($20, min_units),
-        max_units = COALESCE($21, max_units)
+        max_units = COALESCE($21, max_units),
+        requirements = CASE WHEN $22::text IS NULL THEN requirements ELSE $22::jsonb END
       WHERE id = $13 RETURNING *`,
       [name, description, icon, priceHuf, minutes, tasks ? JSON.stringify(tasks) : null, isActive,
        pricingType, hourlyRateHuf, minHours, maxHours, period, req.params.id,
@@ -201,7 +216,11 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
        unitLabel != null ? String(unitLabel).trim().slice(0, 12) : null,
        unitPriceHuf != null ? parseInt(unitPriceHuf, 10) : null,
        minUnits != null ? Number(minUnits) : null,
-       maxUnits != null ? Number(maxUnits) : null]
+       maxUnits != null ? Number(maxUnits) : null,
+       /* undefined means "the form did not mention it" — leave what is stored.
+          An empty array means "the company cleared the list", which must be
+          saved, so it cannot collapse to the same null. */
+       (() => { const r = cleanRequirements(requirements); return r === undefined ? null : JSON.stringify(r); })()]
     );
     translateService(result.rows[0], req.user?.lang);
     res.json({ service: result.rows[0] });
