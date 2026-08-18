@@ -209,9 +209,16 @@ router.get("/bookings", ...guard, async (req, res) => {
 router.get("/revenue", ...guard, async (req, res) => {
   try {
     const result = await query(
-      `SELECT scheduled_date::TEXT AS date, COUNT(*) AS bookings, COALESCE(SUM(total_huf),0) AS revenue
+      /* No ::TEXT cast: db.js registers a type parser that hands DATE back as a
+         plain 'YYYY-MM-DD' string already, precisely so the front end never
+         receives a JS Date and re-reads it in the browser's timezone. */
+      `SELECT scheduled_date AS date, COUNT(*) AS bookings, COALESCE(SUM(total_huf),0) AS revenue
        FROM bookings
-       WHERE status = 4 AND scheduled_date >= NOW() - INTERVAL '30 days'
+       -- CURRENT_DATE, not NOW(): scheduled_date is a DATE, and comparing it
+       -- against a timestamptz drags the server's timezone into the answer —
+       -- the last day of the window slides depending on the hour you ask.
+       -- Date against date is both correct and the same in every timezone.
+       WHERE status = 4 AND scheduled_date >= CURRENT_DATE - 30
        GROUP BY scheduled_date
        ORDER BY scheduled_date ASC`
     );

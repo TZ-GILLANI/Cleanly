@@ -67,6 +67,38 @@ app.use("/api/calendar", (await import("./routes/calendar.js")).default);
 app.use("/api/invoices", (await import("./routes/invoices.js")).default);
 app.use("/api/customer-reports", (await import("./routes/customer-reports.js")).default);
 
+/* Where the apps report their own crashes.
+
+   Server faults already reach ALERT_EMAIL. Client faults did not reach anyone:
+   the screen went blank on someone's phone and that was the end of it. This is
+   deliberately unauthenticated — a crash often happens before or during login,
+   and a report we refuse is a report we never see — but it is rate-limited and
+   truncated so it cannot become a way to fill an inbox. */
+const crashSeen = new Map();
+app.post("/api/client-error", async (req, res) => {
+  res.json({ ok: true });                       // never make the app wait on this
+  try {
+    const b = req.body || {};
+    const msg = String(b.message || "").slice(0, 300);
+    if (!msg) return;
+    /* One report per distinct message per 10 minutes. A crash loop on one
+       phone would otherwise send thousands. */
+    const key = msg.slice(0, 120);
+    const now = Date.now();
+    if (crashSeen.get(key) > now - 600e3) return;
+    crashSeen.set(key, now);
+    if (crashSeen.size > 200) crashSeen.clear();
+
+    const { alert } = await import("./lib/alerts.js");
+    alert("client-crash", `App crashed: ${msg}`,
+      [`version: ${String(b.version || "?").slice(0, 20)}`,
+       `platform: ${String(b.platform || "?").slice(0, 20)}`,
+       `language: ${String(b.lang || "?").slice(0, 8)}`,
+       "", String(b.component || "").slice(0, 800),
+       "", String(b.stack || "").slice(0, 1200)].join("\n"));
+  } catch { /* a failure here must never surface anywhere */ }
+});
+
 app.get("/api/health", (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
 /* ── 2.1 minimum supported app version. Old builds show a blocking update

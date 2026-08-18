@@ -1,5 +1,5 @@
 import ReactDOM from "react-dom";
-import React, { useState, useMemo, useContext, createContext, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useContext, createContext, useCallback } from "react";
 import { Capacitor } from "@capacitor/core";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
@@ -546,6 +546,10 @@ const canStillCancel = (b, freeH = 48) => {
     return !Number.isFinite(h) ? true : h >= freeH;
   } catch { return true; }
 };
+
+/* Five glyphs, rounded. Lived inside one component and was called from two
+   others, which is a ReferenceError rather than a missing star. */
+const stars = (n) => "★".repeat(Math.round(n || 0)) + "☆".repeat(Math.max(0, 5 - Math.round(n || 0)));
 
 const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -1163,7 +1167,10 @@ function AddressPicker({ value, onChange }) {
   const [extra, setExtra] = useState("");
   const [saveAs, setSaveAs] = useState("");
   const debounceRef = React.useRef(null);
-  const saved = session.savedAddresses || [];
+  /* JSONB, so this arrives parsed in production and as a raw string from some
+     other paths. `|| []` only catches null — a truthy string sails through and
+     dies on .map, taking the whole screen with it. */
+  const saved = Array.isArray(session.savedAddresses) ? session.savedAddresses : [];
 
   // live street suggestions — the street cannot be typed wrong
   const onStreetInput = (v) => {
@@ -1862,7 +1869,7 @@ function CustomerHome({ openBooking, openProfile }) {
   const [sort, setSort] = useState("rating");
   // City is DERIVED (profile/saved addresses → cached choice → default), never toggled.
   const derivedCity = useMemo(() => {
-    for (const a of [session.address, ...(session.savedAddresses || []).map((x) => x.address)]) {
+    for (const a of [session.address, ...(Array.isArray(session.savedAddresses) ? session.savedAddresses : []).map((x) => x?.address)]) {
       const c = cityFromAddress(a);
       if (c) return c;
     }
@@ -3153,26 +3160,16 @@ function CompanyJobs({ openProfile }) {
                 <Pill>Done ✨</Pill>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
-                {b.invoice ? (
-                  <a href={b.invoice.data} download={b.invoice.name} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>{b.invoice.name.slice(0, 22)}</a>
-                ) : (
-                  <label style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, cursor: "pointer" }}>
-                    Upload invoice
-                    <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => {
-                      const file = e.target.files?.[0]; e.target.value = "";
-                      if (!file) return;
-                      (async () => {
-                        try {
-                          const data = await prepareUpload(file);
-                          upsertBooking({ ...b, invoice: { name: file.name, type: file.type, data } });
-                          toast(L("Invoice uploaded", "Számla feltöltve"));
-                        } catch (err) {
-                          toast(err.message === "too-large" ? L("That file is too large — 8 MB maximum", "Túl nagy a fájl — legfeljebb 8 MB") : L("Could not read that file", "Nem sikerült beolvasni a fájlt"), "error");
-                        }
-                      })();
-                    }} />
-                  </label>
-                )}
+                {/* The real uploader is <PartnerInvoiceBox> above: it posts to
+                    /api/invoices/:id/partner and records a number and a date,
+                    which is what the partner actually owes.
+
+                    What stood here was the version from before that existed —
+                    it called upsertBooking(), a store function that no longer
+                    exists. It rendered perfectly and threw a ReferenceError the
+                    moment a partner chose a file, which is the worst place for
+                    a crash to hide: invisible until someone does the one thing
+                    the button is for. */}
                 <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast(L("Moved to history (Settings)", "Áthelyezve az előzményekbe (Beállítások)")); }}
                   style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{L("Clear", "Törlés")}</button>
               </div>
@@ -4157,7 +4154,6 @@ function CompanyReviews() {
   const headline = data.company?.rating != null ? Number(data.company.rating) : null;
   const headlineCount = Number(data.company?.reviewCount ?? reviews.length);
   const avg = reviews.length ? Math.round((reviews.reduce((a, r) => a + (Number(r.rating) || 0), 0) / reviews.length) * 10) / 10 : 0;
-  const stars = (n) => "★".repeat(Math.round(n || 0)) + "☆".repeat(Math.max(0, 5 - Math.round(n || 0)));
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Reviews", "Értékelések")}</div>
@@ -4958,7 +4954,10 @@ function AdminCompanies() {
         </div>
       ))}
       {viewDocs && <DocViewer title={viewDocs.title} docs={viewDocs.docs} close={() => setViewDocs(null)} />}
-      {detail && <AdminUserDetail userId={detail} close={() => setDetail(null)} onChanged={adminFetchUsers} />}
+      {/* AdminUsers owns the user-detail sheet and has the state for it. A copy
+          of that line lived here too, referencing `detail` and `setDetail` that
+          this component never declared — so opening Companies threw a
+          ReferenceError before a single row was drawn. */}
       {svcOpen && (
         <Sheet title={`${svcOpen.name} — listings (${svcOpen.list.length})`} close={() => setSvcOpen(null)}>
           {svcOpen.list.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("This company has no service listings yet.", "Ennek a cégnek még nincs szolgáltatása.")}</div>}
@@ -6168,15 +6167,76 @@ function UpdateGate({ children }) {
   );
 }
 
+/* ── When something throws ──────────────────────────────────────────────────
+   React's default behaviour on an uncaught render error is to unmount the
+   entire tree. What the user gets is a blank coloured rectangle: no message,
+   no way back, and nothing they can tell you. One mistake in one component
+   takes down customer, company, cleaner and admin alike.
+
+   A boundary turns that into a screen that says something happened and offers
+   a way out, and — more usefully — sends the error to the operator. A crash
+   nobody can describe is a crash nobody can fix.                            */
+class Crash extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+
+  componentDidCatch(err, info) {
+    try {
+      /* Fire and forget, and never let the reporter throw — an error inside
+         error handling is how you lose the original error. */
+      fetch((API_BASE || "") + "/api/client-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: String(err?.message || err).slice(0, 300),
+          stack: String(err?.stack || "").slice(0, 1500),
+          component: String(info?.componentStack || "").slice(0, 800),
+          version: APP_VERSION,
+          platform: Capacitor?.getPlatform?.() || "web",
+          lang: getLang(),
+        }),
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }
+
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div style={{ minHeight: "100vh", background: C.navyDeep, display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
+        <div style={{ textAlign: "center", maxWidth: 340 }}>
+          <div style={{ fontSize: 46 }}>🐙</div>
+          <div style={{ fontFamily: F, fontWeight: 800, fontSize: 20, color: "#fff", marginTop: 16 }}>
+            {L("Something broke", "Valami elromlott")}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 13.5, color: "#B9C0DF", marginTop: 10, lineHeight: 1.6 }}>
+            {L("That screen hit a problem. We've been told about it. Reopening usually clears it.",
+               "Ez a képernyő hibába futott. Már tudunk róla. Az újranyitás általában megoldja.")}
+          </div>
+          <Btn full style={{ marginTop: 22 }} onClick={() => { try { window.location.reload(); } catch {} }}>
+            {L("Reload Cleano", "Cleano újratöltése")}
+          </Btn>
+          {/* The message itself, small and last. Useless to most people, but it
+              is the difference between "it went blank" and a bug report. */}
+          <div style={{ fontFamily: B, fontSize: 10, color: "#5C6690", marginTop: 18, wordBreak: "break-word" }}>
+            {String(this.state.err?.message || this.state.err).slice(0, 160)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 export default function App() {
   return (
-    <StoreProvider>
-      <ToastProvider>
-        <UpdateGate>
-          <Shell />
-        </UpdateGate>
-      </ToastProvider>
-    </StoreProvider>
+    <Crash>
+      <StoreProvider>
+        <ToastProvider>
+          <UpdateGate>
+            <Shell />
+          </UpdateGate>
+        </ToastProvider>
+      </StoreProvider>
+    </Crash>
   );
 }
 

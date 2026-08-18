@@ -244,7 +244,9 @@ export function StoreProvider({ children }) {
     isSuper: user.is_super === true,
     address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || "en",
     documents: user.documents || [],
-    savedAddresses: user.saved_addresses || [],
+    /* Normalise once, at the boundary. Every screen below assumes an array. */
+    savedAddresses: Array.isArray(user.saved_addresses) ? user.saved_addresses
+      : (() => { try { const v = JSON.parse(user.saved_addresses || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })(),
   });
 
   // Re-pull everything for the signed-in session (used by the app's live refresh).
@@ -382,7 +384,7 @@ export function StoreProvider({ children }) {
     if (isApiMode) {
       try {
         const { user } = await api("/auth/profile", { method: "PUT", body: { fullName: full_name, phone, customerType: customer_type, address, paymentMethod: payment_method, lang, documents, savedAddresses: saved_addresses } });
-        setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [], savedAddresses: user.saved_addresses || [] }));
+        setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [], savedAddresses: Array.isArray(user.saved_addresses) ? user.saved_addresses : [] }));
         if (session?.role === "employee") {
           setDb(d => ({ ...d, employees: d.employees.map(e => e.id === session.userId ? { ...e, full_name: user.full_name, phone: user.phone } : e) }));
         }

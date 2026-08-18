@@ -9,3 +9,4 @@ ios/App/Pods/
 *.iml
 ios-config/secret/
 .env.*.local
+.probe/

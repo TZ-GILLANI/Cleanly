@@ -6,6 +6,9 @@
 
 export const EXTRA = {
   de: {
+    "Something broke": "Etwas ist schiefgelaufen",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Auf diesem Bildschirm ist ein Fehler aufgetreten. Wir wurden benachrichtigt. Ein Neustart hilft meist.",
+    "Reload Cleano": "Cleano neu laden",
     "Application rejected": "Bewerbung abgelehnt",
     "Assigned to ": "Zugewiesen an ",
     "Booking declined": "Buchung abgelehnt",
@@ -702,6 +705,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Blick ins Admin-Panel der Plattform →",
   },
   ro: {
+    "Something broke": "Ceva s-a stricat",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Ecranul acesta a întâmpinat o problemă. Am fost anunțați. De obicei redeschiderea rezolvă.",
+    "Reload Cleano": "Reîncarcă Cleano",
     "Application rejected": "Cerere respinsă",
     "Assigned to ": "Alocat către ",
     "Booking declined": "Rezervare refuzată",
@@ -1398,6 +1404,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Aruncă o privire în panoul de admin →",
   },
   sk: {
+    "Something broke": "Niečo sa pokazilo",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Na tejto obrazovke nastala chyba. Boli sme upozornení. Zvyčajne pomôže znovuotvorenie.",
+    "Reload Cleano": "Znovu načítať Cleano",
     "Application rejected": "Žiadosť zamietnutá",
     "Assigned to ": "Pridelené: ",
     "Booking declined": "Rezervácia odmietnutá",
@@ -2094,6 +2103,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Nahliadnite do admin panela →",
   },
   pl: {
+    "Something broke": "Coś poszło nie tak",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Na tym ekranie wystąpił problem. Zostaliśmy powiadomieni. Zwykle pomaga ponowne otwarcie.",
+    "Reload Cleano": "Załaduj Cleano ponownie",
     "Application rejected": "Wniosek odrzucony",
     "Assigned to ": "Przypisano do ",
     "Booking declined": "Rezerwacja odrzucona",
@@ -2790,6 +2802,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Zajrzyj do panelu administratora →",
   },
   uk: {
+    "Something broke": "Щось зламалося",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "На цьому екрані сталася помилка. Нас уже сповіщено. Зазвичай допомагає перезапуск.",
+    "Reload Cleano": "Перезавантажити Cleano",
     "Application rejected": "Заявку відхилено",
     "Assigned to ": "Призначено: ",
     "Booking declined": "Бронювання відхилено",
@@ -3486,6 +3501,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Зазирнути в адмін-панель →",
   },
   fr: {
+    "Something broke": "Un problème est survenu",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Cet écran a rencontré un problème. Nous en avons été informés. Rouvrir suffit généralement.",
+    "Reload Cleano": "Recharger Cleano",
     "Application rejected": "Demande refusée",
     "Assigned to ": "Attribué à ",
     "Booking declined": "Réservation refusée",
@@ -4182,6 +4200,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Jetez un œil au panneau admin →",
   },
   es: {
+    "Something broke": "Algo se ha roto",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Esta pantalla ha tenido un problema. Ya nos hemos enterado. Reabrir suele solucionarlo.",
+    "Reload Cleano": "Recargar Cleano",
     "Application rejected": "Solicitud rechazada",
     "Assigned to ": "Asignado a ",
     "Booking declined": "Reserva rechazada",
@@ -4878,6 +4899,9 @@ export const EXTRA = {
     "🛡️ Peek at the platform admin panel →": "🛡️ Echa un vistazo al panel de administración →",
   },
   tr: {
+    "Something broke": "Bir şeyler bozuldu",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Bu ekranda bir sorun oluştu. Bilgilendirildik. Genelde yeniden açmak sorunu giderir.",
+    "Reload Cleano": "Cleano'yu yeniden yükle",
     "Application rejected": "Başvuru reddedildi",
     "Assigned to ": "Atandı: ",
     "Booking declined": "Rezervasyon reddedildi",
@@ -5502,6 +5526,9 @@ export const EXTRA = {
     "💵 Cash each visit (demo)": "💵 Her ziyarette nakit (demo)",
   },
   zh: {
+    "Something broke": "出了点问题",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "此页面出现了问题。我们已收到通知。重新打开通常即可解决。",
+    "Reload Cleano": "重新加载 Cleano",
     "Application rejected": "申请已拒绝",
     "Assigned to ": "已指派给 ",
     "Booking declined": "预约已拒绝",
@@ -6126,6 +6153,9 @@ export const EXTRA = {
     "💵 Cash each visit (demo)": "💵 每次服务付现（演示）",
   },
   it: {
+    "Something broke": "Qualcosa si è rotto",
+    "That screen hit a problem. We've been told about it. Reopening usually clears it.": "Questa schermata ha avuto un problema. Siamo stati avvisati. Riaprire di solito risolve.",
+    "Reload Cleano": "Ricarica Cleano",
     "Application rejected": "Domanda respinta",
     "Assigned to ": "Assegnato a ",
     "Booking declined": "Prenotazione rifiutata",
