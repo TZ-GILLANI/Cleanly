@@ -45,6 +45,17 @@ workflows:
           plutil -replace NSPhotoLibraryAddUsageDescription -string "Cleano can save images to your photo library." $P
           # Apple requires an encryption-usage declaration for every upload; Cleano uses only standard HTTPS (exempt)
           plutil -replace ITSAppUsesNonExemptEncryption -bool NO $P
+          # ── The languages the App Store lists on our page ──────────────────
+          # Apple reads this from the BINARY, not from the description. Cleano's
+          # translations live in JavaScript, which iOS cannot see, so without
+          # this the store advertises the app as English-only — and a Hungarian
+          # or Ukrainian speaker browsing in their own language never learns it
+          # speaks theirs. Keep in step with src/lib/i18n.js; a test enforces it.
+          plutil -replace CFBundleLocalizations -json '["en","hu","de","ro","sk","pl","uk","fr","es","it","tr","zh-Hans"]' $P \
+            || plutil -insert CFBundleLocalizations -json '["en","hu","de","ro","sk","pl","uk","fr","es","it","tr","zh-Hans"]' $P
+          plutil -replace CFBundleAllowMixedLocalizations -bool YES $P \
+            || plutil -insert CFBundleAllowMixedLocalizations -bool YES $P
+          echo "--- declared localizations ---"; plutil -extract CFBundleLocalizations xml1 -o - $P
       - name: Enable push notifications capability
         script: |
           cp ios-config/App.entitlements ios/App/App/App.entitlements

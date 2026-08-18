@@ -116,5 +116,27 @@ console.log("\n── the app itself still has zero drift ──");
 const drift = (await import("child_process")).execSync("node scripts/i18n-drift.mjs", { encoding: "utf8" });
 ok("the UI drift checker reports 0", /DRIFT: 0 missing/.test(drift), drift.split("\n").slice(-3).join(" "));
 
+
+console.log("\n── the App Store is told which languages we speak ──");
+/* Apple reads supported languages from the binary. Cleano's translations are
+   JavaScript, invisible to iOS, so without CFBundleLocalizations the listing
+   says "English" and nobody browsing in Hungarian learns otherwise. This is
+   injected during the iOS build, so the guard has to live here. */
+const fsL = await import("fs");
+const cm = fsL.readFileSync("codemagic.yaml", "utf8");
+const m = /CFBundleLocalizations -json '(\[[^\]]*\])'/.exec(cm);
+ok("the iOS build declares its localizations", !!m);
+const declared = m ? JSON.parse(m[1]) : [];
+const picker = [...new Set([...fsL.readFileSync("src/lib/i18n.js", "utf8")
+  .matchAll(/\bcode:\s*"([a-z]{2})"/g)].map((x) => x[1]))];
+/* Apple wants a script variant for Chinese; everything else is a plain code. */
+const norm = (l) => (l === "zh-Hans" ? "zh" : l);
+const undeclared = picker.filter((l) => !declared.map(norm).includes(l));
+ok("every language in the picker is declared to Apple", undeclared.length === 0, undeclared.join(","));
+ok("Chinese is declared with its script variant", declared.includes("zh-Hans"));
+ok("mixed localizations are allowed, so nothing falls back blank", /CFBundleAllowMixedLocalizations -bool YES/.test(cm));
+ok("and the build prints what it declared, so a silent failure is visible",
+   /plutil -extract CFBundleLocalizations/.test(cm));
+
 console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);
