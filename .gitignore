@@ -10,3 +10,6 @@ ios/App/Pods/
 ios-config/secret/
 .env.*.local
 .probe/
+
+# scratch file written and deleted by test/render.mjs
+.render-canary.jsx

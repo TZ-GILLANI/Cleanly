@@ -189,12 +189,24 @@ ok("a made-up invite code is refused",
 ok("and the same code cannot be used twice",
    (await j("/api/auth/register", { method: "POST", body: { email: "y@g.hu", password: "secret123", role: "employee", fullName: "Y", inviteCode, phone: "+36301110001", termsAccepted: true } })).status === 400);
 
-console.log("\n── the whole-city service radius ──");
+console.log("\n── serving a whole city ──");
+/* This replaced a 30 km preset labelled "Whole city". The preset was a lie in
+   both directions — it swallowed four towns around a village and still clipped
+   the edge of a large city — so these assert the behaviour that matters rather
+   than the number that used to implement it. */
 const appR = (await import("fs")).readFileSync("src/App.jsx", "utf8");
-ok("there is a preset for the whole city", /CITY_WIDE_KM/.test(appR));
-ok("and the slider reads 'Whole city' rather than a bare number at that point",
-   /Whole city", "Egész város"/.test(appR));
-ok("a company-wide radius that large is accepted by the server",
+/* The button is clicked for real in test/render.mjs. What matters here is that
+   the city is a placeholder rather than baked into the key — spelled the old
+   way it could only ever exist in English and Hungarian. */
+ok("there is a one-tap way to serve the whole of your own city",
+   /L\("🏙️ Serve the whole of \{0\}"/.test(appR));
+ok("and it is worded so it can be translated, not interpolated into the key",
+   /fill\(L\("🏙️ Serve the whole of \{0\}"/.test(appR));
+ok("the km slider no longer pretends a number means a city",
+   !/CITY_WIDE_KM/.test(appR));
+ok("cities are named, and more than one can be named",
+   /Cities you serve in full/.test(appR) && /AddCityField/.test(appR));
+ok("a large radius is still accepted by the server",
    (await j(`/api/companies/${cid}`, { method: "PUT", token: CO.token, body: { serviceRadiusKm: 30 } })).status === 200);
 
 console.log("\n── a service discount is visible before you tap in ──");
@@ -303,6 +315,215 @@ ok("the brute-force ceiling is keyed on the account, not the network",
    /rateLimit\("login:" \+ String\(email\)/.test(authSrcL));
 ok("and the test-mode multiplier is confined to PGMEM, so production stays honest",
    /if \(process\.env\.PGMEM\) max = max \* 50/.test(authSrcL));
+
+/* ── THE SERVICE AREA, ACTUALLY ENFORCED ──────────────────────────────────
+   The company settings screen has said "Only customers inside the circle can
+   book you" since the radius shipped. Nothing checked it: the radius was
+   stored, distanceKm() was written, and the two were never introduced. A
+   Debrecen company with a 5 km radius could be booked from Budapest and the
+   cleaner found out when the address loaded on the day.
+
+   geocode() reads its cache first, so seeding `geocache` lets these run with
+   no network at all — and tests the same path production takes on the second
+   booking to any address. */
+await query("UPDATE companies SET service_lat=47.5316, service_lng=21.6273, service_radius_km=10 WHERE id=$1", [cid]);
+
+const seedGeo = (q, lat, lng) =>
+  query("INSERT INTO geocache (q, lat, lng) VALUES ($1,$2,$3) ON CONFLICT (q) DO NOTHING", [q, lat, lng]);
+const book = (address, token = CU.token, day = 21) =>
+  j("/api/bookings", { method: "POST", token,
+     body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(day), scheduledSlot: "09:00", address } });
+
+/* Inside the circle: about 1 km from the pin. */
+await seedGeo("Kossuth utca 5, Debrecen", 47.5390, 21.6290);
+const inside = await book("Kossuth utca 5");
+ok("an address inside the radius books normally", inside.status < 300, `${inside.status} ${inside.data.error || ""}`);
+
+/* Outside: Budapest, ~190 km from Debrecen, against a 10 km radius. */
+await seedGeo("Andrassy ut 60, Debrecen", 47.5050, 19.0640);
+const far = await book("Andrassy ut 60", CU.token, 22);
+ok("an address 190 km away is refused", far.status === 400, `got ${far.status}`);
+ok("and the refusal says how far and how far they travel",
+   /outside this company's service area/i.test(far.data.error || "") &&
+   /\d+ km away/.test(far.data.error || "") && /travel 10 km/.test(far.data.error || ""),
+   far.data.error);
+
+/* The slack. The pin is dropped by hand and a geocoded house number is not a
+   survey marker, so a 10 km radius must not refuse someone at 10.4 km. */
+await seedGeo("Edge utca 1, Debrecen", 47.6220, 21.6273);   /* ~10.05 km north */
+const edge = await book("Edge utca 1", CU.token, 23);
+ok("someone just over the line is not refused on a rounding error",
+   edge.status < 300, `${edge.status} ${edge.data.error || ""}`);
+
+/* Fail-open. A negative cache entry is exactly what an unresolvable address
+   leaves behind, and it must not become a wall: refusing a real customer
+   because a third-party lookup failed is the worse of the two errors, and the
+   company can still decline the job by hand. */
+await seedGeo("Ismeretlen dulo 7, Debrecen", null, null);
+const unknown = await book("Ismeretlen dulo 7", CU.token, 24);
+ok("an address the geocoder cannot place is allowed through, not blocked",
+   unknown.status < 300, `${unknown.status} ${unknown.data.error || ""}`);
+
+/* And a company that never set a pin serves everyone, as before. */
+await query("UPDATE companies SET service_lat=NULL, service_lng=NULL WHERE id=$1", [cid]);
+const noPin = await book("Andrassy ut 60", CU.token, 25);
+ok("a company with no pin set is unaffected by any of this", noPin.status < 300,
+   `${noPin.status} ${noPin.data.error || ""}`);
+await query("UPDATE companies SET service_lat=47.5316, service_lng=21.6273 WHERE id=$1", [cid]);
+
+/* A radius of zero means "not configured", not "serve nobody". */
+await query("UPDATE companies SET service_radius_km=0 WHERE id=$1", [cid]);
+const zero = await book("Andrassy ut 60", CU.token, 26);
+ok("a zero radius means unset, not a company that serves nobody", zero.status < 300,
+   `${zero.status} ${zero.data.error || ""}`);
+await query("UPDATE companies SET service_radius_km=10 WHERE id=$1", [cid]);
+
+/* The guard must sit before payment, not after: a refused booking that has
+   already taken money is a refund and a support ticket. */
+const bkSrc = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
+const iArea = bkSrc.indexOf("outside this company's service area");
+const iIns  = bkSrc.indexOf("INSERT INTO bookings");
+ok("the area check runs before the booking row is written", iArea > 0 && iIns > 0 && iArea < iIns);
+
+/* The listing filter and the booking guard must agree on the radius column,
+   or a company is listed by one rule and refused by the other. */
+const coSrc = (await import("fs")).readFileSync("server/routes/companies.js", "utf8");
+ok("the listing filter uses the same radius column the booking guard does",
+   /service_radius_km/.test(coSrc) && /service_radius_km/.test(bkSrc));
+
+/* ── CITIES SERVED IN FULL ────────────────────────────────────────────────
+   Three questions that turned out to be one:
+     "a button for the whole city"   — a radius is a bad proxy for a city
+     "smaller cities, or larger"     — a name has no size
+     "and if a company is multi-city?" — a circle cannot express three towns
+
+   So the radius answers "how far will you drive from your base" and this list
+   answers "which places do you cover", and they are OR-ed. */
+await query("UPDATE companies SET service_lat=47.5316, service_lng=21.6273, service_radius_km=10, service_cities='[]' WHERE id=$1", [cid]);
+
+/* Nyíregyháza is ~50 km from the Debrecen pin — far outside a 10 km radius. */
+await seedGeo("Kossuth ter 1, Debrecen", 47.9560, 21.7167);
+const beforeList = await book("Kossuth ter 1", CU.token, 27);
+ok("before naming the city, a 50 km address is refused", beforeList.status === 400, `got ${beforeList.status}`);
+
+const put = await j(`/api/companies/${cid}`, { method: "PUT", token: CO.token,
+  body: { serviceCities: ["Nyíregyháza", "Debrecen"] } });
+ok("a company can save the cities it serves", put.status === 200, put.data.error || "");
+ok("and they come back saved", JSON.stringify(put.data.company?.service_cities || []).includes("Nyíregyháza"));
+
+/* The customer's city is read from their record, so move them there. */
+await query("UPDATE users SET city='Nyíregyháza' WHERE email='cu@g.hu'");
+const afterList = await book("Kossuth ter 1", CU.token, 28);
+ok("naming the city lets that same 50 km booking through", afterList.status < 300,
+   `${afterList.status} ${afterList.data.error || ""}`);
+
+/* Case and stray spaces must not decide whether a partner gets the work. */
+await query("UPDATE users SET city='  nyíregyháza ' WHERE email='cu@g.hu'");
+const messy = await book("Kossuth ter 1", CU.token, 29);
+ok("matching ignores case and stray spaces", messy.status < 300, `${messy.status} ${messy.data.error || ""}`);
+
+/* A city NOT on the list still falls back to the radius. The list adds reach;
+   it must not quietly remove the guard for everywhere else. */
+await query("UPDATE users SET city='Budapest' WHERE email='cu@g.hu'");
+await seedGeo("Vaci utca 1, Debrecen", 47.4930, 19.0530);   /* Budapest */
+const elsewhere = await book("Vaci utca 1", CU.token, 30);
+ok("a city that is NOT on the list still falls back to the radius",
+   elsewhere.status === 400, `got ${elsewhere.status}`);
+
+/* THE ONE THAT MATTERS. The city decides whether the area guard applies, so if
+   it can be set by the caller the guard is decorative. `req.user` carries only
+   id, role and companyId — there is no city on the token — so the first draft
+   of this read req.body.city, which is simply a string the attacker picked. */
+const spoof = await j("/api/bookings", { method: "POST", token: CU.token,
+  body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(31), scheduledSlot: "09:00",
+          address: "Vaci utca 1", city: "Nyíregyháza" } });
+ok("a city supplied in the request body cannot unlock the area guard",
+   spoof.status === 400, `got ${spoof.status} — the body was believed`);
+const bkSrc2 = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
+ok("and the city is read from the database, not the request",
+   /SELECT city FROM users WHERE id/.test(bkSrc2) && !/req\.body\.city/.test(bkSrc2));
+await query("UPDATE users SET city='Debrecen' WHERE email='cu@g.hu'");
+
+/* Storage hygiene: duplicates and blanks are the partner's typing, not data. */
+const dupes = await j(`/api/companies/${cid}`, { method: "PUT", token: CO.token,
+  body: { serviceCities: ["Debrecen", "debrecen", "  ", "DEBRECEN ", "Eger"] } });
+const stored = dupes.data.company?.service_cities || [];
+ok("duplicates are collapsed and blanks dropped", Array.isArray(stored) && stored.length === 2,
+   JSON.stringify(stored));
+
+/* The listing filter and the booking guard must agree, or a company is shown
+   by one rule and refused by the other — the exact confusion this replaced. */
+await query("UPDATE companies SET service_cities='[\"Nyíregyháza\"]' WHERE id=$1", [cid]);
+const listed = await j("/api/companies?near=" + encodeURIComponent("Kossuth ter 1, Debrecen") + "&city=Ny%C3%ADregyh%C3%A1za");
+ok("the listing keeps a company that serves your city, whatever the distance",
+   (listed.data.companies || []).some((c) => c.id === cid), "not listed");
+const notListed = await j("/api/companies?near=" + encodeURIComponent("Vaci utca 1, Debrecen") + "&city=Budapest");
+ok("and still drops it for a city it does not serve and cannot reach",
+   !(notListed.data.companies || []).some((c) => c.id === cid), "still listed");
+
+/* One rule, written twice — once on the server, once in the client filter.
+   Two copies drift; a test is the cheapest thing that notices. */
+const coSrc2 = (await import("fs")).readFileSync("server/routes/companies.js", "utf8");
+const appSrc2 = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+const body = (t, name) => {
+  const i = t.indexOf(name);
+  if (i < 0) return "";
+  const j2 = t.indexOf("some(", i);
+  return j2 < 0 ? "" : t.slice(j2, t.indexOf("\n", j2)).replace(/\s+/g, " ").trim();
+};
+const sv = body(coSrc2, "export function servesCity");
+const cl = body(appSrc2, "const servesCityClient");
+ok("client and server agree on what counts as a match", sv.length > 20 && sv === cl,
+   `server: ${sv.slice(0, 70)} | client: ${cl.slice(0, 70)}`);
+
+/* And the field must survive the client's own whitelist — the failure this
+   codebase repeats: a column added, a UI built, and the store dropping the
+   field silently on the way out. */
+const storeSrc2 = (await import("fs")).readFileSync("src/store.jsx", "utf8");
+ok("the store forwards serviceCities instead of dropping it",
+   /serviceCities: fields\.serviceCities/.test(storeSrc2));
+ok("and sends the customer's city with the listing request", /city=" \+ encodeURIComponent/.test(storeSrc2));
+
+/* ── A COMPANY MUST SAY WHERE IT WORKS ────────────────────────────────────
+   The signup city was a dropdown of ten Hungarian cities with the first one
+   preselected, so it was never empty and nothing validated it. Making it a
+   free-text field with live suggestions — so partners outside those ten can
+   register at all — removed the accident that was keeping it filled.
+
+   An empty city is not a cosmetic gap: the customer list keeps any company
+   whose city is blank, so such a partner is shown to every customer in the
+   country and then refused at booking. */
+const noCity = await j("/api/auth/register", { method: "POST", body: {
+  email: "nocity@g.hu", password: "secret123", role: "company", fullName: "N",
+  companyName: "No City Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", termsAccepted: true } });
+ok("a company cannot register without saying which city it serves", noCity.status === 400, `got ${noCity.status}`);
+ok("and the message says what to do", /city/i.test(noCity.data.error || ""), noCity.data.error);
+
+const blankCity = await j("/api/auth/register", { method: "POST", body: {
+  email: "blank@g.hu", password: "secret123", role: "company", fullName: "B", city: "   ",
+  companyName: "Blank Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", termsAccepted: true } });
+ok("whitespace does not count as a city", blankCity.status === 400, `got ${blankCity.status}`);
+
+const withCity = await j("/api/auth/register", { method: "POST", body: {
+  email: "sopron@g.hu", password: "secret123", role: "company", fullName: "S", city: "Sopron",
+  companyName: "Sopron Kft.", taxId: "12345676-1-02", regNumber: "09-09-123456", termsAccepted: true } });
+ok("a city outside the old ten-city list is accepted", withCity.status < 300,
+   `${withCity.status} ${withCity.data.error || ""}`);
+const soRow = await query("SELECT city FROM companies WHERE name='Sopron Kft.'");
+ok("and it is stored as typed, not silently rewritten to Debrecen",
+   soRow.rows[0]?.city === "Sopron", JSON.stringify(soRow.rows[0]));
+
+/* The city field must offer suggestions everywhere it appears — customer
+   address, company signup, company settings. It is the value the entire
+   service-area system compares on, so a typo costs the partner every customer
+   in that town and neither side ever learns why. */
+const appCity = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("the customer's city field suggests as you type",
+   /<CitySuggestField label=\{L\("City", "Város"\)/.test(appCity));
+ok("the company signup city field does too",
+   /<CitySuggestField label=\{L\("City you serve/.test(appCity));
+ok("and no screen still uses the fixed ten-city dropdown",
+   !/ALL_CITIES\.map\(\(c\) => <option/.test(appCity));
 
 console.log(`\n════ GAPS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

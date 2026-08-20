@@ -101,6 +101,53 @@ router.post("/", requireAuth, async (req, res) => {
     if (!coRes.rows.length) return res.status(400).json({ error: "Company is not currently accepting bookings" });
     const co = coRes.rows[0];
 
+    /* ── The service area, actually enforced ──────────────────────────────
+       The company sets a pin and a radius, and the settings screen tells them
+       "Only customers inside the circle can book you." Nothing checked it. The
+       radius was stored, distanceKm() was written, and neither was ever used —
+       so a Debrecen company with a 5 km radius could be booked from Budapest,
+       and a cleaner would find out when the address loaded.
+
+       Geocoding is cached and can fail (a new address, a provider outage). When
+       we genuinely cannot place the address we allow the booking: refusing a
+       real customer because a third-party lookup was slow is the worse error,
+       and the company can still decline. */
+    /* A company that names your city serves your city. No distance is measured,
+       because none would be right: 30 km covers four towns around a village and
+       still clips the edge of a big one, and a company working Debrecen and
+       Nyíregyháza is not a circle at all. */
+    const { servesCity } = await import("./companies.js");
+    /* The city comes out of the database, never off the request. Two reasons,
+       and the second is the one that matters: the token carries only id, role
+       and companyId — there is no city on it to read — and a city taken from
+       the body is a string the caller chose, so `city: "Nyiregyhaza"` would
+       walk straight past the area guard it is meant to satisfy. */
+    let bookerCity = "";
+    try {
+      const meRow = await query("SELECT city FROM users WHERE id = $1", [req.user.id]);
+      bookerCity = String(meRow.rows[0]?.city || "").trim();
+    } catch { /* no city on file — fall through to the distance check */ }
+    const cityCovered = servesCity(co, bookerCity);
+
+    if (!cityCovered && co.service_lat != null && co.service_lng != null && Number(co.service_radius_km) > 0) {
+      try {
+        const { geocode, distanceKm } = await import("../lib/geocode.js");
+        const here = await geocode(`${address}, ${co.city || ""}`.trim().replace(/,\s*$/, ""));
+        if (here) {
+          const km = distanceKm(Number(co.service_lat), Number(co.service_lng), here.lat, here.lng);
+          const limit = Number(co.service_radius_km);
+          /* A little slack: the pin is dropped by hand and a geocoded house
+             number is not a survey marker. Refusing someone 200 m over would be
+             precision the data does not have. */
+          if (km > limit * 1.1 + 1) {
+            return res.status(400).json({
+              error: `That address is outside this company's service area (about ${Math.round(km)} km away, they travel ${limit} km).`,
+            });
+          }
+        }
+      } catch (e) { console.error("service-area check:", e.message); }
+    }
+
     // ── Respect the company's availability (server-side, so a stale app can't
     //    slip a booking into a time they don't work) ──
     const av = co.availability;

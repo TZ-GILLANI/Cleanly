@@ -8,10 +8,20 @@ import { huTaxIdValid, huRegNumberValid, formatTaxId } from "../lib/validate.js"
 const router = Router();
 
 /* GET /api/companies — public: all approved+listed companies */
+/* Does this company serve that city outright? Case- and accent-tolerant, so
+   "DEBRECEN", "Debrecen" and a stray trailing space all match. */
+export function servesCity(co, cityRaw) {
+  const city = String(cityRaw || "").trim().toLowerCase();
+  if (!city) return false;
+  let list = co?.service_cities;
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = []; } }
+  return Array.isArray(list) && list.some((c) => String(c || "").trim().toLowerCase() === city);
+}
+
 router.get("/", async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
+      "SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_cities, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
     );
     let rows = result.rows;
 
@@ -20,6 +30,10 @@ router.get("/", async (req, res) => {
        annotating each with distance. Companies without coordinates are never
        hidden — they fall back to the old city match. ── */
     const near = String(req.query.near || "").trim();
+    /* The caller's city, when they know it. `near` is a whole address, so the
+       city is whatever they told us separately — not something to guess out of
+       a free-text string. */
+    const myCity = String(req.query.city || "").trim();
     if (near) {
       const me = await geocode(near);
       if (me) {
@@ -29,7 +43,12 @@ router.get("/", async (req, res) => {
               ? distanceKm(me.lat, me.lng, c.service_lat, c.service_lng) : null;
             return { ...c, distance_km: d };
           })
-          .filter((c) => c.distance_km == null || c.distance_km <= (Number(c.service_radius_km) || 10))
+          /* A named city beats a measured distance. A company that says it
+             serves Nyíregyháza serves it whether that is 4 km or 50 km from
+             the pin they dropped, and no radius expresses "these three towns,
+             not the villages between them". */
+          .filter((c) => servesCity(c, myCity) || c.distance_km == null
+                      || c.distance_km <= (Number(c.service_radius_km) || 10))
           .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
       }
     }
@@ -42,7 +61,7 @@ router.get("/", async (req, res) => {
 /* GET /api/companies/:id — public */
 router.get("/:id", async (req, res) => {
   try {
-    const result = await query("SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE id = $1", [req.params.id]);
+    const result = await query("SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_cities, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE id = $1", [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Company not found" });
     res.json({ company: result.rows[0] });
   } catch (err) {
@@ -52,7 +71,7 @@ router.get("/:id", async (req, res) => {
 
 /* PUT /api/companies/:id — company owner only */
 router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
-  const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId, promo, availability, country, serviceLat, serviceLng, serviceRadiusKm, currency, requirements, billingName, billingZip, billingCity, billingAddress, billingEmail } = req.body;
+  const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId, promo, availability, country, serviceLat, serviceLng, serviceRadiusKm, currency, requirements, billingName, billingZip, billingCity, billingAddress, billingEmail, serviceCities } = req.body;
   let availJson;
   if (availability === null) {
     availJson = "null";          // explicit clear → no restrictions
@@ -144,7 +163,8 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         billing_zip = COALESCE($24, billing_zip),
         billing_city = COALESCE($25, billing_city),
         billing_address = COALESCE($26, billing_address),
-        billing_email = COALESCE($27, billing_email)
+        billing_email = COALESCE($27, billing_email),
+        service_cities = CASE WHEN $28::text IS NULL THEN service_cities ELSE $28::jsonb END
       WHERE id = $14 RETURNING *`,
       [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber, contactPhone,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id, promoJson === undefined ? null : promoJson, availJson === undefined ? null : availJson,
@@ -160,7 +180,16 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
        billingZip != null ? String(billingZip).slice(0, 12) : null,
        billingCity != null ? String(billingCity).slice(0, 80) : null,
        billingAddress != null ? String(billingAddress).slice(0, 200) : null,
-       billingEmail != null ? String(billingEmail).slice(0, 160) : null]
+       billingEmail != null ? String(billingEmail).slice(0, 160) : null,
+       /* Trimmed, de-duplicated case-insensitively, capped at 40. A partner
+          who serves forty towns is a national operator and should be talking
+          to you, not typing. */
+       Array.isArray(serviceCities)
+         ? JSON.stringify([...new Map(serviceCities
+             .map((x) => String(x || "").trim().slice(0, 80))
+             .filter(Boolean)
+             .map((x) => [x.toLowerCase(), x])).values()].slice(0, 40))
+         : null]
     );
     const saved = result.rows[0];
 

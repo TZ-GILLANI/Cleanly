@@ -113,8 +113,30 @@ ok("and into Chinese", Object.keys(d2.EXTRA.zh).length >= 200, String(Object.key
 ok("an untranslated string falls back to English, never blank", d2.xl("zh", "Not translated yet") === "Not translated yet");
 ok("placeholders survive translation", /\{h\}/.test(d2.EXTRA.tr["More than {h}h before"]) && /\{h\}/.test(d2.EXTRA.zh["More than {h}h before"]));
 console.log("\n── the app itself still has zero drift ──");
+const fsL2 = (await import("fs")).default;
 const drift = (await import("child_process")).execSync("node scripts/i18n-drift.mjs", { encoding: "utf8" });
 ok("the UI drift checker reports 0", /DRIFT: 0 missing/.test(drift), drift.split("\n").slice(-3).join(" "));
+ok("and no interpolated string slipped past it", !/untranslatable interpolated/.test(drift),
+   (drift.match(/.*untranslatable interpolated.*/) || [""])[0]);
+
+/* A checker is only worth its output if you have watched it fail.
+
+   This one reported "0 drift" for months while sixteen L(`…${x}…`) calls
+   reached English and Hungarian and no other language — its regex only matched
+   quoted literals, so interpolated strings were not counted as missing, they
+   were not counted at all. Same shape as the untranslated-string detector that
+   passed while whole screens were in English.
+
+   So: plant one, require that it is caught, and take it away again. */
+const bait = "src/.drift-canary.jsx";
+fsL2.writeFileSync(bait, "export const X = () => L(`Hello ${name} there`, `Szia ${name}`);\n");
+let baitOut = "";
+try { baitOut = (await import("child_process")).execSync("node scripts/i18n-drift.mjs", { encoding: "utf8" }); }
+catch (e) { baitOut = String(e.stdout || ""); }
+fsL2.unlinkSync(bait);
+ok("the drift checker itself catches an interpolated string (canary)",
+   /untranslatable interpolated/.test(baitOut) && /Hello \$\{name\} there/.test(baitOut),
+   baitOut.split("\n").filter((l) => /interpolated|canary/.test(l)).slice(0, 2).join(" | "));
 
 
 console.log("\n── the App Store is told which languages we speak ──");

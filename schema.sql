@@ -470,6 +470,14 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS platform_net_minor INT;
 -- ── Invoicing ──────────────────────────────────────────────────────
 -- Billing address for the partner company. A Hungarian invoice is not valid
 -- without the buyer's postcode, town and street, and we were only storing city.
+-- Cities a company serves in full, as a JSON array of names: ["Debrecen","Nyíregyháza"].
+-- This is the answer to three separate questions that turned out to be one:
+--   "give me a button for the whole city"        -> the list holds their own city
+--   "what about smaller cities"                  -> a name is a name, size is irrelevant
+--   "and if a company is multi-city?"            -> the list holds as many as they like
+-- A radius is a bad proxy for a city: 30 km swallows four towns around a village
+-- and still misses the edge of a large one. Empty list = fall back to the radius.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS service_cities JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_name    TEXT;   -- legal name, if it differs from the trading name
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_zip     TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_city    TEXT;

@@ -50,11 +50,23 @@ router.get("/companies/:id/services", ...guard, async (req, res) => {
 router.get("/companies", ...guard, async (req, res) => {
   try {
     const result = await query(
+      /* One grouped pass instead of two correlated subqueries per company.
+         Postgres runs both fine; the reason this changed is that the in-memory
+         database the tests use cannot resolve a correlated alias, so this
+         endpoint returned 500 under test and the admin Companies screen could
+         never be rendered by the suite — it was the only admin screen with no
+         coverage, and the one that had already shipped a crash. */
       `SELECT c.*, u.email AS owner_email, u.full_name AS owner_name,
-        (SELECT COUNT(*) FROM bookings b WHERE b.company_id = c.id) AS booking_count,
-        (SELECT COALESCE(SUM(b.total_huf),0) FROM bookings b WHERE b.company_id = c.id AND b.status = 4) AS revenue
+        COALESCE(b.cnt, 0)  AS booking_count,
+        COALESCE(b.rev, 0)  AS revenue
        FROM companies c
        JOIN users u ON u.id = c.owner_id
+       LEFT JOIN (
+         SELECT company_id,
+                COUNT(*) AS cnt,
+                SUM(CASE WHEN status = 4 THEN total_huf ELSE 0 END) AS rev
+         FROM bookings GROUP BY company_id
+       ) b ON b.company_id = c.id
        ORDER BY c.created_at DESC`
     );
     res.json({ companies: result.rows });

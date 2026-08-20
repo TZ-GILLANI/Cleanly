@@ -49,12 +49,32 @@ console.log("\n── nothing references a name that does not exist ──");
    None of it is visible to the bundler — esbuild and Vite happily compile a
    ReferenceError. It only appears when that line runs, which for a click
    handler can be months later. A scope check finds all of them at once. */
-let undef = "";
-try {
-  execFileSync("npx", ["eslint", "--no-eslintrc", "-c", "scripts/eslint-undef.json",
-    "src/App.jsx", "src/store.jsx", "src/lib/i18n.js", "src/lib/translations.js", "src/lib/api.js"],
-    { encoding: "utf8", stdio: "pipe" });
-} catch (e) { undef = String(e.stdout || e.message); }
+const CLIENT_FILES = ["src/App.jsx", "src/store.jsx", "src/lib/i18n.js",
+                      "src/lib/translations.js", "src/lib/api.js"];
+const runEslint = (files) => {
+  /* Pinned to 9. Unpinned, npx fetches whatever is newest — ESLint 10 refuses
+     to load a .json config at all, and the failure looked exactly like a pass
+     (see the canary below). */
+  try {
+    execFileSync("npx", ["eslint@9", "-c", "scripts/eslint-undef.mjs", ...files],
+      { encoding: "utf8", stdio: "pipe" });
+    return "";
+  } catch (e) { return String(e.stdout || "") + String(e.stderr || e.message || ""); }
+};
+
+/* A checker you have not seen fail is not a checker. This one silently reported
+   "clean" for a while because the way it detects a problem — a line containing
+   "no-undef" — is also absent when eslint crashes before reading a single file.
+   So: plant a file with a known error and require that it is caught. If the
+   canary comes back clean, the tool is broken, not the code. */
+const canary = ".render-canary.jsx";
+fs.writeFileSync(canary, "export const boom = () => thisNameDoesNotExistAnywhere(1);\n");
+const canaryOut = runEslint([canary]);
+fs.unlinkSync(canary);
+ok("the scope checker itself works (canary caught)", /no-undef/.test(canaryOut),
+   canaryOut.split("\n").slice(0, 3).join(" | ").slice(0, 200));
+
+const undef = runEslint(CLIENT_FILES);
 const undefLines = undef.split("\n").filter((l) => l.includes("no-undef"));
 ok("no undefined identifiers anywhere in the client", undefLines.length === 0,
    undefLines.slice(0, 4).map((l) => l.trim()).join(" | "));
@@ -145,6 +165,71 @@ if (!jsdomOk) {
            thrown.length === before && !/Something broke|Valami elromlott/.test(body),
            thrown[thrown.length - 1]?.message || "error screen");
       } else ok("a company card is on the customer's home screen", false, "none found");
+    }
+
+    /* Two things built this session that only exist behind a click, which is
+       precisely where this codebase hides its broken wiring: a button that
+       renders perfectly and throws the instant someone does the one thing it
+       exists for. Mounting the tab is not enough — open the thing. */
+    const clickText = async (needle, ms = 1200) => {
+      const el = [...w.document.querySelectorAll("button")]
+        .find((b) => (b.textContent || "").includes(needle));
+      if (!el) return null;
+      try { el.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); }
+      catch (e) { thrown.push(e); }
+      await new Promise((r) => setTimeout(r, ms));
+      return w.document.getElementById("root").textContent || "";
+    };
+    /* The bottom nav shows a label only for the tab you are on — every other
+       button is an icon with no text at all. Matching on button text finds
+       exactly one tab, the one already open, so this walks the tabs and stops
+       when the screen itself says it arrived. */
+    const goTab = async (marker) => {
+      const btns = (nav ? [...nav.querySelectorAll("button")] : []);
+      for (const b of btns) {
+        try { b.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); } catch { continue; }
+        /* Poll rather than guess. Admin lists fetch on mount, so a fixed wait
+           either flakes or slows every role down to the worst case. */
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 400));
+          if (marker.test(w.document.getElementById("root").textContent || "")) return true;
+        }
+      }
+      if (process.env.NAVDEBUG) {
+        const txt = (w.document.getElementById("root").textContent || "").replace(/[\s\S]*?display: swap'\);/, "").replace(/\.[a-z-]+\s*\{[^}]*\}/g, "").replace(/\s+/g, " ");
+        console.log(`  [${role} last screen]`, JSON.stringify(txt.slice(0, 260)));
+      }
+      return false;
+    };
+
+    if (role === "admin") {
+      const before = thrown.length;
+      if (await goTab(/Unlist|Re-list/)) {
+        const body = await clickText("Details", 1600);
+        ok("admin — the company dossier opens", body !== null && thrown.length === before,
+           body === null ? "no Details button rendered" : thrown[thrown.length - 1]?.message || "");
+        ok("admin — the dossier actually shows billing fields, not an empty sheet",
+           !!body && /Tax number/i.test(body) && /Invoice email/i.test(body)
+                  && /Cities served in full/i.test(body),
+           (body || "").slice(0, 120));
+      } else ok("admin — the Companies screen is reachable", false, "no tab rendered a company list");
+    }
+
+    if (role === "company") {
+      const before = thrown.length;
+      if (await goTab(/Cities you serve in full/i)) {
+        const body = w.document.getElementById("root").textContent || "";
+        ok("company — the cities-served section is on the settings screen",
+           /Cities you serve in full/i.test(body), body.slice(0, 120));
+        const after = await clickText("Serve the whole of", 1200);
+        ok("company — the one-tap whole-city button works without throwing",
+           after !== null && thrown.length === before,
+           after === null ? "button not rendered" : thrown[thrown.length - 1]?.message || "");
+        ok("company — tapping it puts the city in the list",
+           !!after && /Cities you serve in full/i.test(after)
+                   && !/None yet/i.test(after.split("Cities you serve in full")[1] || ""),
+           "city chip did not appear");
+      } else ok("company — the Settings screen is reachable", false, "no tab rendered the settings form");
     }
 
     /* The landing screen is the one screen most likely to be right. Every crash

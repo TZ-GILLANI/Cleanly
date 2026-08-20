@@ -268,8 +268,13 @@ export function StoreProvider({ children }) {
     const next = { companies: [], services: [], employees: [], bookings: [], notices: [], invites: [], reviews: [] };
     // 4.6 — ask the server to filter by service area using the customer's own
     // address. Companies without coordinates are never hidden (server-side).
+    /* The city rides along with the address: a company that serves your city
+       outright is kept regardless of how far its pin is, and the server cannot
+       reliably pull a city out of a free-text address line. */
     const nearQ = (sess.role === "customer" && sess.address)
-      ? "?near=" + encodeURIComponent(String(sess.address).slice(0, 200)) : "";
+      ? "?near=" + encodeURIComponent(String(sess.address).slice(0, 200))
+        + (sess.city ? "&city=" + encodeURIComponent(String(sess.city).slice(0, 80)) : "")
+      : "";
     const [companies, services, reviews] = await Promise.all([
       api("/companies" + nearQ),
       api("/services"),
@@ -423,7 +428,7 @@ export function StoreProvider({ children }) {
   const updateCompany = async (fields) => {
     if (isApiMode) {
       try {
-        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability, country: fields.country, serviceLat: fields.serviceLat, serviceLng: fields.serviceLng, serviceRadiusKm: fields.serviceRadiusKm, currency: fields.currency, requirements: fields.requirements, billingName: fields.billingName, billingZip: fields.billingZip, billingCity: fields.billingCity, billingAddress: fields.billingAddress, billingEmail: fields.billingEmail } });
+        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability, country: fields.country, serviceLat: fields.serviceLat, serviceLng: fields.serviceLng, serviceRadiusKm: fields.serviceRadiusKm, currency: fields.currency, requirements: fields.requirements, billingName: fields.billingName, billingZip: fields.billingZip, billingCity: fields.billingCity, billingAddress: fields.billingAddress, billingEmail: fields.billingEmail, serviceCities: fields.serviceCities } });
         setDb(d => ({ ...d, companies: d.companies.map(c => c.id === session.companyId ? company : c) }));
         return {};
       } catch (e) { return { error: e.message }; }

@@ -38,6 +38,26 @@ const mod = await import("file://" + tPath);
 const dicts = mod.EXTRA || mod.default?.EXTRA || mod.default || {};
 const langs = Object.keys(dicts).filter((k) => k !== "en" && k !== "hu");
 
+/* ── The blind spot ──────────────────────────────────────────────────────
+   The regex above only matches L("…") and L('…'). It does not match
+   L(`…${x}…`), because a template literal has no fixed text to use as a
+   dictionary key. Those calls were therefore counted as nothing at all: the
+   checker reported 0 drift while every one of them reached exactly two of
+   twelve languages.
+
+   That is the same failure the untranslated-string detector had — a checker
+   that is blind to a category reports success, which is worse than having no
+   checker, because it ends the search. So: find them, name them, fail on them. */
+const tmplRe = /\bL\(\s*`((?:\\.|[^`\\])*)`\s*,/g;
+const templated = [];
+for (const f of files) {
+  const text = fs.readFileSync(f, "utf8");
+  let m;
+  while ((m = tmplRe.exec(text))) {
+    templated.push({ file: path.relative(path.join(here, ".."), f), text: m[1] });
+  }
+}
+
 console.log(`Strings behind L(): ${wanted.size}`);
 console.log(`Extra languages:    ${langs.length ? langs.join(", ") : "(none found)"}`);
 
@@ -64,6 +84,14 @@ const unfinished = ROLLING.filter((lg) => (report[lg] || []).length);
 if (unfinished.length) {
   console.log(`\n  ${unfinished.join(", ")} are still being translated — untranslated text shows in English,`);
   console.log("  which is correct. Finish with:  node scripts/i18n-fill.mjs " + unfinished.join(" "));
+}
+
+if (templated.length) {
+  console.log(`\nInterpolated L(\`…\`) — English and Hungarian only, invisible to every`);
+  console.log(`other language (${templated.length}):`);
+  for (const t of templated) console.log(`  • ${t.file}: ${JSON.stringify(t.text.slice(0, 74))}`);
+  console.log("\n  Fix by moving the variable out of the key:");
+  console.log('    L(`Serve the whole of ${city}`, …)  ->  L("Serve the whole of {x}", …).replace("{x}", city)');
 }
 
 if (process.argv.includes("--list") && missingTotal) {
@@ -108,5 +136,10 @@ for (const lg of [...COMPLETE]) {
 }
 missingTotal += tMissingTotal;
 
-console.log(`\n════ DRIFT: ${missingTotal} missing translation${missingTotal === 1 ? "" : "s"} in the languages we guarantee ════`);
-process.exit(missingTotal ? 1 : 0);
+/* Interpolated strings count. They are not "missing" from a dictionary — they
+   can never be in one — so they are counted separately and still gate. */
+const grand = missingTotal + templated.length;
+console.log(`\n════ DRIFT: ${missingTotal} missing translation${missingTotal === 1 ? "" : "s"}` +
+            (templated.length ? ` + ${templated.length} untranslatable interpolated string${templated.length === 1 ? "" : "s"}` : "") +
+            ` in the languages we guarantee ════`);
+process.exit(grand ? 1 : 0);

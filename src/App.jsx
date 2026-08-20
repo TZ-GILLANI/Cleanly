@@ -140,6 +140,32 @@ const COUNTRIES = [
   ["FR", "🇫🇷 France"], ["ES", "🇪🇸 España"], ["GB", "🇬🇧 United Kingdom"],
   ["TR", "🇹🇷 Türkiye"], ["NL", "🇳🇱 Nederland"], ["BE", "🇧🇪 België"],
 ];
+/* Code → the name we already show in the picker, so a country reads the same
+   everywhere. Falls back to the raw code rather than blanking: an unexpected
+   value is worth seeing, not hiding. */
+/* Client twin of servesCity() in server/routes/companies.js. Two copies of one
+   rule is a risk, so a test asserts they agree. */
+const servesCityClient = (co, cityRaw) => {
+  const city = String(cityRaw || "").trim().toLowerCase();
+  if (!city) return false;
+  let list = co?.service_cities;
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = []; } }
+  return Array.isArray(list) && list.some((c) => String(c || "").trim().toLowerCase() === city);
+};
+
+/* Fill {0}, {1}… in a translated string.
+
+   L(`… ${x} …`) reads naturally but produces a different key on every render,
+   so it can never be a dictionary entry — those calls reached English and
+   Hungarian and no other language, while the drift checker, which only looked
+   for quoted literals, reported them as nothing at all. Keep the sentence
+   fixed, put the value in afterwards. */
+const fill = (str, ...vals) =>
+  vals.reduce((acc, v, i) => acc.split("{" + i + "}").join(String(v ?? "")), str);
+
+const countryName = (code) =>
+  (COUNTRIES.find(([c]) => c === String(code || "").toUpperCase()) || [])[1] || String(code || "—");
+
 const getCountry = () => {
   try { const c = localStorage.getItem("cleanly_country"); if (c && c.trim()) return c.trim().toUpperCase(); } catch {}
   return "HU";
@@ -618,7 +644,6 @@ const BOOK_AHEAD_DAYS = 60;
 /* A radius that comfortably contains a Hungarian city and the villages that
    commute into it. Used as the "whole city" preset so a company never has to
    guess which number means "all of Debrecen". */
-const CITY_WIDE_KM = 30;
 
 
 /* Bounds shared by the customer's date strip and the company's busy-slot editor,
@@ -1144,6 +1169,30 @@ function cityFromAddress(addr) {
 }
 
 /* Street autocomplete via Photon (OpenStreetMap, free, typo-tolerant). */
+/* Live city suggestions for the chosen country.
+
+   The company's "City served" field offered a datalist of ten hardcoded
+   Hungarian cities, so anyone outside those typed into the void with no
+   confirmation they had spelled it the way the rest of the system would. The
+   customer's street field already worked this way; this brings the company's
+   city field to the same standard, and follows whichever country is selected. */
+async function suggestCities(q, country) {
+  const t = String(q || "").trim();
+  if (t.length < 2) return [];
+  try {
+    const cc = String(country || getCountry() || "HU").toUpperCase();
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(t)}&limit=8&osm_tag=place:city&osm_tag=place:town&lang=${getLang() === "hu" ? "hu" : "en"}`,
+      { signal: AbortSignal.timeout(5000) });
+    const j = await r.json();
+    const seen = new Set();
+    return (j.features || [])
+      .filter((f) => f.properties?.countrycode === cc && f.properties?.name)
+      .map((f) => f.properties.name)
+      .filter((n) => (seen.has(n) ? false : seen.add(n)))
+      .slice(0, 6);
+  } catch { return []; }
+}
+
 async function suggestStreets(q, city, country) {
   try {
     const cc = String(country || getCountry() || "HU").toUpperCase();
@@ -1363,8 +1412,13 @@ function AddressPicker({ value, onChange }) {
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <Field label={L("City", "Város")} placeholder={L("e.g. Debrecen", "pl. Debrecen")}
-                value={cityIn} onChange={(e) => { setCityIn(e.target.value); saveCity(e.target.value); setSugs([]); setStreetPicked(null); }} />
+              {/* Free text before this: the street below suggested as you typed
+                  and the city above did not, so a customer could sit in
+                  "Debrecenn" and quietly match no company at all. The city is
+                  what the whole service-area system compares on, so a typo here
+                  is expensive and invisible. */}
+              <CitySuggestField label={L("City", "Város")} country={country} value={cityIn}
+                onChange={(v) => { setCityIn(v); saveCity(v); setSugs([]); setStreetPicked(null); }} />
             </div>
           </div>
           <div style={{ position: "relative" }}>
@@ -1460,8 +1514,8 @@ function PhoneVerifyGate() {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, marginTop: 14 }}>{mode === "email" ? L("Verify your email", "Erősítsd meg az e-mail címed") : L("Verify your number", "Erősítsd meg a számodat")}</div>
       <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 8, lineHeight: 1.6, maxWidth: 320 }}>
         {sent
-          ? L(`Enter the code we sent to ${mode === "email" ? session.email : session.phone}`, `Írd be a(z) ${mode === "email" ? session.email : session.phone} címre küldött kódot`)
-          : L(`We'll send a confirmation code to ${mode === "email" ? session.email : session.phone}`, `Megerősítő kódot küldünk: ${mode === "email" ? session.email : session.phone}`)}
+          ? fill(L("Enter the code we sent to {0}", "Írd be a(z) {0} címre küldött kódot"), mode === "email" ? session.email : session.phone)
+          : fill(L("We'll send a confirmation code to {0}", "Megerősítő kódot küldünk: {0}"), mode === "email" ? session.email : session.phone)}
       </div>
       {err && <div style={{ fontFamily: B, fontSize: 12.5, color: C.coralText, marginTop: 12 }}>{err}</div>}
       <div style={{ width: "100%", maxWidth: 300, marginTop: 22, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1904,7 +1958,7 @@ function Auth() {
     : !proofsOk ? false
     : role === "customer" ? f.name && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (f.custType !== "student" || f.documents.length >= 1) && (!isLive || (f.email && f.password.length >= 6))
     : role === "employee" ? f.code.trim().length >= 4 && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (!isLive || (f.name && f.email && f.password.length >= 6))
-    : (f.companyName.trim() && huTaxIdValid(f.taxId) && (!f.regNumber.trim() || huRegNumberValid(f.regNumber)) && (!isLive || (f.email && f.password.length >= 6)));
+    : (f.companyName.trim() && String(f.city || "").trim().length >= 2 && huTaxIdValid(f.taxId) && (!f.regNumber.trim() || huRegNumberValid(f.regNumber)) && (!isLive || (f.email && f.password.length >= 6)));
 
   return (
     <div className="cl-fade" style={{ height: "100dvh", minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", padding: "0 26px", overflow: "hidden", boxSizing: "border-box" }}>
@@ -1977,11 +2031,13 @@ function Auth() {
           {mode === "signup" && role === "company" && (
             <>
               <Field label={L("Company name *", "Cégnév *")} placeholder={L("e.g. SparkClean Kft.", "pl. Ragyogó Kft.")} value={f.companyName} onChange={set("companyName")} />
-              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("City you serve *", "Melyik városban dolgoztok? *")}</div>
-              <select value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })}
-                style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
-                {ALL_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              {/* Was a dropdown of ten Hungarian cities, which quietly meant a
+                  partner in Sopron, Vienna or Oradea could not state where they
+                  work — and the first entry was pre-selected, so an unread
+                  field submitted as "Debrecen". */}
+              <CitySuggestField label={L("City you serve *", "Melyik városban dolgoztok? *")}
+                country={f.country || getCountry()} value={f.city}
+                onChange={(v) => setF((p) => ({ ...p, city: v }))} />
               <Field label={L("Tax number (adószám) *", "Adószám *")} placeholder="12345678-1-42"
                 hint={f.taxId.trim() ? (huTaxIdValid(f.taxId) ? "✅ " + L("Valid tax number", "Érvényes adószám") : "❌ " + L("Invalid — check the digits (format: 12345678-1-42)", "Hibás — ellenőrizd a számokat (formátum: 12345678-1-42)")) : L("We verify this against the official checksum.", "A hivatalos ellenőrzőszám alapján ellenőrizzük.")}
                 value={f.taxId} onChange={set("taxId")} />
@@ -2120,7 +2176,13 @@ function CustomerHome({ openBooking, openProfile }) {
 
   const list = useMemo(() => {
     let res = companies
-      .filter((c) => !city || !c.city || String(c.city).toLowerCase() === String(city).toLowerCase())
+      /* Either the company is based in your city, or it has named your city as
+         one it serves in full. Without the second clause a Nyíregyháza-serving
+         Debrecen company is filtered out of the list before the server's own
+         area rules ever get a say. */
+      .filter((c) => !city || !c.city
+        || String(c.city).toLowerCase() === String(city).toLowerCase()
+        || servesCityClient(c, city))
       .filter((c) => c.is_approved !== false && c.is_listed !== false)
       .filter((c) => matchesSearch(c, services, q).hit);
     if (sort === "rating") res = [...res].sort((a, b) => b.rating - a.rating);
@@ -2240,7 +2302,7 @@ function CustomerHome({ openBooking, openProfile }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Star size={12} /> <b style={{ color: C.ink }}>{co.rating}</b> ({co.review_count})</span>
                   <><span>·</span><span>📍 {co.city || ""}{co.area ? ` · ${co.area}` : ""}{co.distance_km != null ? ` · ${co.distance_km} km` : ""}</span></>
-                  {minPrice != null && <><span>·</span><span style={{ fontWeight: 700, color: C.navy }}>{L(`from ${huf(minPrice)}`, `${huf(minPrice)}-tól`)}</span></>}
+                  {minPrice != null && <><span>·</span><span style={{ fontWeight: 700, color: C.navy }}>{fill(L("from {0}", "{0}-tól"), huf(minPrice))}</span></>}
                 </div>
                 {(hasHourly || hasSub) && (
                   <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
@@ -2256,7 +2318,7 @@ function CustomerHome({ openBooking, openProfile }) {
           <div style={{ textAlign: "center", padding: "50px 30px" }}>
             <div style={{ fontSize: 40 }}>🫧</div>
             <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 10 }}>
-              {q ? t("home.noMatch") : L(`No companies in ${city} yet — be the first! Companies can register free from the login screen.`, `${city} városban még nincs partnerünk — cégek ingyen regisztrálhatnak a belépő képernyőről.`)}
+              {q ? t("home.noMatch") : fill(L("No companies in {0} yet — be the first! Companies can register free from the login screen.", "{0} városban még nincs partnerünk — cégek ingyen regisztrálhatnak a belépő képernyőről."), city)}
             </div>
           </div>
         )}
@@ -2362,7 +2424,7 @@ function BookingFlow({ company, close, onBooked }) {
                       <span style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>{s.name}</span>
                       <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(s)}</span>
                     </div>
-                    <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{s.description} · ⏱ ~{s.minutes} {L("min", "perc")}{s.pricing_type === "subscription" ? ` · 🔁 ${everyP(s.period)}` : s.pricing_type === "hourly" ? L(` · pick ${s.min_hours || 2}–${s.max_hours || 8} h`, ` · ${s.min_hours || 2}–${s.max_hours || 8} óra választható`) : ""}</div>
+                    <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{s.description} · ⏱ ~{s.minutes} {L("min", "perc")}{s.pricing_type === "subscription" ? ` · 🔁 ${everyP(s.period)}` : s.pricing_type === "hourly" ? fill(L(" · pick {0}–{1} h", " · {0}–{1} óra választható"), s.min_hours || 2, s.max_hours || 8) : ""}</div>
                     {isStudent && <div style={{ fontFamily: B, fontSize: 10.5, color: C.green, fontWeight: 700, marginTop: 4 }}>🎓 {L("You pay:", "A te árad:")} {youPay(s)}</div>}
                   </div>
                 </button>
@@ -2406,7 +2468,7 @@ function BookingFlow({ company, close, onBooked }) {
               )}
               {isSub && (
                 <div className="cl-fade" style={{ background: C.mintSoft, borderRadius: 14, padding: "11px 14px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.5 }}>
-                  {L(`🔁 Subscription — recurs ${everyP(svc.period)}. We schedule the first clean next; cancel anytime.`, `🔁 Előfizetés — ${everyP(svc.period)} ismétlődik. Most az első takarítást időzítjük; bármikor lemondhatod.`)}
+                  {fill(L("🔁 Subscription — recurs {0}. We schedule the first clean next; cancel anytime.", "🔁 Előfizetés — {0} ismétlődik. Most az első takarítást időzítjük; bármikor lemondhatod."), everyP(svc.period))}
                 </div>
               )}
               {revs.length > 0 && (
@@ -2432,8 +2494,8 @@ function BookingFlow({ company, close, onBooked }) {
               {(isHourly || isSub) && (
                 <div style={{ background: C.navyChip, borderRadius: 13, padding: "10px 13px", marginBottom: 12, fontFamily: B, fontSize: 11.5, color: C.navySoft, lineHeight: 1.5 }}>
                   {isHourly
-                    ? L(`⏱ Choose the day and start time for your ${hours}-hour clean.`, `⏱ Válaszd ki a napot és a kezdési időt a ${hours} órás takarításhoz.`)
-                    : L(`🔁 Choose your recurring schedule — repeats ${everyP(svc.period)}.`, `🔁 Válaszd ki az ismétlődő időpontot — ${everyP(svc.period)} ismétlődik.`)}
+                    ? fill(L("⏱ Choose the day and start time for your {0}-hour clean.", "⏱ Válaszd ki a napot és a kezdési időt a {0} órás takarításhoz."), hours)
+                    : fill(L("🔁 Choose your recurring schedule — repeats {0}.", "🔁 Válaszd ki az ismétlődő időpontot — {0} ismétlődik."), everyP(svc.period))}
                 </div>
               )}
 
@@ -2590,7 +2652,7 @@ function BookingFlow({ company, close, onBooked }) {
                 )}
                 {serviceFee > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 7 }}>
-                    <span>{L(`Cleano service fee (${feePct ?? 10}%)`, `Cleano szolgáltatási díj (${feePct ?? 10}%)`)}</span><span>+{huf(serviceFee)}</span>
+                    <span>{fill(L("Cleano service fee ({0}%)", "Cleano szolgáltatási díj ({0}%)"), feePct ?? 10)}</span><span>+{huf(serviceFee)}</span>
                   </div>
                 )}
                 <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "12px 0" }} />
@@ -2605,7 +2667,7 @@ function BookingFlow({ company, close, onBooked }) {
               </div>
               {svc.tasks?.length > 0 && (
                 <div style={{ background: C.card, borderRadius: 15, padding: 14, marginTop: 10, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
-                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{L(`Cleaner will complete (${svc.tasks.length} tasks)`, `A takarító elvégzi (${svc.tasks.length} feladat)`)}</div>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{fill(L("Cleaner will complete ({0} tasks)", "A takarító elvégzi ({0} feladat)"), svc.tasks.length)}</div>
                   {svc.tasks.map((t, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 5 }}>
                       <span style={{ color: C.mint, fontWeight: 700 }}>✓</span>{t}
@@ -2795,7 +2857,7 @@ function CustomerBookings({ openBooking }) {
 
             {b.pricing_type === "subscription" && b.status !== 9 && b.status !== 8 && (
               <div style={{ background: C.mintSoft, borderRadius: 13, padding: "9px 13px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, fontWeight: 600, lineHeight: 1.5 }}>
-                {L(`🔁 Active subscription — repeats ${everyP(b.period)}.`, `🔁 Aktív előfizetés — ${everyP(b.period)} ismétlődik.`)} {L("Next visit", "Következő:")} {dayLabel(b.scheduled_date)} · {b.scheduled_slot}.
+                {fill(L("🔁 Active subscription — repeats {0}.", "🔁 Aktív előfizetés — {0} ismétlődik."), everyP(b.period))} {L("Next visit", "Következő:")} {dayLabel(b.scheduled_date)} · {b.scheduled_slot}.
               </div>
             )}
 
@@ -2844,7 +2906,7 @@ function CustomerBookings({ openBooking }) {
       {confirmCancel && (
         <ConfirmDialog
           title={L("Cancel this booking?", "Lemondod a foglalást?")}
-          body={L(`Your booking with ${companies.find((c) => c.id === confirmCancel.company_id)?.name || "the company"} will be cancelled. This can't be undone.`, `A(z) ${companies.find((c) => c.id === confirmCancel.company_id)?.name || "cég"} felé leadott foglalásod törlésre kerül. Ez nem vonható vissza.`)}
+          body={fill(L("Your booking with {0} will be cancelled. This can't be undone.", "A(z) {0} felé leadott foglalásod törlésre kerül. Ez nem vonható vissza."), companies.find((c) => c.id === confirmCancel.company_id)?.name || L("the company", "cég"))}
           confirmLabel={L("Yes, cancel", "Igen, lemondom")}
           onConfirm={() => { cancelBooking(confirmCancel.id); toast(L("Booking cancelled", "Foglalás lemondva")); setConfirmCancel(null); }}
           onCancel={() => setConfirmCancel(null)}
@@ -2854,7 +2916,7 @@ function CustomerBookings({ openBooking }) {
       {googlePrompt && (
         <ConfirmDialog
           title={L("Loved it? Tell Google too ⭐", "Tetszett? Mondd el a Google-ön is ⭐")}
-          body={L(`A Google review helps ${googlePrompt.name} get found by more people. It takes 30 seconds.`, `Egy Google-értékelés segít, hogy többen megtalálják: ${googlePrompt.name}. 30 másodperc az egész.`)}
+          body={fill(L("A Google review helps {0} get found by more people. It takes 30 seconds.", "Egy Google-értékelés segít, hogy többen megtalálják: {0}. 30 másodperc az egész."), googlePrompt.name)}
           confirmLabel={L("Review on Google", "Értékelés Google-ön")}
           onCancel={() => setGooglePrompt(null)}
           onConfirm={() => { window.open(`https://search.google.com/local/writereview?placeid=${googlePrompt.google_place_id}`, "_blank"); setGooglePrompt(null); }}
@@ -4505,6 +4567,76 @@ function CompanyReviews() {
   );
 }
 
+/* Type a city, pick it from the live suggestions, and it becomes a chip.
+   Deliberately does not let a free-typed name through on Enter alone unless it
+   has some length: a typo here silently costs the partner every customer in
+   that town, and they would never see why. */
+function AddCityField({ onAdd, country }) {
+  const [q, setQ] = useState("");
+  const [sugs, setSugs] = useState([]);
+  const timer = React.useRef(null);
+  const type = (v) => {
+    setQ(v);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => setSugs(await suggestCities(v, country)), 300);
+  };
+  const take = (v) => { const t = String(v || "").trim(); if (t.length >= 2) { onAdd(t); setQ(""); setSugs([]); } };
+  return (
+    <div style={{ position: "relative" }}>
+      <input value={q} onChange={(e) => type(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); take(sugs[0] || q); } }}
+        placeholder={L("Add a city…", "Város hozzáadása…")}
+        style={{ width: "100%", boxSizing: "border-box", padding: "12px 15px", borderRadius: 15,
+                 border: `1.5px dashed ${C.line}`, fontFamily: B, fontSize: 13.5, background: C.bg, color: C.ink }} />
+      {sugs.length > 0 && (
+        <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 50, background: C.card,
+                      borderRadius: 13, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
+          {sugs.map((c) => (
+            <button key={c} onMouseDown={() => take(c)}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none",
+                       borderBottom: `1px solid ${C.line}`, background: C.card, color: C.ink,
+                       fontFamily: B, fontSize: 13, cursor: "pointer" }}>{c}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* A city field that suggests as you type, scoped to a country. */
+function CitySuggestField({ label, value, onChange, country }) {
+  const [sugs, setSugs] = useState([]);
+  const [open, setOpen] = useState(false);
+  const timer = React.useRef(null);
+  const type = (v) => {
+    onChange(v); setOpen(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => setSugs(await suggestCities(v, country)), 300);
+  };
+  return (
+    <div style={{ position: "relative", marginBottom: 13 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{label}</div>
+      <input value={value} placeholder="Debrecen" onChange={(e) => type(e.target.value)}
+        onBlur={() => setTimeout(() => setOpen(false), 180)}
+        style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15,
+                 border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.bg, color: C.ink }} />
+      {open && sugs.length > 0 && (
+        <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card,
+                      borderRadius: 13, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
+          {sugs.map((c) => (
+            <button key={c} onMouseDown={() => { onChange(c); setSugs([]); setOpen(false); }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none",
+                       borderBottom: `1px solid ${C.line}`, background: C.card, color: C.ink,
+                       fontFamily: B, fontSize: 13, cursor: "pointer" }}>
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CompanySettings() {
   const { session, companies, updateCompany, bookings, services } = useStore();
   const toast = useToast();
@@ -4514,6 +4646,8 @@ function CompanySettings() {
     country: co?.country || "HU",
     service_lat: co?.service_lat ?? null, service_lng: co?.service_lng ?? null,
     service_radius_km: co?.service_radius_km || 10,
+    service_cities: Array.isArray(co?.service_cities) ? co.service_cities
+                  : (() => { try { return JSON.parse(co?.service_cities || "[]"); } catch { return []; } })(),
     emoji: co?.emoji || "🫧", student_discount: co?.student_discount ?? 10,
     promo_on: !!promoOf(co), promo_pct: promoOf(co)?.pct ?? 10, promo_label: promoOf(co)?.label || "", promo_until: promoOf(co)?.until || "",
     cover: co?.cover || COVER_PRESETS[0], logo_url: co?.logo_url || null,
@@ -4571,7 +4705,8 @@ function CompanySettings() {
       billingName: f.billing_name.trim(), billingZip: f.billing_zip.trim(), billingCity: f.billing_city.trim(),
       billingAddress: f.billing_address.trim(), billingEmail: f.billing_email.trim(),
       city: (f.city || "").trim(), requirements: (f.requirements || []).map((x) => String(x).trim()).filter(Boolean).slice(0, 12),
-      country: f.country, serviceLat: f.service_lat, serviceLng: f.service_lng, serviceRadiusKm: f.service_radius_km });
+      country: f.country, serviceLat: f.service_lat, serviceLng: f.service_lng, serviceRadiusKm: f.service_radius_km,
+      serviceCities: f.service_cities });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else toast(L("Company profile updated ✓", "Cégprofil frissítve ✓"));
@@ -4604,10 +4739,10 @@ function CompanySettings() {
 
       <Field label={L("Emoji (shown if no logo uploaded)", "Emoji (ha nincs feltöltött logó)")} placeholder="🫧" value={f.emoji} onChange={set("emoji")} />
       <Field label={L("Company name *", "Cégnév *")} placeholder={L("SparkClean Kft.", "Ragyogó Kft.")} value={f.name} onChange={set("name")} />
-      {/* 4.3 — free text with suggestions, so any city in any country works */}
-      <Field label={L("City served", "Kiszolgált város")} placeholder="Debrecen" list="cleano-cities"
-        value={f.city || ""} onChange={set("city")} />
-      <datalist id="cleano-cities">{ALL_CITIES.map((c) => <option key={c} value={c} />)}</datalist>
+      {/* Live suggestions for whichever country is selected below, rather than a
+          fixed list of ten Hungarian cities. */}
+      <CitySuggestField label={L("City served", "Kiszolgált város")} country={f.country || "HU"}
+        value={f.city || ""} onChange={(v) => setF((p) => ({ ...p, city: v }))} />
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Country", "Ország")}</div>
       <select value={f.country || "HU"} onChange={(e) => setF({ ...f, country: e.target.value })}
         style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
@@ -4629,7 +4764,7 @@ function CompanySettings() {
             onChange={(e) => setF((p) => ({ ...p, service_radius_km: Number(e.target.value) }))}
             style={{ flex: 1, accentColor: C.navy }} />
           <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, minWidth: 62, textAlign: "right" }}>
-            {Number(f.service_radius_km) >= CITY_WIDE_KM ? L("Whole city", "Egész város") : `${f.service_radius_km || 10} km`}
+            {`${f.service_radius_km || 10} km`}
           </span>
         </div>
 
@@ -4640,7 +4775,7 @@ function CompanySettings() {
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           {[{ km: 5, label: L("Just nearby", "Csak a közelben") },
             { km: 15, label: L("Wider area", "Tágabb környék") },
-            { km: CITY_WIDE_KM, label: `🏙️ ${L("Whole city and around", "Az egész város és környéke")}` }].map((o) => {
+            { km: 30, label: L("Far out", "Messzire is") }].map((o) => {
             const on = Number(f.service_radius_km || 10) === o.km;
             return (
               <button key={o.km} onClick={() => setF((p) => ({ ...p, service_radius_km: o.km }))}
@@ -4651,12 +4786,55 @@ function CompanySettings() {
             );
           })}
         </div>
-        {Number(f.service_radius_km) >= CITY_WIDE_KM && (
-          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 8, lineHeight: 1.5 }}>
-            {L("Anyone in the city and the surrounding villages can book you. Turn this down if you would rather stay close to your base.",
-               "A városban és a környező településeken bárki foglalhat nálad. Vedd lejjebb, ha inkább a bázisod közelében maradnál.")}
-          </div>
+      </div>
+
+      {/* ── Whole cities ───────────────────────────────────────────────────
+          The radius above answers "how far will you drive from your base".
+          This answers "which places do you cover", which is a different
+          question and the one companies actually think in. A city named here
+          is served in full no matter what the circle says — so a small town
+          is not cut in half by a 5 km radius, a large one is not clipped by
+          30, and a company working three towns is not forced to draw one
+          enormous circle that swallows everything in between. */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>
+          {L("Cities you serve in full", "Városok, amelyeket teljesen kiszolgálsz")}
+        </div>
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.5 }}>
+          {L("Anyone in these cities can book you, however far they are from the pin above. Add as many as you cover.",
+             "Ezekben a városokban bárki foglalhat nálad, akármilyen messze van a fenti ponttól. Annyit adj hozzá, amennyit lefedsz.")}
+        </div>
+
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+          {(f.service_cities || []).map((cty) => (
+            <span key={cty} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.navyChip,
+                                     color: C.navySoft, borderRadius: 99, padding: "6px 8px 6px 12px",
+                                     fontFamily: B, fontWeight: 700, fontSize: 11.5 }}>
+              {cty}
+              <button aria-label={L("Remove", "Eltávolítás")}
+                onClick={() => setF((p) => ({ ...p, service_cities: (p.service_cities || []).filter((x) => x !== cty) }))}
+                style={{ border: "none", background: "transparent", color: C.navySoft, cursor: "pointer",
+                         fontSize: 15, lineHeight: 1, padding: "0 2px" }}>×</button>
+            </span>
+          ))}
+          {!(f.service_cities || []).length && (
+            <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint }}>
+              {L("None yet — only the radius above applies.", "Még egy sincs — csak a fenti sugár érvényes.")}
+            </span>
+          )}
+        </div>
+
+        {f.city && !(f.service_cities || []).some((x) => x.toLowerCase() === String(f.city).toLowerCase()) && (
+          <button onClick={() => setF((p) => ({ ...p, service_cities: [...(p.service_cities || []), String(p.city).trim()] }))}
+            style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "8px 13px", borderRadius: 99, border: "none",
+                     background: C.navy, color: "#fff", cursor: "pointer", marginBottom: 10 }}>
+            {fill(L("🏙️ Serve the whole of {0}", "🏙️ {0} egészének kiszolgálása"), f.city)}
+          </button>
         )}
+
+        <AddCityField country={f.country || "HU"}
+          onAdd={(cty) => setF((p) => (p.service_cities || []).some((x) => x.toLowerCase() === cty.toLowerCase())
+            ? p : { ...p, service_cities: [...(p.service_cities || []), cty] })} />
       </div>
 
       {/* ── 5.4 What you need the customer to have ready ── */}
@@ -5163,6 +5341,119 @@ function AdminDashboard() {
   );
 }
 
+/* ── Everything about one partner, on one screen ──────────────────────────
+   The admin list showed a name, a rating and a tax number. Every other thing
+   you need to raise an invoice — the legal billing name, the registered seat,
+   the address you post it to, the email it goes to — was already being sent to
+   the browser by SELECT c.*, and nothing drew it.
+
+   Two addresses are deliberately kept apart. `billing_*` is what the partner
+   entered for invoicing; `city`/`country` is where they registered and where
+   customers find them. They are usually the same and occasionally not, and
+   quietly substituting one for the other is how an invoice goes to the wrong
+   place. So: if the billing block is empty this says so, in red, rather than
+   filling the gap with the other address and hoping. */
+function CompanyDossier({ co, close }) {
+  const toast = useToast();
+  const hasBilling = !!(co.billing_address || co.billing_city || co.billing_zip || co.billing_name);
+  const cityList = Array.isArray(co.service_cities) ? co.service_cities
+    : (() => { try { return JSON.parse(co.service_cities || "[]"); } catch { return []; } })();
+
+  const billLines = [
+    co.billing_name || co.name,
+    co.billing_address,
+    [co.billing_zip, co.billing_city].filter(Boolean).join(" "),
+    co.country && co.country !== "HU" ? countryName(co.country) : null,
+  ].filter(Boolean);
+
+  const asText = [
+    `${L("Bill to", "Számlázási név")}: ${co.billing_name || co.name}`,
+    co.billing_name && co.billing_name !== co.name ? `${L("Trading name", "Cégnév")}: ${co.name}` : null,
+    `${L("Tax number", "Adószám")}: ${co.tax_id || "—"}`,
+    co.reg_number ? `${L("Registration number", "Cégjegyzékszám")}: ${co.reg_number}` : null,
+    `${L("Billing address", "Számlázási cím")}: ${hasBilling ? billLines.slice(1).join(", ") : L("NOT PROVIDED", "NINCS MEGADVA")}`,
+    `${L("Invoice email", "Számla e-mail")}: ${co.billing_email || co.owner_email || "—"}`,
+    co.contact_phone ? `${L("Phone", "Telefon")}: ${co.contact_phone}` : null,
+    "",
+    `${L("Contact", "Kapcsolattartó")}: ${co.owner_name || "—"} · ${co.owner_email || "—"}`,
+    `${L("Registered in", "Bejegyezve")}: ${co.city || "—"}${co.country ? `, ${countryName(co.country)}` : ""}`,
+  ].filter(Boolean).join("\n");
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(asText); toast(L("Copied", "Kimásolva")); }
+    catch { toast(L("Could not copy — select the text instead", "Nem sikerült másolni — jelöld ki a szöveget")); }
+  };
+
+  const Row = ({ k, v, warn }) => (
+    <div style={{ display: "flex", gap: 12, padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint, minWidth: 118, flexShrink: 0 }}>{k}</div>
+      <div style={{ fontFamily: B, fontSize: 12.5, fontWeight: warn ? 700 : 600,
+                    color: warn ? C.coral : C.ink, wordBreak: "break-word", textAlign: "right", flex: 1 }}>{v}</div>
+    </div>
+  );
+  const Head = ({ children }) => (
+    <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.navySoft,
+                  textTransform: "uppercase", letterSpacing: .6, margin: "18px 0 4px" }}>{children}</div>
+  );
+  const dash = L("Not provided", "Nincs megadva");
+
+  return (
+    <Sheet title={co.name} close={close}>
+      <Head>{L("For the invoice", "A számlához")}</Head>
+      <Row k={L("Bill to", "Számlázási név")} v={co.billing_name || co.name} />
+      {co.billing_name && co.billing_name !== co.name && <Row k={L("Trading name", "Cégnév")} v={co.name} />}
+      <Row k={L("Tax number", "Adószám")} v={co.tax_id || dash} warn={!co.tax_id} />
+      <Row k={L("Registration no.", "Cégjegyzékszám")} v={co.reg_number || dash} warn={!co.reg_number} />
+      <Row k={L("Billing address", "Számlázási cím")}
+           v={hasBilling ? billLines.slice(1).join(", ") : dash} warn={!hasBilling} />
+      <Row k={L("Invoice email", "Számla e-mail")} v={co.billing_email || co.owner_email || dash}
+           warn={!co.billing_email && !co.owner_email} />
+      {!hasBilling && (
+        <div style={{ background: C.coralSoft, borderRadius: 13, padding: "10px 13px", marginTop: 10,
+                      fontFamily: B, fontSize: 11.5, color: C.coral, lineHeight: 1.5 }}>
+          {L("This partner has not filled in a billing address. Ask them to complete it in Settings before you invoice — their registered city is shown below but is not the same field.",
+             "Ez a partner nem adott meg számlázási címet. Kérd meg, hogy töltse ki a Beállításokban, mielőtt számlázol — a bejegyzett város lentebb látható, de az nem ugyanaz az adat.")}
+        </div>
+      )}
+
+      <Head>{L("Contact", "Kapcsolattartó")}</Head>
+      <Row k={L("Owner", "Tulajdonos")} v={co.owner_name || dash} />
+      <Row k={L("Login email", "Belépési e-mail")} v={co.owner_email || dash} />
+      <Row k={L("Phone", "Telefon")} v={co.contact_phone || dash} />
+
+      <Head>{L("Where they operate", "Hol dolgoznak")}</Head>
+      <Row k={L("Registered city", "Bejegyzett város")} v={co.city || dash} />
+      <Row k={L("Country", "Ország")} v={co.country ? countryName(co.country) : dash} />
+      <Row k={L("Cities served in full", "Teljesen kiszolgált városok")}
+           v={cityList.length ? cityList.join(", ") : L("None — radius only", "Egy sem — csak sugár")} />
+      <Row k={L("Service radius", "Szolgáltatási sugár")}
+           v={Number(co.service_radius_km) > 0 ? `${co.service_radius_km} km` : L("Not limited", "Nincs korlátozva")} />
+      <Row k={L("Currency", "Pénznem")} v={co.currency || "HUF"} />
+
+      <Head>{L("Account", "Fiók")}</Head>
+      <Row k={L("Status", "Állapot")}
+           v={`${co.is_approved ? L("Approved", "Jóváhagyva") : L("Suspended", "Felfüggesztve")} · ${co.is_listed ? L("Listed", "Listázva") : L("Unlisted", "Nem listázva")}`}
+           warn={!co.is_approved} />
+      <Row k={L("Payouts", "Kifizetések")}
+           v={co.stripe_account_id ? L("Stripe connected", "Stripe csatlakoztatva") : L("Not connected", "Nincs csatlakoztatva")}
+           warn={!co.stripe_account_id} />
+      <Row k={L("Jobs completed", "Elvégzett munkák")} v={String(co.booking_count ?? 0)} />
+      <Row k={L("Revenue billed", "Kiszámlázott bevétel")} v={huf(co.revenue || 0)} />
+      <Row k={L("Student discount", "Diákkedvezmény")} v={`${co.student_discount ?? 0}%`} />
+      <Row k={L("Partner since", "Partner ekkortól")} v={String(co.created_at || "").slice(0, 10) || dash} />
+      <Row k={L("Documents on file", "Feltöltött dokumentumok")} v={String((co.documents || []).length)} />
+
+      <Btn full ghost onClick={copy} style={{ marginTop: 16 }}>
+        {L("Copy details", "Adatok másolása")}
+      </Btn>
+      <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, textAlign: "center", marginTop: 9, lineHeight: 1.5 }}>
+        {L("What they owe you this period is on the Dashboard, under “To invoice”.",
+           "Hogy mennyivel tartoznak ebben az időszakban, azt az Irányítópulton, a „Számlázandó” alatt látod.")}
+      </div>
+    </Sheet>
+  );
+}
+
 function AdminCompanies() {
   const { adminAllCompanies, adminFetchAllCompanies, adminUpdateCompany, adminFetchCompanyServices } = useStore();
   const [svcOpen, setSvcOpen] = useState(null);
@@ -5170,6 +5461,7 @@ function AdminCompanies() {
   const toast = useToast();
   const [busy, setBusy] = useState(!adminAllCompanies);
   const [viewDocs, setViewDocs] = useState(null);
+  const [dossier, setDossier] = useState(null);
 
   React.useEffect(() => {
     if (!adminAllCompanies) adminFetchAllCompanies().finally(() => setBusy(false));
@@ -5200,7 +5492,7 @@ function AdminCompanies() {
       })()}
       {(adminAllCompanies || []).map((co) => (
         <div key={co.id} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: co.is_approved ? 1 : .65 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div onClick={() => setDossier(co)} style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
             <CompanyLogo co={co} size={42} radius={13} />
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, display: "flex", alignItems: "center", gap: 7 }}>{co.name}{promoOf(co) && <Pill bg={C.mintSoft} color={C.greenDeep}>−{promoOf(co).pct}%</Pill>}</div>
@@ -5232,8 +5524,11 @@ function AdminCompanies() {
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               {co.is_listed ? "Unlist" : "Re-list"}
             </button>
+            <button onClick={() => setDossier(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navySoft}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
+              {L("Details", "Adatok")}
+            </button>
             <button onClick={() => openListings(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer", marginRight: 6 }}>
-              Listings
+              {L("Listings", "Szolgáltatások")}
             </button>
             <button onClick={() => setViewDocs({ title: `${co.name} — documents`, docs: co.documents || [] })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               📄 Docs ({(co.documents || []).length})
@@ -5242,6 +5537,7 @@ function AdminCompanies() {
         </div>
       ))}
       {viewDocs && <DocViewer title={viewDocs.title} docs={viewDocs.docs} close={() => setViewDocs(null)} />}
+      {dossier && <CompanyDossier co={dossier} close={() => setDossier(null)} />}
       {/* AdminUsers owns the user-detail sheet and has the state for it. A copy
           of that line lived here too, referencing `detail` and `setDetail` that
           this component never declared — so opening Companies threw a
@@ -5918,7 +6214,7 @@ function AdminUsers() {
       {confirmDel && (
         <ConfirmDialog
           title={L("Delete this account?", "Fiók törlése?")}
-          body={L(`${confirmDel.full_name || confirmDel.email} — personal data is permanently anonymised (booking history is kept for accounting). This cannot be undone.`, `${confirmDel.full_name || confirmDel.email} — a személyes adatok véglegesen anonimizálódnak (a foglalási előzmények megmaradnak). Ez nem vonható vissza.`)}
+          body={fill(L("{0} — personal data is permanently anonymised (booking history is kept for accounting). This cannot be undone.", "{0} — a személyes adatok véglegesen anonimizálódnak (a foglalási előzmények megmaradnak). Ez nem vonható vissza."), confirmDel.full_name || confirmDel.email)}
           confirmLabel={L("Delete forever", "Végleges törlés")}
           onConfirm={async () => { const res = await adminDeleteUser(confirmDel.id); if (res?.error) toast(res.error, "error"); else { toast(L("Account deleted", "Fiók törölve")); adminFetchUsers(); } setConfirmDel(null); }}
           onCancel={() => setConfirmDel(null)}
@@ -6100,7 +6396,7 @@ function BillingList() {
     const r = await markInvoiced(c.jobs.map((jb) => jb.id), num.trim(), new Date().toISOString().slice(0, 10));
     setBusy(false);
     if (r?.error) return toast(r.error);
-    toast(L(`Recorded on ${r.marked} job(s)`, `${r.marked} munkán rögzítve`));
+    toast(fill(L("Recorded on {0} job(s)", "{0} munkán rögzítve"), r.marked));
     setOpenCo(null); setNum(""); load();
   };
 

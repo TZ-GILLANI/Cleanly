@@ -100,6 +100,12 @@ router.post("/register", async (req, res) => {
 
     if (role === "company") {
       if (!companyName?.trim()) return res.status(400).json({ error: "Company name is required" });
+      /* The city field used to be a dropdown that was never empty, so nothing
+         ever checked it. It is now free text, and an empty city is worse than
+         it looks: the customer list keeps any company whose city is blank, so
+         a partner with no city set is shown to every customer in the country
+         and then refused at booking. Fail here instead. */
+      if (!String(city || "").trim()) return res.status(400).json({ error: "Please tell us which city you serve" });
       if (!taxId?.trim()) return res.status(400).json({ error: "Tax ID is required for company registration" });
       if (!huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42 — check the digits." });
       if (regNumber?.trim() && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid company registration number (cégjegyzékszám). Format: 09-09-123456." });
@@ -111,7 +117,7 @@ router.post("/register", async (req, res) => {
       // New companies start unlisted/pending until an admin reviews their documents.
       const coRes = await query(
         "INSERT INTO companies (owner_id, name, tax_id, reg_number, contact_phone, documents, city, is_approved, is_listed) VALUES ($1,$2,$3,$4,$5,$6,$7,false,true) RETURNING id",
-        [userId, companyName.trim(), formatTaxId(taxId.trim()), regNumber?.trim() || null, contactPhone?.trim() || null, docsJson, city ? String(city).slice(0, 60) : 'Debrecen']
+        [userId, companyName.trim(), formatTaxId(taxId.trim()), regNumber?.trim() || null, contactPhone?.trim() || null, docsJson, String(city).trim().slice(0, 60)]
       );
       await query("UPDATE users SET company_id = $1 WHERE id = $2", [coRes.rows[0].id, userId]);
 
