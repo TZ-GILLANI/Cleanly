@@ -59,7 +59,7 @@ for (const m of src.matchAll(/\b([Lt])\(/g)) {
 }
 const inside = (i) => covered.some(([a, b]) => i > a && i < b);
 
-const SKIPPED_KEY = /\b(style|className|class|key|id|type|href|src|accept|autoComplete|inputMode|pattern|rel|target|method|role|fill|stroke|viewBox|xmlns|transform|points|icon|emoji|bg|color|url|status|code|lang|locale|currency|padding|margin|gap|inset|borderRadius|border|width|height|top|left|right|bottom|transition|animation|flex|grid|gridTemplateColumns|fontFamily|background|border|boxShadow|display|position|textAlign|flexDirection|justifyContent|alignItems|objectFit|whiteSpace|wordBreak|textDecoration|overflow|cursor)\s*[:=]\s*$/;
+const SKIPPED_KEY = /\b(style|className|class|key|id|type|href|src|accept|autoComplete|inputMode|pattern|rel|target|method|role|fill|stroke|viewBox|xmlns|transform|points|icon|emoji|bg|color|url|status|code|lang|locale|currency|padding|margin|gap|inset|borderRadius|border|width|height|top|left|right|bottom|transition|animation|flex|grid|gridTemplateColumns|fontFamily|background|border|boxShadow|display|position|textAlign|flexDirection|justifyContent|alignItems|objectFit|whiteSpace|wordBreak|textDecoration|overflow|cursor|scrollSnapType|scrollSnapAlign|WebkitOverflowScrolling)\s*[:=]\s*$/;
 const LOOKS_LIKE_DATA = /^(https?:|data:|\/|#|[\d\s.,:%+-]+$|[a-z0-9_-]+$|[A-Z_]+$)/;
 
 /* CSS values and code fragments are the bulk of the string literals in a file
@@ -67,7 +67,19 @@ const LOOKS_LIKE_DATA = /^(https?:|data:|\/|#|[\d\s.,:%+-]+$|[a-z0-9_-]+$|[A-Z_]
    reads to the end. */
 const CSS_VALUE = /(^|\s)(\d+(\.\d+)?(px|rem|em|vh|vw|%|s|ms)\b|rgba?\(|calc\(|var\(|#[0-9a-f]{3,8}\b)/i;
 const CODE_FRAGMENT = /(=>|\)\s*\{|\bconst\b|\bMath\.|<\/|\/>|\$\{|\breturn\b|\bfunction\b|\.map\(|\.split\(|\bnew [A-Z])/;
-const HAS_WORDS = /[A-Za-zÀ-ſ][a-zà-ſ]+(\s+\S+){1,}/;
+/* A single word is still copy.
+
+   This used to demand two or more words, on the theory that one word is
+   usually an identifier. That quietly excused every nav label, tab, heading
+   and button in the app — "Dashboard", "Team", "Services", "Log", "Orders" —
+   and the checker reported the admin interface as fully translated while its
+   entire bottom navigation was hardcoded English.
+
+   Now: three or more letters counts, and the noise that used to be filtered by
+   the word count is filtered by LOOKS_LIKE_DATA (lowercase identifiers,
+   ALL_CAPS constants), CSS_VALUE and CODE_FRAGMENT instead — which is where it
+   should have been done in the first place. */
+const HAS_WORDS = /[A-Za-zÀ-ſ][a-zà-ſ]{2,}/;
 
 const hits = [];
 for (const m of src.matchAll(/"((?:[^"\\\n]|\\.){4,120})"/g)) {
@@ -87,6 +99,25 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.){4,120})"/g)) {
   if (/\b(co|f|p|b|s|u|r|d)\?\.|\|\||\?\?/.test(raw)) continue;
   if (/^[a-z]+([A-Z]\w+)+$/.test(text)) continue;
   const before = src.slice(Math.max(0, m.index - 60), m.index);
+  /* Machine strings that happen to contain English words. Widening HAS_WORDS to
+     accept single words let these in; they are not copy and never reach a
+     screen. Filtered by shape rather than by word count, so a real one-word
+     label like "Team" still gets caught. */
+  if (/^(blur|rotate|scale|translate|saturate|linear-gradient|radial-gradient|drop-shadow)\s*\(/.test(text)) continue;
+  if (/^(image|application|text|audio|video|font)\//.test(text)) continue;   // MIME
+  if (/^@[a-z][\w-]*\//.test(raw)) continue;                                 // @capacitor/core
+  if (/^\/[a-z][\w/-]*$/.test(raw)) continue;                                // /calendar/me — API paths
+  if (/^[\w.+-]+@[\w-]+\.[a-z]{2,}$/i.test(raw)) continue;                   // you@example.com
+  if (/e\.key\s*===?\s*$/.test(before)) continue;                            // "Enter" the keyboard key
+  /* Place names are data, not copy. Translating "Debrecen" is wrong, not
+     missing — these sit in the markets table and in field placeholders. */
+  if (/^(Budapest|Debrecen|Szeged|Miskolc|Pécs|Győr|Nyíregyháza|Kecskemét|Székesfehérvár|Szombathely|Magyarország)$/.test(raw)) continue;
+  if (/^(Bearer|Content-Type|Authorization|application\/json)\b/.test(text)) continue;
+  if (/^\(prefers-/.test(raw)) continue;                                      // media queries
+  if (/^[a-z][\w+.-]*:\/\//.test(text)) continue;                            // itms-apps://, https://
+  if (/^\s*[a-zA-Z]+=/.test(raw)) continue;                                   // " max=", " style={{ …
+  if (/^[\d.]+\s+[\d.]+\s+auto$/.test(text)) continue;                       // flex shorthand
+  if (/^Cleano$/.test(text)) continue;                                        // the brand is the brand
   if (SKIPPED_KEY.test(before)) continue;
   if (/\/\/[^\n]*$/.test(before)) continue;
   if (inside(m.index) || inComment(m.index)) continue;

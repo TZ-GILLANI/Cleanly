@@ -525,5 +525,61 @@ ok("the company signup city field does too",
 ok("and no screen still uses the fixed ten-city dropdown",
    !/ALL_CITIES\.map\(\(c\) => <option/.test(appCity));
 
+/* ── THE PHONE NUMBER ─────────────────────────────────────────────────────
+   Reported from a real device: the signup screen showed
+
+       Invalid parameter `To`: +3670303194149
+
+   Two separate failures, one message. The field built a number that cannot
+   exist — it prefixed the dial code to whatever was typed, so "06 70 …" (which
+   is how Hungarians write their own number) became +36 06 70 …, and a pasted
+   "+36 70 …" became +36 36 70 …. Nothing checked it. Then Twilio's rejection
+   was handed to the customer verbatim: English, in Twilio's vocabulary, about
+   a parameter they have never heard of.
+
+   With REQUIRE_SIGNUP_VERIFY=1 this is not cosmetic. No code, no account. */
+console.log("\n── the phone number ──");
+const appPh = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+const vSrc = (await import("fs")).readFileSync("server/routes/verify.js", "utf8");
+
+ok("the field strips a national trunk zero before sending", /d = d\.replace\(\/\^0\+\/, ""\)/.test(appPh));
+ok("and a country code the person pasted in themselves", /startsWith\("00" \+ cc\)/.test(appPh));
+ok("the app has its own opinion about length, before any provider does",
+   /const phoneLooksReal/.test(appPh) && /NAT_LEN/.test(appPh));
+ok("and shows the number it will actually use", /We'll use: /.test(appPh));
+
+ok("the server validates the number before spending an SMS", /function phoneIsWrong/.test(vSrc));
+ok("both the signup path and the logged-in path check it",
+   (vSrc.match(/phoneIsWrong\(phone\)/g) || []).length >= 2);
+ok("and it knows each country's own length, not just generic E.164",
+   /const NAT_LEN/.test(vSrc) && /"36": \[9\]/.test(vSrc));
+ok("client and server keep the same table", /const NAT_LEN/.test(appPh) && /"36": \[9\]/.test(appPh));
+ok("the provider's own words are never returned to a customer",
+   !/error: data\.message/.test(vSrc) && /function sendFailure/.test(vSrc));
+ok("Twilio's code for a bad number becomes a sentence a person can act on",
+   /60200/.test(vSrc) && /badPhoneMsg/.test(vSrc));
+ok("and the raw provider text is still logged for us", /console\.error\(`twilio /.test(vSrc));
+
+/* Behavioural: the malformed number from the screenshot must be refused by us,
+   with our wording, without any provider being contacted. */
+const bad = await j("/api/verify/signup/start", { method: "POST", body: { phone: "+3670303194149" } });
+ok("the exact number from the bug report is refused", bad.status === 400, `got ${bad.status}`);
+ok("with our message, not Twilio's",
+   /country code/i.test(bad.data.error || "") && !/parameter/i.test(bad.data.error || ""),
+   bad.data.error);
+
+for (const [what, value] of [["a leading zero", "+36070303194"], ["far too short", "+361"],
+                             ["far too long", "+3670303194149999"], ["not a number at all", "hello"]]) {
+  const r = await j("/api/verify/signup/start", { method: "POST", body: { phone: value } });
+  ok(`${what} is refused`, r.status === 400, `${value} -> ${r.status}`);
+}
+
+/* If the gate is on and the provider is unreachable, nobody can register at
+   all. That must page us, not wait for a customer to write in. */
+ok("a blocked-signup outage raises an alert rather than failing quietly",
+   /REQUIRE_SIGNUP_VERIFY === "1"/.test(vSrc) && /signups are blocked/.test(vSrc));
+ok("and the customer sees a sentence, not the internal code",
+   /verification_not_configured/.test(appPh) && /We can't send codes right now/.test(appPh));
+
 console.log(`\n════ GAPS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

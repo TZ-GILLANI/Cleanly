@@ -28,12 +28,13 @@ router.post("/start", requireAuth, async (req, res) => {
     const me = await query("SELECT phone FROM users WHERE id = $1", [req.user.id]);
     const phone = me.rows[0]?.phone;
     if (!phone) return res.status(400).json({ error: "No phone number on your account" });
+    if (phoneIsWrong(phone)) return res.status(400).json({ error: badPhoneMsg });
     const body = new URLSearchParams({ To: phone, Channel: channel === "sms" ? "sms" : "whatsapp" });
     const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/Verifications`, {
       method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body,
     });
     const data = await r.json();
-    if (!r.ok) return res.status(502).json({ error: data.message || "Could not send code" });
+    if (!r.ok) return sendFailure(res, data, "verify-start");
     res.json({ sent: true, channel: data.channel });
   } catch (err) {
     console.error("verify start:", err);
@@ -122,6 +123,58 @@ export function verifySignupToken(token, kind, value) {
   } catch { return false; }
 }
 
+/* ── Check the number before spending an SMS on it ────────────────────────
+   Nothing validated the phone. Anything the field produced went straight to
+   Twilio, and Twilio's rejection was handed back to the customer verbatim:
+
+       Invalid parameter `To`: +3670303194149
+
+   Two failures in one line. The number was malformed because the app never
+   cleaned it up, and the person was shown an API diagnostic — English, in
+   Twilio's vocabulary, about a parameter they have never heard of.
+
+   E.164: a leading +, then 8 to 15 digits, first digit non-zero. */
+/* National subscriber-number lengths for the dial codes the app offers.
+   Generic E.164 permits 7–15 digits, which is why "+3670303194149" sailed past
+   a format check and was only rejected by Twilio: thirteen digits is a
+   perfectly legal number somewhere, just not in Hungary. Where we know the
+   country we check the country's own rule; where we do not, E.164 still
+   applies. A leading zero is always wrong in the international form — it is the
+   national trunk prefix, which the country code replaces. */
+const NAT_LEN = {
+  "1": [10], "31": [9], "33": [9], "34": [9], "36": [9], "39": [9, 10],
+  "40": [9], "43": [10, 11, 12, 13], "44": [10], "48": [9], "49": [10, 11],
+  "86": [11], "90": [10], "91": [10], "92": [10], "234": [10],
+  "380": [9], "381": [8, 9], "385": [8, 9], "386": [8], "421": [9],
+};
+const dialOfNumber = (digits) => ["1", "31", "33", "34", "36", "39", "40", "43", "44", "48", "49",
+  "86", "90", "91", "92", "234", "380", "381", "385", "386", "421"]
+  .sort((a, b) => b.length - a.length).find((d) => digits.startsWith(d)) || null;
+
+/* True when the number is impossible, not merely unusual. */
+function phoneIsWrong(raw) {
+  const s = String(raw || "").trim();
+  if (!/^\+[1-9][0-9]{6,14}$/.test(s)) return true;
+  const digits = s.slice(1);
+  const cc = dialOfNumber(digits);
+  if (!cc) return false;                       // country we do not have a rule for
+  const nat = digits.slice(cc.length);
+  if (nat.startsWith("0")) return true;        // trunk prefix left in
+  return !(NAT_LEN[cc] || []).includes(nat.length);
+}
+
+const badPhoneMsg = "That phone number doesn't look right. Check the country code and remove any leading zero.";
+
+/* Twilio's own text is for us, not for the customer. Log it, return a sentence
+   a human can act on. */
+function sendFailure(res, data, where) {
+  console.error(`twilio ${where}:`, data?.code, data?.message);
+  if (String(data?.code) === "60200") return res.status(400).json({ error: badPhoneMsg });
+  if (String(data?.code) === "60203") return res.status(429).json({ error: "Too many attempts for this number — try again later." });
+  if (String(data?.code) === "60205") return res.status(400).json({ error: "We can't send SMS to that number. Try a mobile number." });
+  return res.status(502).json({ error: "We couldn't send the code just now. Please try again in a moment." });
+}
+
 router.post("/signup/start", async (req, res) => {
   const { phone, email } = req.body || {};
   const target = phone || email;
@@ -138,14 +191,26 @@ router.post("/signup/start", async (req, res) => {
 
   try {
     if (phone) {
+      if (phoneIsWrong(phone)) return res.status(400).json({ error: badPhoneMsg });
       const dup = await query("SELECT 1 FROM users WHERE phone = $1", [String(phone).trim()]);
       if (dup.rows.length) return res.status(409).json({ error: "That phone number already has an account" });
-      if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
+      if (!configured()) {
+        /* REQUIRE_SIGNUP_VERIFY=1 means no account can be created without a
+           code. If the SMS provider is not configured or its credentials have
+           been rotated, that is not a degraded feature — it is every signup in
+           the country failing, silently, until somebody complains. */
+        if (process.env.REQUIRE_SIGNUP_VERIFY === "1") {
+          const { alert } = await import("../lib/alerts.js");
+          alert("verify-unconfigured", "Cleano: signups are blocked",
+                "REQUIRE_SIGNUP_VERIFY is on but Twilio is not configured, so nobody can create an account. Check TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_VERIFY_SID in Render.");
+        }
+        return res.status(503).json({ error: "verification_not_configured" });
+      }
       const body = new URLSearchParams({ To: String(phone).trim(), Channel: req.body.channel === "sms" ? "sms" : "whatsapp" });
       const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/Verifications`, {
         method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body });
       const data = await r.json();
-      if (!r.ok) return res.status(502).json({ error: data.message || "Could not send code" });
+      if (!r.ok) return sendFailure(res, data, "signup-start");
       return res.json({ sent: true, channel: data.channel });
     }
     // email path — 6-digit code held in a short-lived signed cookie-free token

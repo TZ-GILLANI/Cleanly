@@ -53,11 +53,53 @@ const splitPhone = (v) => {
   return hit ? { cc: hit.c, local: s.slice(hit.d.length).trim() } : { cc: deviceCountry(), local: s.replace(/^\+/, "") };
 };
 
+/* Clean up what a person actually types into the local box.
+
+   The old code did `dialOf(cc) + local.replace(/[^0-9]/g,"")` and nothing else,
+   so every one of these produced a number that does not exist:
+     "06 70 303 1941"  -> +36 06 70 303 1941   (06 is the national trunk prefix,
+                                                which is exactly how Hungarians
+                                                write their own number)
+     "+36 70 303 1941" -> +36 36 70 303 1941   (pasted from a contact card)
+     "0036 70 …"       -> +36 0036 70 …
+   It was then sent straight to Twilio, which rejected it — and the rejection
+   was shown to the customer as "Invalid parameter `To`". */
+const cleanLocal = (raw, dial) => {
+  let d = String(raw || "").replace(/[^0-9]/g, "");
+  const cc = String(dial || "").replace(/[^0-9]/g, "");
+  if (cc && d.startsWith("00" + cc)) d = d.slice(2 + cc.length);   // 0036…
+  else if (cc && d.startsWith(cc) && d.length > cc.length + 6) d = d.slice(cc.length);
+  d = d.replace(/^0+/, "");                                        // 06…, 0…
+  return d;
+};
+
+/* National subscriber-number lengths for the dial codes we offer. Generic E.164
+   permits 7–15 digits, which is why "+3670303194149" passed a format check and
+   was only caught by Twilio — thirteen digits is legal somewhere, just not in
+   Hungary. Mirrors NAT_LEN in server/routes/verify.js; the server is the one
+   that decides, this is here so the person sees it while they type. */
+const NAT_LEN = {
+  "1": [10], "31": [9], "33": [9], "34": [9], "36": [9], "39": [9, 10],
+  "40": [9], "43": [10, 11, 12, 13], "44": [10], "48": [9], "49": [10, 11],
+  "86": [11], "90": [10], "91": [10], "92": [10], "234": [10],
+  "380": [9], "381": [8, 9], "385": [8, 9], "386": [8], "421": [9],
+};
+const phoneLooksReal = (dial, local) => {
+  const cc = String(dial || "").replace(/[^0-9]/g, "");
+  const n = String(local || "").replace(/[^0-9]/g, "");
+  if (n.length < 6 || cc.length + n.length > 15) return false;
+  const want = NAT_LEN[cc];
+  return want ? want.includes(n.length) : n.length <= 13;
+};
+
 function PhoneField({ label, value, onChange }) {
   const init = splitPhone(value);
   const [cc, setCc] = useState(init.cc);
   const [local, setLocal] = useState(init.local);
-  React.useEffect(() => { onChange(local ? dialOf(cc) + local.replace(/[^0-9]/g, "") : ""); }, [cc, local]);
+  const digits = cleanLocal(local, dialOf(cc));
+  const tooLong = digits.length > 13 || dialOf(cc).replace(/\D/g, "").length + digits.length > 15;
+  const bad = digits.length > 0 && !phoneLooksReal(dialOf(cc), digits);
+  React.useEffect(() => { onChange(digits ? dialOf(cc) + digits : ""); }, [cc, local]);
   return (
     <div style={{ marginBottom: 13 }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{label}</div>
@@ -68,8 +110,20 @@ function PhoneField({ label, value, onChange }) {
         </select>
         <input value={local} inputMode="tel" placeholder="30 123 4567"
           onChange={(e) => setLocal(e.target.value)}
-          style={{ flex: 1, minWidth: 0, border: `1.5px solid ${C.line}`, borderRadius: 13, padding: "11px 13px", fontFamily: B, fontSize: 13.5, background: C.bg, color: C.ink, outline: "none" }} />
+          style={{ flex: 1, minWidth: 0, border: `1.5px solid ${bad ? C.coral : C.line}`, borderRadius: 13, padding: "11px 13px", fontFamily: B, fontSize: 13.5, background: C.bg, color: C.ink, outline: "none" }} />
       </div>
+      {/* Show what will actually be sent. A leading 0 or a pasted country code
+          is removed silently, and silence is how someone ends up staring at a
+          rejection they cannot explain. */}
+      {digits.length > 0 && (
+        <div style={{ fontFamily: B, fontSize: 11, marginTop: 5, color: bad ? C.coralText : C.inkSoft }}>
+          {bad
+            ? (tooLong
+                ? L("That looks too long — check for extra digits.", "Ez túl hosszúnak tűnik — nézd meg, nincs-e benne felesleges számjegy.")
+                : L("That looks too short.", "Ez túl rövidnek tűnik."))
+            : L("We'll use: ", "Ezt fogjuk használni: ") + dialOf(cc) + " " + digits}
+        </div>
+      )}
     </div>
   );
 }
@@ -227,9 +281,15 @@ const promoOf = (co) => {
   if (p.until && new Date(p.until + "T23:59:59") < new Date()) return null;
   return p;
 };
-const everyP = (per) => (HUL()
-  ? ({ weekly: "hetente", biweekly: "kéthetente", monthly: "havonta" }[per] || "havonta")
-  : `every ${({ weekly: "week", biweekly: "2 weeks", monthly: "month" }[per] || "month")}`);
+/* HUL() branches on "is the language Hungarian", so anything written this way
+   has exactly two translations and the other ten fall back to English. Every
+   HUL() ternary in the file was a language gap the drift checker could not see,
+   because there was no L() call to find. */
+const everyP = (per) => ({
+  weekly:   L("every week", "hetente"),
+  biweekly: L("every 2 weeks", "kéthetente"),
+  monthly:  L("every month", "havonta"),
+}[per] || L("every month", "havonta"));
 const huf = (n) => (n ?? 0).toLocaleString("hu-HU") + " Ft";
 /* Two ladders. A cleaning finishes when the cleaner leaves; a laundry round
    finishes days later when the items come back, so "Done" must not appear the
@@ -323,9 +383,9 @@ const dayObjFromDate = (d) => ({ iso: localISO(d), d: d.toLocaleDateString(LOC()
 const ordinal = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 const cadenceLabel = (period, day) => {
   if (!day) return "";
-  if (period === "monthly") return HUL() ? `Havonta, a hónap ${day.n}. napján` : `Monthly on the ${ordinal(day.n)}`;
-  if (period === "biweekly") return HUL() ? `Kéthetente, ${day.d}` : `Every 2 weeks on ${day.d}`;
-  return HUL() ? `Minden ${day.d}` : `Every ${day.d}`;
+  if (period === "monthly") return fill(L("Monthly on the {0}", "Havonta, a hónap {1}. napján"), ordinal(day.n), day.n);
+  if (period === "biweekly") return fill(L("Every 2 weeks on {0}", "Kéthetente, {0}"), day.d);
+  return fill(L("Every {0}", "Minden {0}"), day.d);
 };
 
 /* ── Month calendar (used for subscriptions + company schedule) ── */
@@ -436,7 +496,7 @@ async function openDoc(doc) {
       const { Share } = await import("@capacitor/share");
       const name = (doc.name || "document").replace(/[^\w.\-]+/g, "_");
       const w = await Filesystem.writeFile({ path: name, data: b64, directory: Directory.Cache });
-      await Share.share({ title: doc.name || "Document", url: w.uri });
+      await Share.share({ title: doc.name || L("Document", "Dokumentum"), url: w.uri });
       return;
     }
   } catch (e) { /* fall through to the browser path */ }
@@ -478,8 +538,8 @@ function DocViewer({ docs, title, close }) {
 }
 
 /* ── Pricing helpers (flat · hourly · subscription) ───────── */
-const periodLabel = (p) => (HUL() ? ({ weekly: "hét", biweekly: "2 hét", monthly: "hónap" }[p] || p || "hónap") : ({ weekly: "week", biweekly: "2 weeks", monthly: "month" }[p] || p || "month"));
-const periodShort = (p) => (HUL() ? ({ weekly: "hét", biweekly: "2hét", monthly: "hó" }[p] || p || "hó") : ({ weekly: "wk", biweekly: "2wk", monthly: "mo" }[p] || p || "mo"));
+const periodLabel = (p) => ({ weekly: L("week", "hét"), biweekly: L("2 weeks", "2 hét"), monthly: L("month", "hónap") }[p] || p || L("month", "hónap"));
+const periodShort = (p) => ({ weekly: L("wk", "hét"), biweekly: L("2wk", "2hét"), monthly: L("mo", "hó") }[p] || p || L("mo", "hó"));
 const priceLabel = (s) => {
   if (!s) return "";
   if (s.pricing_type === "hourly") return `${huf(s.hourly_rate_huf)}${L("/hr", "/óra")}`;
@@ -1742,7 +1802,16 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
     setErr(""); setBusy(true);
     const r = await signupCodeSend(isPhone ? { phone: clean } : { email: clean });
     setBusy(false);
-    if (r?.error) { setErr(r.error); return; }
+    /* The server has one machine-readable code — everything else is already a
+       sentence. Showing "verification_not_configured" to a customer tells them
+       nothing and looks broken, which it is, but it is our fault not theirs. */
+    if (r?.error) {
+      setErr(r.error === "verification_not_configured"
+        ? L("We can't send codes right now. Please try again shortly — we've been told.",
+            "Most nem tudunk kódot küldeni. Kérlek, próbáld újra kicsit később — értesítettük magunkat.")
+        : r.error);
+      return;
+    }
     if (r?.ticket) setTicket(r.ticket);
     setSent(true);
     toast(L("Code sent", "Kód elküldve"));
@@ -2063,7 +2132,7 @@ function Auth() {
                     placeholder="you@example.com" value={f.email} onChange={set("email")}
                     token={emailToken} onToken={setEmailToken} />
                 : <Field label={L("Email", "E-mail")} type="email" placeholder="you@example.com" value={f.email} onChange={set("email")} />}
-              <Field label="Password" type="password" placeholder="Min. 6 characters" value={f.password} onChange={set("password")} />
+              <Field label={L("Password", "Jelszó")} type="password" placeholder={L("Min. 6 characters", "Legalább 6 karakter")} value={f.password} onChange={set("password")} />
             </>
           )}
           {err && <div style={{ background: C.coralSoft, borderRadius: 13, padding: "11px 14px", fontFamily: B, fontSize: 12, color: C.coralText, marginBottom: 12 }}>{err}</div>}
@@ -2382,7 +2451,7 @@ function BookingFlow({ company, close, onBooked }) {
   };
   const pickSvc = (s) => { setSvc(s); setSchedSel(null); setDay(null); if (s.pricing_type === "hourly") setHours(s.min_hours || 2); };
   const canNext = [svc, day && slot, addr.trim(), true][step];
-  const labels = HUL() ? ["Szolgáltatás", "Időpont", "Adatok", "Összegzés"] : ["Service", "Time", "Details", "Review"];
+  const labels = [L("Service", "Szolgáltatás"), L("Time", "Időpont"), L("Details", "Adatok"), L("Review", "Összegzés")];
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
@@ -2657,7 +2726,7 @@ function BookingFlow({ company, close, onBooked }) {
                 )}
                 <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "12px 0" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>
-                  <span>{isSub ? (HUL() ? everyP(svc.period).charAt(0).toUpperCase() + everyP(svc.period).slice(1) : `Per ${periodLabel(svc.period)}`) : L("Total", "Összesen")}</span><span>{huf(total)}</span>
+                  <span>{isSub ? fill(L("Per {0}", "{0}"), periodLabel(svc.period)) : L("Total", "Összesen")}</span><span>{huf(total)}</span>
                 </div>
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 7, lineHeight: 1.6 }}>
                   {isSub
@@ -2998,7 +3067,7 @@ function EmployeeJobs({ openProfile }) {
           </button>
           <div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{session.name}</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2 }}>{co ? `${co.emoji} ${co.name}` : "Cleaner"}</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2 }}>{co ? `${co.emoji} ${co.name}` : L("Cleaner", "Takarító")}</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
@@ -3077,7 +3146,7 @@ function EmployeeJobs({ openProfile }) {
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink }}>{svc.icon} {svc.name}</div>
                   <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4, lineHeight: 1.6 }}>
                     🕘 {dayLabel(b.scheduled_date)}, {b.scheduled_slot} · ⏱ ~{svc.minutes} min<br />
-                    📍 {b.address} · 👤 {b.customer_name || "Customer"}
+                    📍 {b.address} · 👤 {b.customer_name || L("Customer", "Ügyfél")}
                   </div>
                 </div>
                 <StatusPill status={b.status} fulfilment={b.fulfilment} />
@@ -3292,7 +3361,7 @@ function CompanyJobs({ openProfile }) {
           { k: L("Open jobs", "Nyitott munkák"), v: open.length, accent: C.navy, sub: `${unassigned} ${L("unassigned", "kiosztatlan")}` },
           { k: L("Pipeline", "Várható"), v: huf(pipeline), accent: C.navySoft, sub: L("potential revenue", "lehetséges bevétel") },
           { k: L("Total earned", "Összes bevétel"), v: huf(revenue), accent: C.green, sub: `${done.length} ${L("jobs done", "kész munka")}` },
-          { k: "Today", v: huf(todayRevenue), accent: unassigned ? C.coral : C.navySoft, sub: `${todayJobs.length} completed today` },
+          { k: L("Today", "Ma"), v: huf(todayRevenue), accent: unassigned ? C.coral : C.navySoft, sub: `${todayJobs.length} completed today` },
         ].map((s) => (
           <div key={s.k} style={{ background: C.card, borderRadius: 16, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: s.accent, lineHeight: 1.2 }}>{s.v}</div>
@@ -3362,7 +3431,7 @@ function CompanyJobs({ openProfile }) {
               <div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{svc.icon} {svc.name}</div>
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4, lineHeight: 1.6 }}>
-                  👤 {b.customer_name || "Customer"} {b.customer_type === "student" && "🎓"} · 🕘 {dayLabel(b.scheduled_date)}, {b.scheduled_slot}<br />
+                  👤 {b.customer_name || L("Customer", "Ügyfél")} {b.customer_type === "student" && "🎓"} · 🕘 {dayLabel(b.scheduled_date)}, {b.scheduled_slot}<br />
                   📍 {b.address}
                 </div>
               </div>
@@ -3527,7 +3596,7 @@ function CompanyClients() {
     for (const b of mine) {
       const key = b.customer_id || b.customer_name;
       if (!key) continue;
-      const c = map.get(key) || { key, name: b.customer_name || "Customer", phone: b.customer_phone || null, kind: b.customer_kind || b.customer_type, addresses: new Set(), jobs: 0, done: 0, spend: 0, last: "", hasSub: false };
+      const c = map.get(key) || { key, name: b.customer_name || L("Customer", "Ügyfél"), phone: b.customer_phone || null, kind: b.customer_kind || b.customer_type, addresses: new Set(), jobs: 0, done: 0, spend: 0, last: "", hasSub: false };
       c.jobs += 1;
       if (b.status === 4) { c.done += 1; c.spend += (b.total_huf || 0) - (b.service_fee_huf || 0); }
       if (b.pricing_type === "subscription" && b.status < 8) c.hasSub = true;
@@ -3613,7 +3682,7 @@ function CompanySchedule() {
               <div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>🕘 {b.scheduled_slot} · {svc.icon} {svc.name}{b.pricing_type === "subscription" ? " 🔁" : ""}</div>
                 <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
-                  👤 {b.customer_name || "Customer"} · 📍 {b.address}<br />
+                  👤 {b.customer_name || L("Customer", "Ügyfél")} · 📍 {b.address}<br />
                   🧽 {cleaner || L("Unassigned — assign in Jobs tab", "Nincs kiosztva — oszd ki a Munkák fülön")}
                 </div>
               </div>
@@ -3928,7 +3997,7 @@ function CompanyTeam() {
             <Avatar name={m.full_name} size={42} />
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{m.full_name}</div>
-              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{m.title || "Cleaner"}{m.phone ? ` · ${m.phone}` : ""}</div>
+              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{m.title || L("Cleaner", "Takarító")}{m.phone ? ` · ${m.phone}` : ""}</div>
             </div>
             <Pill bg={C.mintSoft} color={C.green}>{L("Active", "Aktív")}</Pill>
           </div>
@@ -3997,13 +4066,13 @@ function CompanyTeam() {
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               <Avatar name={n.employee_name || emp?.full_name || "?"} size={30} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? `↩ ${n.employee_name || emp?.full_name || "Cleaner"}` : (n.employee_name || emp?.full_name || "Employee")}</div>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? `↩ ${n.employee_name || emp?.full_name || L("Cleaner", "Takarító")}` : (n.employee_name || emp?.full_name || L("Employee", "Munkatárs"))}</div>
                 <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.body}</div>
               </div>
               {n.from_employee
                 ? <Pill bg={C.mintSoft} color={C.green}>💬 Reply</Pill>
                 : n.is_read
-                ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Seen"}</Pill>
+                ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : L("Seen", "Látta")}</Pill>
                 : <Pill bg={C.amberSoft} color={C.amber}>✓ {L("Not seen yet", "Még nem látta")}</Pill>}
               <button onClick={() => { deleteNotice(n.id); }}
                 title={L("Clear from my list", "Törlés a listámról")}
@@ -4100,7 +4169,7 @@ function PayoutSetup() {
             setBusy(false);
             if (r?.url) window.open(r.url, "_blank");
             else toast(r?.error || L("Could not start onboarding", "A regisztrációt nem sikerült elindítani"), "error");
-          }}>{st.connected ? "Continue" : "Connect"}</Btn>
+          }}>{st.connected ? L("Continue", "Folytatás") : L("Connect", "Csatlakoztatás")}</Btn>
         )}
         {ready && (
           <Btn small ghost disabled={busy} onClick={async () => {
@@ -4679,9 +4748,13 @@ function CompanySettings() {
     }
     return out;
   }, [bookings, busyDate, session.companyId]);
-  const DAY_NAMES = HUL()
-    ? ["Vasárnap", "Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat"]
-    : [L("Sunday","Vasárnap"), L("Monday","Hétfő"), L("Tuesday","Kedd"), L("Wednesday","Szerda"), L("Thursday","Csütörtök"), L("Friday","Péntek"), L("Saturday","Szombat")];
+  /* The HUL() branch that used to sit here returned Hungarian day names to
+     Hungarian speakers and let the L() branch handle everyone else — which is
+     what L() already does. All the ternary achieved was hiding seven strings
+     from the checker. */
+  const DAY_NAMES = [L("Sunday", "Vasárnap"), L("Monday", "Hétfő"), L("Tuesday", "Kedd"),
+                     L("Wednesday", "Szerda"), L("Thursday", "Csütörtök"), L("Friday", "Péntek"),
+                     L("Saturday", "Szombat")];
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
@@ -5137,7 +5210,8 @@ function AnnouncementComposer() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null); // { count }
-  const AUDS = [["all", "Everyone"], ["customer", "Customers"], ["company", "Companies"], ["employee", "Cleaners"]];
+  const AUDS = [["all", L("Everyone", "Mindenki")], ["customer", L("Customers", "Ügyfelek")],
+                ["company", L("Companies", "Cégek")], ["employee", L("Cleaners", "Takarítók")]];
 
   const filters = person ? { userId: person.id }
     : { city: city.trim() || undefined, country: country.trim() || undefined };
@@ -5154,7 +5228,7 @@ function AnnouncementComposer() {
 
   const describe = () => {
     if (person) return `${person.name} (${person.email})`;
-    const bits = [AUDS.find((x) => x[0] === aud)?.[1] || "Everyone"];
+    const bits = [AUDS.find((x) => x[0] === aud)?.[1] || L("Everyone", "Mindenki")];
     if (city.trim()) bits.push(`in ${city.trim()}`);
     if (country.trim()) bits.push(`· ${country.trim().toUpperCase()}`);
     return bits.join(" ");
@@ -5279,9 +5353,9 @@ function AdminDashboard() {
   const s = adminStats;
   const kpis = [
     { k: L("Total users", "Összes felhasználó"), v: s.totalUsers, icon: "👤" },
-    { k: "Companies", v: s.totalCompanies, icon: "🏢" },
-    { k: "Bookings", v: s.totalBookings, icon: "📅" },
-    { k: "Completed", v: s.completedBookings, icon: "✅" },
+    { k: L("Companies", "Cégek"), v: s.totalCompanies, icon: "🏢" },
+    { k: L("Bookings", "Foglalások"), v: s.totalBookings, icon: "📅" },
+    { k: L("Completed", "Teljesítve"), v: s.completedBookings, icon: "✅" },
     { k: L("Active now", "Most aktív"), v: s.activeBookings, icon: "🔥" },
     { k: L("Platform revenue", "Platform bevétel"), v: huf(s.totalRevenue || 0), icon: "💰" },
   ];
@@ -5324,7 +5398,7 @@ function AdminDashboard() {
         <>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, margin: "18px 0 10px" }}>{L("Bookings by status", "Foglalások állapot szerint")}</div>
           {Object.entries(s.bookingsByStatus).map(([st, cnt]) => {
-            const label = st === "9" ? "Cancelled" : st === "8" ? "Declined" : stageList()[parseInt(st)] || `Status ${st}`;
+            const label = st === "9" ? L("Cancelled", "Lemondva") : st === "8" ? L("Declined", "Elutasítva") : stageList()[parseInt(st)] || fill(L("Status {0}", "{0}. állapot"), st);
             return (
               <div key={st} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
                 <div style={{ width: 80, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>{label}</div>
@@ -5505,24 +5579,24 @@ function AdminCompanies() {
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <Pill bg={co.is_approved ? C.mintSoft : C.coralSoft} color={co.is_approved ? C.green : C.coral}>
-              {co.is_approved ? "Approved" : "Suspended"}
+              {co.is_approved ? L("Approved", "Jóváhagyva") : L("Suspended", "Felfüggesztve")}
             </Pill>
             <Pill bg={co.is_listed ? C.navyChip : "#F5F5F5"} color={co.is_listed ? C.navySoft : C.inkFaint}>
-              {co.is_listed ? "Listed" : "Unlisted"}
+              {co.is_listed ? L("Listed", "Listázva") : L("Unlisted", "Nem listázva")}
             </Pill>
             <button onClick={async () => {
               const res = await adminUpdateCompany(co.id, { is_approved: !co.is_approved });
               if (res?.error) toast(res.error, "error");
               else { toast(co.is_approved ? L("Company suspended", "Cég felfüggesztve") : L("Company approved", "Cég jóváhagyva")); adminFetchAllCompanies(); }
             }} style={{ marginLeft: "auto", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${co.is_approved ? C.coral : C.green}`, background: C.card, color: co.is_approved ? C.coral : C.green, cursor: "pointer" }}>
-              {co.is_approved ? "Suspend" : "Approve"}
+              {co.is_approved ? L("Suspend", "Felfüggesztés") : L("Approve", "Jóváhagyás")}
             </button>
             <button onClick={async () => {
               const res = await adminUpdateCompany(co.id, { is_listed: !co.is_listed });
               if (res?.error) toast(res.error, "error");
               else { toast(co.is_listed ? L("Company unlisted", "Cég levéve a listáról") : L("Company listed", "Cég listázva")); adminFetchAllCompanies(); }
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
-              {co.is_listed ? "Unlist" : "Re-list"}
+              {co.is_listed ? L("Unlist", "Levétel a listáról") : L("Re-list", "Visszatétel a listára")}
             </button>
             <button onClick={() => setDossier(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navySoft}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               {L("Details", "Adatok")}
@@ -5690,7 +5764,7 @@ function CompanyComplaints() {
   React.useEffect(() => { fetchMyComplaints().finally(() => setBusy(false)); }, []);
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
   const list = myComplaints || [];
-  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: L("To resolve", "Megoldásra vár"), bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
+  const stat = { open: { l: L("Open", "Nyitott"), bg: C.amberSoft, c: C.amber }, in_progress: { l: L("To resolve", "Megoldásra vár"), bg: C.navyChip, c: C.navySoft }, resolved: { l: L("Resolved", "Megoldva"), bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Issues to resolve", "Megoldandó ügyek")}</div>
@@ -5702,7 +5776,7 @@ function CompanyComplaints() {
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{c.subject}</div>
             <Pill bg={stat[c.status]?.bg} color={stat[c.status]?.c}>{stat[c.status]?.l || c.status}</Pill>
           </div>
-          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>{c.user_name || "Customer"} · {new Date(c.created_at).toLocaleDateString()}</div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>{c.user_name || L("Customer", "Ügyfél")} · {new Date(c.created_at).toLocaleDateString()}</div>
           {c.body && <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 8, background: C.bg, borderRadius: 11, padding: "8px 11px", lineHeight: 1.55 }}>{c.body}</div>}
           <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>{c.status === "resolved" ? L("View thread", "Beszélgetés megnyitása") : L("Open & resolve →", "Megnyitás és megoldás →")}</Btn>
         </div>
@@ -5755,7 +5829,7 @@ function ReviewReports() {
       {list.map((r) => (
         <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.customer_name || "Customer"} → {r.company_name || "—"}</div>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.customer_name || L("Customer", "Ügyfél")} → {r.company_name || "—"}</div>
             <div style={{ color: C.amber, fontSize: 12.5 }}>{stars(r.rating)}</div>
           </div>
           {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“<Translated map={r.body_i18n} fallback={r.comment} />”</div>}
@@ -5790,7 +5864,7 @@ function ReviewReports() {
                 setBusy(false);
                 if (res?.error) { toast(res.error, "error"); return; }
                 toast(L("Review removed", "Értékelés eltávolítva")); setRemoving(null); load();
-              }}>{busy ? "…" : "Remove"}</Btn>
+              }}>{busy ? "…" : L("Remove", "Eltávolítás")}</Btn>
             </div>
           </div>
         </div>
@@ -5833,7 +5907,7 @@ function CustomerReportQueue() {
               </div>
             </div>
             <Pill bg={r.status === "open" ? C.amberSoft : C.bg} color={r.status === "open" ? C.amber : C.inkFaint}>
-              {r.status === "open" ? "Open" : r.status === "reviewed" ? "Actioned" : "Dismissed"}
+              {r.status === "open" ? L("Open", "Nyitott") : r.status === "reviewed" ? L("Actioned", "Elintézve") : L("Dismissed", "Elvetve")}
             </Pill>
           </div>
           <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.coral, marginTop: 8 }}>{CAT[r.category] || r.category}</div>
@@ -5874,7 +5948,7 @@ function CustomerReportQueue() {
                 setBusy(false);
                 if (res?.error) { toast(res.error, "error"); return; }
                 toast(L("Saved", "Mentve")); setActing(null); load();
-              }}>{busy ? "…" : "Save"}</Btn>
+              }}>{busy ? "…" : L("Save", "Mentés")}</Btn>
             </div>
           </div>
         </div>
@@ -5890,7 +5964,7 @@ function AdminComplaints() {
   React.useEffect(() => { if (!adminComplaints) adminFetchComplaints().finally(() => setBusy(false)); }, []);
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
   const list = adminComplaints || [];
-  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: L("In progress", "Folyamatban"), bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
+  const stat = { open: { l: L("Open", "Nyitott"), bg: C.amberSoft, c: C.amber }, in_progress: { l: L("In progress", "Folyamatban"), bg: C.navyChip, c: C.navySoft }, resolved: { l: L("Resolved", "Megoldva"), bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 14px" }}>Complaints ({list.filter(c => c.status !== "resolved").length} open)</div>
@@ -5902,7 +5976,7 @@ function AdminComplaints() {
             <Pill bg={stat[c.status]?.bg} color={stat[c.status]?.c}>{stat[c.status]?.l || c.status}</Pill>
           </div>
           <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>
-            {c.user_name || "User"} · {new Date(c.created_at).toLocaleString()}{c.assigned_company_name ? ` · ➡ ${c.assigned_company_name}` : ""}
+            {c.user_name || L("User", "Felhasználó")} · {new Date(c.created_at).toLocaleString()}{c.assigned_company_name ? ` · ➡ ${c.assigned_company_name}` : ""}
           </div>
           {c.body && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.6, background: C.bg, borderRadius: 12, padding: "9px 12px" }}>{c.body}</div>}
           {c.resolution && <div style={{ fontFamily: B, fontSize: 11.5, color: C.green, marginTop: 8 }}>✓ {c.resolution}</div>}
@@ -5969,7 +6043,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
       <div style={{ padding: "0 18px calc(30px + env(safe-area-inset-bottom))" }}>
         {!d ? <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div> : (
           <>
-            <Sec t="Account">
+            <Sec t={L("Account", "Fiók")}>
               <Row k={L("Name", "Név")} v={d.user?.full_name} /><Row k={L("Email", "E-mail")} v={d.user?.email} />
               <Row k={L("Phone", "Telefon")} v={d.user?.phone} /><Row k={L("Address", "Cím")} v={d.user?.address} />
               <Row k={L("City", "Város")} v={d.user?.city} /><Row k={L("Country", "Ország")} v={d.user?.country} />
@@ -5981,7 +6055,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
             </Sec>
 
             {d.company && (
-              <Sec t="Company">
+              <Sec t={L("Company", "Cég")}>
                 {!editing ? (
                   <>
                     <Row k={L("Name", "Név")} v={d.company.name} /><Row k={L("Tagline", "Szlogen")} v={d.company.tagline} />
@@ -6026,7 +6100,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
                     ))}
                     <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
                       <Btn full ghost onClick={() => setEditing(false)}>{L("Cancel", "Mégse")}</Btn>
-                      <Btn full onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Btn>
+                      <Btn full onClick={save} disabled={busy}>{busy ? L("Saving…", "Mentés…") : L("Save", "Mentés")}</Btn>
                     </div>
                   </>
                 )}
@@ -6135,7 +6209,7 @@ function AdminUsers() {
               </div>
             </div>
             {u.role === "admin"
-              ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.navy : C.navyChip}>{u.is_super ? "CEO" : "Admin"}</Pill>
+              ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.navy : C.navyChip}>{u.is_super ? "CEO" : L("Admin", "Adminisztrátor")}</Pill>
               : <Pill color={roleColor[u.role] || C.navySoft} bg={roleColor[u.role] + "18" || C.navyChip} style={{ textTransform: "capitalize" }}>{u.role}</Pill>}
           </div>
           {u.company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, marginLeft: 48 }}>🏢 {u.company_name}</div>}
@@ -6200,7 +6274,7 @@ function AdminUsers() {
               if (res?.error) toast(res.error, "error");
               else { toast(u.is_active === false ? L("User activated", "Felhasználó aktiválva") : L("User deactivated", "Felhasználó letiltva")); adminFetchUsers(); }
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${u.is_active === false ? C.green : C.coral}`, background: C.card, color: u.is_active === false ? C.green : C.coral, cursor: "pointer" }}>
-              {u.is_active === false ? "Activate" : "Deactivate"}
+              {u.is_active === false ? L("Activate", "Aktiválás") : L("Deactivate", "Deaktiválás")}
             </button>}
             {(u.role !== "admin" || isCeo) && !u.is_super && <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
               🗑️ Delete
@@ -6242,7 +6316,7 @@ function AdminBookings() {
   const groups = {};
   shown.forEach((b) => {
     const key = b.customer_id || b.customer_email || b.customer_name || "unknown";
-    if (!groups[key]) groups[key] = { name: b.customer_full_name || b.customer_name || "Customer", email: b.customer_email || "", orders: [] };
+    if (!groups[key]) groups[key] = { name: b.customer_full_name || b.customer_name || L("Customer", "Ügyfél"), email: b.customer_email || "", orders: [] };
     groups[key].orders.push(b);
   });
   const people = Object.entries(groups).sort((a, b) => b[1].orders.length - a[1].orders.length);
@@ -6644,7 +6718,7 @@ function Shell() {
     customer: [{ id: "home", label: t("nav.home"), icon: "home" }, { id: "bookings", label: t("nav.bookings"), icon: "calendar" }],
     employee: [{ id: "home", label: L("My jobs", "Munkáim"), icon: "sparkle" }, { id: "notices", label: L("Notices", "Üzenetek"), icon: "bell", badge: unread }],
     company: [{ id: "home", label: L("Jobs", "Munkák"), icon: "clipboard" }, { id: "schedule", label: L("Schedule", "Naptár"), icon: "calendar" }, { id: "clients", label: L("Clients", "Ügyfelek"), icon: "users" }, { id: "services", label: L("Services", "Szolgáltatások"), icon: "tag" }, { id: "team", label: L("Team", "Csapat"), icon: "briefcase" }, { id: "reviews", label: L("Reviews", "Értékelések"), icon: "sparkle" }, { id: "issues", label: L("Issues", "Bejelentések"), icon: "lifebuoy" }, { id: "settings", label: L("Settings", "Beállítások"), icon: "settings" }],
-    admin: [{ id: "home", label: "Dashboard", icon: "grid" }, { id: "companies", label: "Companies", icon: "building" }, { id: "users", label: "Users", icon: "user" }, { id: "bookings", label: "Orders", icon: "calendar" }, { id: "complaints", label: "Complaints", icon: "lifebuoy" }, { id: "log", label: "Log", icon: "scroll" }],
+    admin: [{ id: "home", label: L("Dashboard", "Irányítópult"), icon: "grid" }, { id: "companies", label: L("Companies", "Cégek"), icon: "building" }, { id: "users", label: L("Users", "Felhasználók"), icon: "user" }, { id: "bookings", label: L("Orders", "Megrendelések"), icon: "calendar" }, { id: "complaints", label: L("Complaints", "Panaszok"), icon: "lifebuoy" }, { id: "log", label: L("Log", "Napló"), icon: "scroll" }],
   };
 
   return (
@@ -6696,7 +6770,7 @@ function Shell() {
                   German customer finishing a booking read one translated sentence
                   wrapped in two English ones. Wrapped properly, all twelve work. */}
               {justBooked?.pricing_type === "subscription"
-                ? <>{L("Your plan is active", "Az előfizetésed aktív")} ({HUL() ? everyP(justBooked.period) : periodLabel(justBooked.period)}).<br />
+                ? <>{L("Your plan is active", "Az előfizetésed aktív")} ({periodLabel(justBooked.period)}).<br />
                     {L("First visit", "Első alkalom")} {dayLabel(justBooked.scheduled_date)}, {L("then it repeats automatically.", "utána automatikusan ismétlődik.")}<br />
                     {L("Manage or cancel anytime under Bookings.", "Bármikor kezelheted vagy lemondhatod a Foglalásoknál.")}</>
                 : <>{L("The company sees your request now and will assign a cleaner shortly.", "A cég most látja a kérésedet, és hamarosan kioszt egy takarítót.")}</>}
