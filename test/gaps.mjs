@@ -278,8 +278,20 @@ ok("a forged proof is rejected — it is signed, not just present",
 
 const appV = (await import("fs")).readFileSync("src/App.jsx", "utf8");
 ok("the field stays editable until it is verified", /readOnly=\{verified\}/.test(appV));
+/* Pinned the exact source of one onChange handler, which broke the moment the
+   phone half of the field was rebuilt with a country selector. What matters is
+   that no edit path survives verification. */
 ok("and locks afterwards, because the proof is bound to that exact value",
-   /onChange=\{\(e\) => \{ if \(verified\) return; onChange\(e\); \}\}/.test(appV));
+   /if \(verified\) return;/.test(appV) && /readOnly=\{verified\}/.test(appV));
+ok("the country code is its own control, not something to type by hand",
+   /isPhone && !verified && \(\s*<select/.test(appV) && /DIAL_CODES\.map/.test(appV));
+ok("and it disappears once the number is verified, like the number itself",
+   /\{isPhone && !verified && \(/.test(appV));
+ok("the number sent for verification is the composed one, not the raw box",
+   /signupCodeSend\(isPhone \? \{ phone: composed \}/.test(appV) &&
+   /signupCodeCheck\(isPhone \? \{ phone: composed/.test(appV));
+ok("the Send code button stays disabled until the number is possible",
+   /const enough = isPhone \? phoneOk/.test(appV));
 ok("there is a button to request the code next to the field", /Send code", "Kód kérése/.test(appV));
 ok("and one to verify it", /"Verify", "Igazolás"/.test(appV));
 ok("the account cannot be created until both proofs exist", /const proofsOk = /.test(appV));
@@ -544,16 +556,42 @@ const vSrc = (await import("fs")).readFileSync("server/routes/verify.js", "utf8"
 
 ok("the field strips a national trunk zero before sending", /d = d\.replace\(\/\^0\+\/, ""\)/.test(appPh));
 ok("and a country code the person pasted in themselves", /startsWith\("00" \+ cc\)/.test(appPh));
-ok("the app has its own opinion about length, before any provider does",
-   /const phoneLooksReal/.test(appPh) && /NAT_LEN/.test(appPh));
+ok("the app has its own opinion about the number, before any provider does",
+   /const phoneLooksReal/.test(appPh) && /isValidPhoneNumber/.test(appPh));
 ok("and shows the number it will actually use", /We'll use: /.test(appPh));
 
 ok("the server validates the number before spending an SMS", /function phoneIsWrong/.test(vSrc));
 ok("both the signup path and the logged-in path check it",
    (vSrc.match(/phoneIsWrong\(phone\)/g) || []).length >= 2);
-ok("and it knows each country's own length, not just generic E.164",
-   /const NAT_LEN/.test(vSrc) && /"36": \[9\]/.test(vSrc));
-ok("client and server keep the same table", /const NAT_LEN/.test(appPh) && /"36": \[9\]/.test(appPh));
+/* A hand-written table of twenty-one dial codes replaced this. It caught the
+   number from the bug report and would still have waved through a 13-digit
+   Austrian number — Austria has four valid lengths — and refused a real
+   Portuguese one, because Portugal was never on the list. */
+ok("the rules come from Google's phone metadata, not a table we maintain",
+   /from "libphonenumber-js"/.test(vSrc) && !/const NAT_LEN/.test(vSrc));
+ok("client and server use the same source", /from "libphonenumber-js"/.test(appPh));
+ok("and no hand-written length table survives anywhere",
+   !/const NAT_LEN/.test(appPh) && !/const NAT_LEN/.test(vSrc));
+
+/* Behaviour across countries — the point of the change. Every one of these is
+   posted to the real endpoint; the ones expected to pass stop at the next
+   guard (Twilio unconfigured under test), never at the format check. */
+for (const [num, shouldReject, why] of [
+  ["+3670303194149",  true,  "the bug report: 13 digits, Hungary has 11"],
+  ["+36070303194",    true,  "trunk zero left in"],
+  ["+436645551234",   false, "Austria, 10 national digits"],
+  ["+4366455512345",  false, "Austria, 11 — same country, different length"],
+  ["+351912345678",   false, "Portugal, absent from the old table entirely"],
+  ["+12125551234",    false, "United States"],
+  ["+923001234567",   false, "Pakistan"],
+  ["+8613800138000",  false, "China"],
+  ["+9999999999999",  true,  "no such country code"],
+]) {
+  const r = await j("/api/verify/signup/start", { method: "POST", body: { phone: num } });
+  const rejectedOnFormat = r.status === 400 && /country code/i.test(r.data.error || "");
+  ok(`${num} — ${why}`, rejectedOnFormat === shouldReject,
+     `status ${r.status} ${JSON.stringify(r.data.error || "").slice(0, 60)}`);
+}
 ok("the provider's own words are never returned to a customer",
    !/error: data\.message/.test(vSrc) && /function sendFailure/.test(vSrc));
 ok("Twilio's code for a bad number becomes a sentence a person can act on",
@@ -568,7 +606,7 @@ ok("with our message, not Twilio's",
    /country code/i.test(bad.data.error || "") && !/parameter/i.test(bad.data.error || ""),
    bad.data.error);
 
-for (const [what, value] of [["a leading zero", "+36070303194"], ["far too short", "+361"],
+for (const [what, value] of [["far too short", "+361"],
                              ["far too long", "+3670303194149999"], ["not a number at all", "hello"]]) {
   const r = await j("/api/verify/signup/start", { method: "POST", body: { phone: value } });
   ok(`${what} is refused`, r.status === 400, `${value} -> ${r.status}`);

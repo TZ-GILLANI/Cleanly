@@ -5,6 +5,7 @@ import { rateLimit } from "./auth.js";
 import { sendEmail, mailerConfigured } from "../lib/mailer.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { isValidPhoneNumber } from "libphonenumber-js";
 
 const router = Router();
 
@@ -134,33 +135,19 @@ export function verifySignupToken(token, kind, value) {
    Twilio's vocabulary, about a parameter they have never heard of.
 
    E.164: a leading +, then 8 to 15 digits, first digit non-zero. */
-/* National subscriber-number lengths for the dial codes the app offers.
-   Generic E.164 permits 7–15 digits, which is why "+3670303194149" sailed past
-   a format check and was only rejected by Twilio: thirteen digits is a
-   perfectly legal number somewhere, just not in Hungary. Where we know the
-   country we check the country's own rule; where we do not, E.164 still
-   applies. A leading zero is always wrong in the international form — it is the
-   national trunk prefix, which the country code replaces. */
-const NAT_LEN = {
-  "1": [10], "31": [9], "33": [9], "34": [9], "36": [9], "39": [9, 10],
-  "40": [9], "43": [10, 11, 12, 13], "44": [10], "48": [9], "49": [10, 11],
-  "86": [11], "90": [10], "91": [10], "92": [10], "234": [10],
-  "380": [9], "381": [8, 9], "385": [8, 9], "386": [8], "421": [9],
-};
-const dialOfNumber = (digits) => ["1", "31", "33", "34", "36", "39", "40", "43", "44", "48", "49",
-  "86", "90", "91", "92", "234", "380", "381", "385", "386", "421"]
-  .sort((a, b) => b.length - a.length).find((d) => digits.startsWith(d)) || null;
+/* Google's phone metadata, not a table we maintain.
 
-/* True when the number is impossible, not merely unusual. */
+   The version this replaces knew twenty-one dial codes and one length each. It
+   caught the number from the bug report, and would have waved through a
+   thirteen-digit Austrian number (Austria has four valid lengths) and refused a
+   perfectly good Portuguese one, because Portugal was not on the list.
+
+   libphonenumber-js covers 245 territories including which ranges exist at all,
+   so this rejects numbers that are the right length but not real. */
 function phoneIsWrong(raw) {
   const s = String(raw || "").trim();
-  if (!/^\+[1-9][0-9]{6,14}$/.test(s)) return true;
-  const digits = s.slice(1);
-  const cc = dialOfNumber(digits);
-  if (!cc) return false;                       // country we do not have a rule for
-  const nat = digits.slice(cc.length);
-  if (nat.startsWith("0")) return true;        // trunk prefix left in
-  return !(NAT_LEN[cc] || []).includes(nat.length);
+  if (!/^\+[1-9][0-9]{6,14}$/.test(s)) return true;   // not even E.164-shaped
+  try { return !isValidPhoneNumber(s); } catch { return true; }
 }
 
 const badPhoneMsg = "That phone number doesn't look right. Check the country code and remove any leading zero.";

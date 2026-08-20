@@ -1,5 +1,6 @@
 import ReactDOM from "react-dom";
 import React, { useState, useEffect, useMemo, useContext, createContext, useCallback } from "react";
+import { getCountries, getCountryCallingCode, isValidPhoneNumber } from "libphonenumber-js";
 import { Capacitor } from "@capacitor/core";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
@@ -14,29 +15,53 @@ const SHELL_W = NATIVE ? "100%" : 430;
 
 /* ── 4.2 Phone country codes. Default follows the device locale, so a
    Ukrainian student in Debrecen isn't forced to fight a +36 field. ── */
-const DIAL_CODES = [
-  { c: "HU", d: "+36", f: "🇭🇺", n: "Magyarország" },
-  { c: "UA", d: "+380", f: "🇺🇦", n: "Україна" },
-  { c: "RO", d: "+40", f: "🇷🇴", n: "România" },
-  { c: "SK", d: "+421", f: "🇸🇰", n: "Slovensko" },
-  { c: "AT", d: "+43", f: "🇦🇹", n: "Österreich" },
-  { c: "DE", d: "+49", f: "🇩🇪", n: "Deutschland" },
-  { c: "PL", d: "+48", f: "🇵🇱", n: "Polska" },
-  { c: "RS", d: "+381", f: "🇷🇸", n: "Srbija" },
-  { c: "HR", d: "+385", f: "🇭🇷", n: "Hrvatska" },
-  { c: "SI", d: "+386", f: "🇸🇮", n: "Slovenija" },
-  { c: "GB", d: "+44", f: "🇬🇧", n: "United Kingdom" },
-  { c: "IT", d: "+39", f: "🇮🇹", n: "Italia" },
-  { c: "ES", d: "+34", f: "🇪🇸", n: "España" },
-  { c: "FR", d: "+33", f: "🇫🇷", n: "France" },
-  { c: "NL", d: "+31", f: "🇳🇱", n: "Nederland" },
-  { c: "TR", d: "+90", f: "🇹🇷", n: "Türkiye" },
-  { c: "PK", d: "+92", f: "🇵🇰", n: "Pakistan" },
-  { c: "IN", d: "+91", f: "🇮🇳", n: "India" },
-  { c: "NG", d: "+234", f: "🇳🇬", n: "Nigeria" },
-  { c: "CN", d: "+86", f: "🇨🇳", n: "中国" },
-  { c: "US", d: "+1", f: "🇺🇸", n: "United States" },
-];
+/* Every country, with the real rules for each.
+
+   This was a hand-written list of twenty-one countries and, later, a
+   hand-written table of national number lengths. Both were guesses that would
+   rot: Austria alone has valid subscriber numbers of four different lengths,
+   and a partner in a country nobody thought to list simply could not sign up.
+
+   libphonenumber-js is Google's phone metadata — 245 territories, per-country
+   lengths, national prefixes, and which ranges are mobile at all. Names come
+   from the platform in whatever language the person is using, so the picker
+   reads "Magyarország" in Hungarian and "匈牙利" in Chinese without us
+   translating 245 country names by hand. */
+const flagOf = (cc) =>
+  String(cc).toUpperCase().replace(/[A-Z]/g, (ch) => String.fromCodePoint(0x1F1E6 + ch.charCodeAt(0) - 65));
+
+/* Intl.DisplayNames is iOS 14+ / Android Chrome 81+. Older devices fall back to
+   the ISO code, which is still usable next to a flag and a dial code. */
+const regionNamer = (lang) => {
+  try { const d = new Intl.DisplayNames([lang || "en"], { type: "region" }); return (c) => d.of(c) || c; }
+  catch { return (c) => c; }
+};
+
+/* The markets we actually serve float to the top; the rest follow in the
+   person's own alphabet. */
+const DIAL_PRIORITY = ["HU", "RO", "SK", "AT", "UA", "DE", "PL", "RS", "HR", "SI", "GB", "IT", "ES", "FR", "NL", "TR", "PK", "IN", "NG", "CN", "US"];
+
+const DIAL_CODES = (() => {
+  const out = [];
+  for (const c of getCountries()) {
+    let d;
+    try { d = "+" + getCountryCallingCode(c); } catch { continue; }
+    out.push({ c, d, f: flagOf(c) });
+  }
+  return out;
+})();
+
+/* Label built at render time, because it depends on the current language. */
+const dialLabel = (row, lang) => `${row.f} ${row.d} ${regionNamer(lang)(row.c)}`;
+
+/* Priority first, then by the localised name. */
+const dialCodesFor = (lang) => {
+  const name = regionNamer(lang);
+  const rank = (c) => { const i = DIAL_PRIORITY.indexOf(c); return i < 0 ? 999 : i; };
+  return [...DIAL_CODES].sort((a, b) =>
+    rank(a.c) - rank(b.c) || String(name(a.c)).localeCompare(String(name(b.c)), lang || "en"));
+};
+
 const deviceCountry = () => {
   try {
     const l = (navigator.languages && navigator.languages[0]) || navigator.language || "hu-HU";
@@ -69,28 +94,30 @@ const cleanLocal = (raw, dial) => {
   const cc = String(dial || "").replace(/[^0-9]/g, "");
   if (cc && d.startsWith("00" + cc)) d = d.slice(2 + cc.length);   // 0036…
   else if (cc && d.startsWith(cc) && d.length > cc.length + 6) d = d.slice(cc.length);
-  d = d.replace(/^0+/, "");                                        // 06…, 0…
+  /* Strip the national trunk prefix — 06 in Hungary, 0 in most of Europe, 8 in
+     Russia. Only when doing so produces a number the metadata accepts, so a
+     country whose numbers legitimately begin with 0 is left alone. */
+  const stripped = d.replace(/^0+/, "");
+  if (stripped !== d) {
+    try { if (isValidPhoneNumber("+" + cc + stripped)) return stripped; } catch {}
+    try { if (!isValidPhoneNumber("+" + cc + d)) return stripped; } catch { return stripped; }
+  }
   return d;
 };
 
-/* National subscriber-number lengths for the dial codes we offer. Generic E.164
-   permits 7–15 digits, which is why "+3670303194149" passed a format check and
-   was only caught by Twilio — thirteen digits is legal somewhere, just not in
-   Hungary. Mirrors NAT_LEN in server/routes/verify.js; the server is the one
-   that decides, this is here so the person sees it while they type. */
-const NAT_LEN = {
-  "1": [10], "31": [9], "33": [9], "34": [9], "36": [9], "39": [9, 10],
-  "40": [9], "43": [10, 11, 12, 13], "44": [10], "48": [9], "49": [10, 11],
-  "86": [11], "90": [10], "91": [10], "92": [10], "234": [10],
-  "380": [9], "381": [8, 9], "385": [8, 9], "386": [8], "421": [9],
-};
+
+/* Google's metadata decides, not a table we maintain.
+
+   The table this replaces listed twenty-one countries and one length each.
+   Austria has four valid lengths; Italy has two; a partner in Portugal was not
+   on the list at all. isValidPhoneNumber knows all of it, including which
+   ranges are real rather than merely the right length. */
 const phoneLooksReal = (dial, local) => {
-  const cc = String(dial || "").replace(/[^0-9]/g, "");
   const n = String(local || "").replace(/[^0-9]/g, "");
-  if (n.length < 6 || cc.length + n.length > 15) return false;
-  const want = NAT_LEN[cc];
-  return want ? want.includes(n.length) : n.length <= 13;
+  if (!n) return false;
+  try { return isValidPhoneNumber(String(dial) + n); } catch { return false; }
 };
+
 
 function PhoneField({ label, value, onChange }) {
   const init = splitPhone(value);
@@ -106,7 +133,7 @@ function PhoneField({ label, value, onChange }) {
       <div style={{ display: "flex", gap: 8 }}>
         <select value={cc} onChange={(e) => setCc(e.target.value)}
           style={{ width: 116, border: `1.5px solid ${C.line}`, borderRadius: 13, padding: "11px 8px", fontFamily: B, fontSize: 13, background: C.bg, color: C.ink, outline: "none" }}>
-          {DIAL_CODES.map((x) => <option key={x.c} value={x.c}>{x.f} {x.d}</option>)}
+          {dialCodesFor(getLang()).map((x) => <option key={x.c} value={x.c}>{dialLabel(x, getLang())}</option>)}
         </select>
         <input value={local} inputMode="tel" placeholder="30 123 4567"
           onChange={(e) => setLocal(e.target.value)}
@@ -1794,13 +1821,37 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
   const [err, setErr] = useState("");
 
   const isPhone = kind === "phone";
-  const clean = String(value || "").trim();
-  const enough = isPhone ? clean.replace(/[^0-9]/g, "").length >= 8 : /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean);
+
+  /* The phone half of this used to be one free-text box holding the whole
+     international number, and "enough" meant eight digits or more. So
+     "+3670303194149" — thirteen digits where Hungary has eleven — was accepted,
+     posted to Twilio, and came back as "Invalid parameter `To`" on the customer's
+     screen. PhoneField already had a country dropdown and a normaliser; this
+     screen simply never used it.
+
+     Now the code is its own control and the local number is its own box, which
+     also removes the question the old field silently asked and never answered:
+     am I supposed to type the +36 myself? */
+  const [cc, setCc] = useState(() => splitPhone(value).cc || deviceCountry());
+  const [local, setLocal] = useState(() => splitPhone(value).local);
+  const dial = dialOf(cc);
+  const digits = isPhone ? cleanLocal(local, dial) : "";
+  const composed = digits ? dial + digits : "";
+  const clean = isPhone ? composed : String(value || "").trim();
+  const phoneOk = phoneLooksReal(dial, digits);
+  const phoneBad = digits.length > 0 && !phoneOk;
+  const enough = isPhone ? phoneOk : /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean);
   const verified = !!token;
+
+  /* Keep the parent's value in step with the two controls, in the same E.164
+     shape it always received. */
+  React.useEffect(() => {
+    if (isPhone && !verified) onChange({ target: { value: composed } });
+  }, [cc, local]);
 
   const send = async () => {
     setErr(""); setBusy(true);
-    const r = await signupCodeSend(isPhone ? { phone: clean } : { email: clean });
+    const r = await signupCodeSend(isPhone ? { phone: composed } : { email: clean });
     setBusy(false);
     /* The server has one machine-readable code — everything else is already a
        sentence. Showing "verification_not_configured" to a customer tells them
@@ -1819,7 +1870,7 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
 
   const check = async () => {
     setErr(""); setBusy(true);
-    const r = await signupCodeCheck(isPhone ? { phone: clean, code } : { email: clean, code, ticket });
+    const r = await signupCodeCheck(isPhone ? { phone: composed, code } : { email: clean, code, ticket });
     setBusy(false);
     if (r?.error || !r?.verified) { setErr(r?.error || L("That code didn't match", "A kód nem egyezik")); return; }
     onToken(r.token);
@@ -1839,12 +1890,21 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
-        <input type={type || "text"} value={value} placeholder={placeholder}
-          onChange={(e) => { if (verified) return; onChange(e); }}
+        {isPhone && !verified && (
+          <select value={cc} onChange={(e) => setCc(e.target.value)} disabled={disabled}
+            style={{ width: 112, flexShrink: 0, padding: "13px 8px", borderRadius: 14, fontFamily: B, fontSize: 13,
+                     border: `1.5px solid ${C.line}`, background: C.bg, color: C.ink, outline: "none" }}>
+            {dialCodesFor(getLang()).map((x) => <option key={x.c} value={x.c}>{dialLabel(x, getLang())}</option>)}
+          </select>
+        )}
+        <input type={type || "text"}
+          value={isPhone ? (verified ? value : local) : value}
+          placeholder={isPhone ? "30 123 4567" : placeholder}
+          onChange={(e) => { if (verified) return; if (isPhone) setLocal(e.target.value); else onChange(e); }}
           readOnly={verified} disabled={disabled}
           inputMode={isPhone ? "tel" : "email"} autoCapitalize="none" autoCorrect="off"
-          style={{ flex: 1, padding: "13px 14px", borderRadius: 14, fontFamily: B, fontSize: 14,
-                   border: `1.5px solid ${verified ? C.green + "66" : C.line}`,
+          style={{ flex: 1, minWidth: 0, padding: "13px 14px", borderRadius: 14, fontFamily: B, fontSize: 14,
+                   border: `1.5px solid ${verified ? C.green + "66" : phoneBad ? C.coral : C.line}`,
                    background: verified ? C.mintSoft : C.bg, color: C.ink }} />
         {!verified && (
           <button onClick={send} disabled={!enough || busy}
@@ -1856,6 +1916,16 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
         )}
       </div>
 
+      {/* Say what will be sent. The old field normalised nothing and explained
+          nothing, so a rejected number gave the person no way to see why. */}
+      {isPhone && !verified && digits.length > 0 && (
+        <div style={{ fontFamily: B, fontSize: 11, marginTop: 5, color: phoneBad ? C.coralText || C.coral : C.green }}>
+          {phoneBad
+            ? L("That doesn't look like a valid number for this country — check the digits and leave out any leading zero.",
+                "Ez nem tűnik érvényes számnak ebben az országban — nézd meg a számjegyeket, és a kezdő nullát hagyd el.")
+            : L("We'll send the code to: ", "Ide küldjük a kódot: ") + dial + " " + digits}
+        </div>
+      )}
       {hint && !verified && <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
       {verified && (
         <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5 }}>
@@ -2012,8 +2082,8 @@ function Auth() {
 
   const h = {
     customer: { icon: "🛋️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Students get automatic discounts at checkout.", "A diákok automatikus kedvezményt kapnak fizetéskor.") },
-    employee: { icon: "🧽", title: "Cleaner sign-up", sub: "Use the invite code your company gave you." },
-    company: { icon: "🏢", title: "Register your company", sub: "Free to list — manage your team and bookings." },
+    employee: { icon: "🧽", title: L("Cleaner sign-up", "Takarító regisztráció"), sub: L("Use the invite code your company gave you.", "Használd a cégedtől kapott meghívókódot.") },
+    company: { icon: "🏢", title: L("Register your company", "Cég regisztrálása"), sub: L("Free to list — manage your team and bookings.", "A listázás ingyenes — kezeld a csapatod és a foglalásaid.") },
   }[role];
 
   /* With verification on, the account must not be creatable until both proofs
@@ -2047,9 +2117,10 @@ function Auth() {
           {mode === "signup" && role === "customer" && (
             <>
               <Field label={L("Your name", "A neved")} placeholder={L("e.g. Musa Gillani", "pl. Kovács Anna")} value={f.name} onChange={set("name")} />
-              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>I am a…</div>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("I am a…", "Én egy…")}</div>
               <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                {[{ id: "student", icon: "🎓", t: "Student", s: "Uni email verification · save up to 20%" }, { id: "resident", icon: "🏡", t: "Resident", s: "Standard pricing, full service" }].map((o) => (
+                {[{ id: "student", icon: "🎓", t: L("Student", "Diák"), s: L("Uni email verification · save up to 20%", "Egyetemi e-mail igazolás · akár 20% kedvezmény") },
+                  { id: "resident", icon: "🏡", t: L("Resident", "Lakos"), s: L("Standard pricing, full service", "Normál árazás, teljes szolgáltatás") }].map((o) => (
                   <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{ flex: 1, textAlign: "left", padding: 14, borderRadius: 17, cursor: "pointer", border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)" }}>
                     <div style={{ fontSize: 22 }}>{o.icon}</div>
                     <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginTop: 6 }}>{o.t}</div>
@@ -6013,7 +6084,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
     const res = await adminEditCompanyDetails(d.company.id, f);
     setBusy(false);
     if (res?.error) { toast(res.error, "error"); return; }
-    toast(res.changed ? `Saved · ${res.changed} field${res.changed === 1 ? "" : "s"} changed` : "No changes");
+    toast(res.changed ? fill(L("Saved · {0} field(s) changed", "Mentve · {0} mező módosult"), res.changed) : L("No changes", "Nincs változás"));
     setEditing(false);
     adminUserFull(userId).then(setD);
     onChanged?.();
@@ -6326,7 +6397,8 @@ function AdminBookings() {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Orders by customer", "Rendelések ügyfelenként")}</div>
       <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{shown.length} order{shown.length === 1 ? "" : "s"} across {people.length} {people.length === 1 ? "person" : "people"} — tap a person to see their orders.</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-        {[{ id: "all", label: "All" }, { id: "active", label: "Active" }, { id: "done", label: "Done" }, { id: "cancelled", label: "Cancelled / Declined" }].map((f) => (
+        {[{ id: "all", label: L("All", "Összes") }, { id: "active", label: L("Active", "Aktív") },
+          { id: "done", label: L("Done", "Kész") }, { id: "cancelled", label: L("Cancelled / Declined", "Lemondva / Elutasítva") }].map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 13px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.navy : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
         ))}
       </div>
@@ -6351,7 +6423,7 @@ function AdminBookings() {
                     <div key={b.id} style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", marginBottom: 7, opacity: b.status === 9 ? .7 : 1 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink }}>{b.order_no ? "#" + b.order_no + " · " : ""}{svc.icon} {svc.name || "Order"}</div>
+                          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink }}>{b.order_no ? "#" + b.order_no + " · " : ""}{svc.icon} {svc.name || L("Order", "Megrendelés")}</div>
                           <div style={{ fontFamily: B, fontSize: 10, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
                             🏢 {b.company_name}<br />
                             📅 {dayLabel(b.scheduled_date)} {b.scheduled_slot} · 📍 {b.address || "—"}<br />

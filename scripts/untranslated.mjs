@@ -15,7 +15,23 @@
    Run: node scripts/untranslated.mjs [--all]                                  */
 import fs from "fs";
 
-const src = fs.readFileSync("src/App.jsx", "utf8");
+/* Every file under src/, not just App.jsx.
+
+   The sweep read one file. store.jsx and the lib modules — which carry their
+   own toasts and error text — were never looked at, so "0 untranslated" meant
+   "0 in App.jsx", which is not the claim anyone reads it as. */
+const FILES = [];
+(function walk(d) {
+  for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+    const f = d + "/" + e.name;
+    if (e.isDirectory()) walk(f);
+    else if (/\.(jsx?|tsx?)$/.test(e.name)) FILES.push(f);
+  }
+})("src");
+
+const hits = [];
+for (const FILE of FILES) {
+const src = fs.readFileSync(FILE, "utf8");
 const lines = src.split("\n");
 
 const ROLE = (name) =>
@@ -27,7 +43,12 @@ const ROLE = (name) =>
 
 const comps = [];
 lines.forEach((ln, i) => {
-  const m = /^function ([A-Z]\w+)\s*\(/.exec(ln);
+  /* `export function Foo(` and `export default function Foo(` count too. The
+     old pattern demanded the line begin with `function`, so every exported
+     component — which is all of store.jsx — had no owner, and a string with no
+     owner was skipped silently rather than reported. */
+  const m = /^(?:export\s+(?:default\s+)?)?function ([A-Z]\w+)\s*\(/.exec(ln)
+         || /^(?:export\s+(?:default\s+)?)?const ([A-Z]\w+)\s*=\s*(?:\(|function|React\.memo)/.exec(ln);
   if (m) comps.push({ name: m[1], role: ROLE(m[1]), start: i });
 });
 comps.forEach((c, i) => { c.end = i + 1 < comps.length ? comps[i + 1].start : lines.length; });
@@ -81,9 +102,28 @@ const CODE_FRAGMENT = /(=>|\)\s*\{|\bconst\b|\bMath\.|<\/|\/>|\$\{|\breturn\b|\b
    should have been done in the first place. */
 const HAS_WORDS = /[A-Za-zÀ-ſ][a-zà-ſ]{2,}/;
 
-const hits = [];
-for (const m of src.matchAll(/"((?:[^"\\\n]|\\.){4,120})"/g)) {
+/* `hits` is declared once, above the per-file loop. A second `const hits = []`
+   used to sit here — legal, because the loop body is its own scope, and
+   therefore silent: every file collected its findings into a fresh array that
+   was discarded at the end of the iteration, and the report read the outer one,
+   which nothing ever wrote to. The sweep printed a clean zero for the entire
+   app. Shadowing is the quietest way to break a checker. */
+/* Match EVERY quoted string, then filter by length — never filter inside the
+   pattern.
+
+   The old regex demanded 4–120 characters between the quotes. On this line
+
+       { id: "student", icon: "🎓", t: "Student", s: "Uni email verification…" }
+
+   the emoji is two characters, so the scanner could not close on it, skipped
+   past, and paired the *closing* quote of one string with the *opening* quote
+   of the next — matching ", t: " instead of "Student". Everything after a short
+   string on the same line became invisible, which is why a signup screen full
+   of English reported clean. Length is a property of a token, not a way to find
+   one. */
+for (const m of src.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
   const raw = m[1];
+  if (raw.length < 4 || raw.length > 120) continue;
   const text = raw.replace(/^[^\p{L}\p{N}]+/u, "").trim();
   if (!HAS_WORDS.test(text) || LOOKS_LIKE_DATA.test(text)) continue;
   if (CSS_VALUE.test(text) || CODE_FRAGMENT.test(text)) continue;
@@ -118,6 +158,13 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.){4,120})"/g)) {
   if (/^\s*[a-zA-Z]+=/.test(raw)) continue;                                   // " max=", " style={{ …
   if (/^[\d.]+\s+[\d.]+\s+auto$/.test(text)) continue;                       // flex shorthand
   if (/^Cleano$/.test(text)) continue;                                        // the brand is the brand
+  /* Country endonyms in the dial-code table: `f: "🇷🇴", n: "România"`. The flag
+     is a separate field here, so the leading-flag rule above cannot see it. */
+  if (/f: "[\u{1F1E6}-\u{1F1FF}]{2}", n: $/u.test(before)) continue;
+  /* Demo-mode affordances and seed data. isApiMode is true in every shipped
+     build, so these strings are unreachable outside a local walkthrough. */
+  if (/^(Live mode only|Demo mode — use the sign-up buttons instead\.|Password change not available in demo mode)$/.test(raw)) continue;
+  if (/^(Musa Gillani|Eszter Kovács|Bálint Erdős|Platform Admin|Kassai út 26, Debrecen)$/.test(raw)) continue;
   if (SKIPPED_KEY.test(before)) continue;
   if (/\/\/[^\n]*$/.test(before)) continue;
   if (inside(m.index) || inComment(m.index)) continue;
@@ -126,8 +173,10 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.){4,120})"/g)) {
   const line = src.slice(0, m.index).split("\n").length - 1;
   const o = owner(line);
   if (!o) continue;
-  hits.push({ role: o.role, comp: o.name, line: line + 1, text: raw.slice(0, 80) });
+  hits.push({ role: o.role, comp: o.name, line: line + 1, text: raw.slice(0, 80),
+              file: FILE.replace(/^src\//, "") });
 }
+}   /* ── end of per-file loop ── */
 
 const ROLES = ["customer", "company", "cleaner", "admin", "shared"];
 const byRole = Object.fromEntries(ROLES.map((r) => [r, hits.filter((h) => h.role === r)]));
@@ -141,7 +190,7 @@ if (process.argv.includes("--all") && total) {
   for (const r of ROLES) {
     if (!byRole[r].length) continue;
     console.log(`\n── ${r} ──`);
-    for (const h of byRole[r]) console.log(`  ${String(h.line).padStart(5)}  ${h.comp.padEnd(20)} ${h.text}`);
+    for (const h of byRole[r]) console.log(`  ${(h.file + ":" + h.line).padEnd(22)} ${h.comp.padEnd(20)} ${h.text}`);
   }
 }
 console.log(`\n════ ${total} untranslated string${total === 1 ? "" : "s"} across the four interfaces ════`);

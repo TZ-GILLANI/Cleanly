@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api, setToken, getToken, isApiMode } from "./lib/api.js";
 import { getLang, saveLang, translate } from "./lib/i18n.js";
+import { xl } from "./lib/translations.js";
+
+/* The same L() the screens use. It lived only in App.jsx and was never
+   exported, so this file reached for `getLang() === "hu" ? … : …` instead —
+   two languages, and the other ten silently on English. */
+const L = (en, hu) => { const lg = getLang(); return lg === "hu" ? hu : xl(lg, en); };
 
 /* ════════════════════════════════════════════════════════════
    STORE — dual-mode
@@ -333,7 +339,7 @@ export function StoreProvider({ children }) {
       const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
+      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -346,7 +352,7 @@ export function StoreProvider({ children }) {
       const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
+      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -364,7 +370,7 @@ export function StoreProvider({ children }) {
       const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
+      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -375,7 +381,7 @@ export function StoreProvider({ children }) {
       const { token, user } = await api("/auth/login", { method: "POST", body: { email, password } });
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
+      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -450,7 +456,7 @@ export function StoreProvider({ children }) {
     }
     if ((b.pricingType || b.service.pricing_type) === "subscription") {
       const dup = db.bookings.some(x => x.customer_id === session.userId && x.service_snapshot?.id === b.service.id && x.pricing_type === "subscription" && x.status >= 0 && x.status <= 3);
-      if (dup) { setError(getLang() === "hu" ? "Már van aktív előfizetésed erre a szolgáltatásra — előbb mondd le a Foglalásoknál." : "You already have an active subscription for this service — cancel it first under Bookings."); return null; }
+      if (dup) { setError(L("You already have an active subscription for this service — cancel it first under Bookings.", "Már van aktív előfizetésed erre a szolgáltatásra — előbb mondd le a Foglalásoknál.")); return null; }
     }
     const row = { id: uid(), customer_id: session.userId, customer_name: session.name, customer_type: session.custType, company_id: b.companyId, service_snapshot: b.service, scheduled_date: b.date, scheduled_slot: b.slot, address: b.address, note: b.note, total_huf: b.total, pricing_type: b.pricingType || b.service.pricing_type || "flat", hours: b.hours || null, period: b.period || b.service.period || null, status: 0, assigned_to: null, tasks_done: [], created_at: nowLabel() };
     setDb(d => ({ ...d, bookings: [row, ...d.bookings] }));

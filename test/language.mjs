@@ -182,5 +182,30 @@ ok("the sweep reads every string literal, not just JSX text",
 ok("it ignores CSS values and code fragments", /CSS_VALUE/.test(sweepSrc) && /CODE_FRAGMENT/.test(sweepSrc));
 ok("and it does not count the comments", /inComment/.test(sweepSrc));
 
+/* Canary. This checker has now given a confident zero three times while whole
+   screens were English, each time because it was blind to a different shape:
+     1. it only read JSX text, not props or object literals
+     2. it demanded two words, so every one-word label was excused
+     3. its quote-matching required 4+ characters, so a short string like an
+        emoji made it pair the CLOSING quote of one literal with the OPENING
+        quote of the next — and everything after it on that line disappeared
+
+   The bait below reproduces all three at once: a one-word label and a long
+   sentence, both sitting after a two-character emoji in an object literal. If
+   the sweep does not find them, the sweep is broken, whatever it printed. */
+const baitFile = "src/.sweep-canary.jsx";
+fsL.writeFileSync(baitFile,
+  'export function CustomerBait() {\n' +
+  '  const opts = [{ icon: "🎓", t: "Student", s: "Uni email verification saves you money" }];\n' +
+  '  return <div>{opts[0].t}</div>;\n}\n');
+let baitSweep = "";
+try { baitSweep = execFileSync("node", ["scripts/untranslated.mjs", "--all"], { encoding: "utf8" }); }
+catch (e) { baitSweep = String(e.stdout || ""); }
+fsL.unlinkSync(baitFile);
+ok("the sweep catches a one-word label sitting after an emoji (canary)",
+   /Student/.test(baitSweep), baitSweep.split("\n").filter((l) => /Bait/.test(l)).join(" | ").slice(0, 160));
+ok("and the long string on the same line, which quote-mispairing used to hide",
+   /Uni email verification/.test(baitSweep));
+
 console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);
