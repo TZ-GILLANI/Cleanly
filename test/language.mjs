@@ -150,7 +150,15 @@ for (const role of ["customer", "company", "cleaner", "admin", "shared"]) {
   const m = new RegExp(`${role}\\s+(\\d+)`).exec(sweep);
   ok(`${role} has no hardcoded English`, m && Number(m[1]) === 0, m ? m[1] + " found" : "not reported");
 }
-ok("the sweep looks past leading emoji", /const strip = /.test(fsL.readFileSync("scripts/untranslated.mjs", "utf8")));
+/* The first sweep only read JSX text, placeholders and toasts. It reported a
+   confident zero while whole company and admin screens were still English,
+   because most copy here is passed as a prop or sits in an object literal.
+   These assertions pin the properties that fix made it depend on. */
+const sweepSrc = fsL.readFileSync("scripts/untranslated.mjs", "utf8");
+ok("the sweep reads every string literal, not just JSX text",
+   /for \(const m of src\.matchAll\(\/"/.test(sweepSrc));
+ok("it ignores CSS values and code fragments", /CSS_VALUE/.test(sweepSrc) && /CODE_FRAGMENT/.test(sweepSrc));
+ok("and it does not count the comments", /inComment/.test(sweepSrc));
 
 console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

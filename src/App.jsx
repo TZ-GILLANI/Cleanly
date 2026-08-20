@@ -126,6 +126,26 @@ const getCity = () => {
 };
 const saveCity = (c) => { try { localStorage.setItem("cleanly_city", c); } catch {} };
 
+/* ── Country ──────────────────────────────────────────────────────────────
+   Street suggestions used to be filtered to countrycode === "HU", hard-coded.
+   Outside Hungary that returned nothing at all: the field simply never
+   suggested anything and the customer could not tell why. Cleano speaks twelve
+   languages and Debrecen is full of people whose family address is elsewhere,
+   so the country has to be a choice rather than an assumption. */
+const COUNTRIES = [
+  ["HU", "🇭🇺 Magyarország"], ["AT", "🇦🇹 Österreich"], ["SK", "🇸🇰 Slovensko"],
+  ["RO", "🇷🇴 România"], ["RS", "🇷🇸 Srbija"], ["HR", "🇭🇷 Hrvatska"],
+  ["SI", "🇸🇮 Slovenija"], ["UA", "🇺🇦 Україна"], ["PL", "🇵🇱 Polska"],
+  ["CZ", "🇨🇿 Česko"], ["DE", "🇩🇪 Deutschland"], ["IT", "🇮🇹 Italia"],
+  ["FR", "🇫🇷 France"], ["ES", "🇪🇸 España"], ["GB", "🇬🇧 United Kingdom"],
+  ["TR", "🇹🇷 Türkiye"], ["NL", "🇳🇱 Nederland"], ["BE", "🇧🇪 België"],
+];
+const getCountry = () => {
+  try { const c = localStorage.getItem("cleanly_country"); if (c && c.trim()) return c.trim().toUpperCase(); } catch {}
+  return "HU";
+};
+const saveCountry = (c) => { try { localStorage.setItem("cleanly_country", String(c || "").toUpperCase()); } catch {} };
+
 /* Hungarian company identifiers (mirror of server-side validation) */
 const huTaxIdValid = (raw) => {
   const d = String(raw || "").replace(/[^0-9]/g, "");
@@ -159,6 +179,22 @@ const HUL = () => getLang() === "hu";
 const L = (en, hu) => { const lg = getLang(); return lg === "hu" ? hu : xl(lg, en); };
 const LOC = () => LOCALES[getLang()] || "en-GB";
 // A company's active offer ({pct,label,until}) or null once expired.
+/* The best discount sitting on any one of a company's services.
+
+   A company-wide promo already shows on the card. A discount set on a single
+   service did not, so a partner could put 25% on their deep clean and no
+   customer browsing the list would ever learn it existed — the offer only
+   appeared after tapping in and choosing that exact service. */
+const bestServiceDeal = (services, companyId) => {
+  let best = null;
+  for (const s of services || []) {
+    if (s.company_id !== companyId || s.is_active === false) continue;
+    const pct = Number(s.promo_pct) || 0;
+    if (pct > 0 && (!best || pct > best.pct)) best = { pct, name: s.name };
+  }
+  return best;
+};
+
 const promoOf = (co) => {
   const p = co && co.promo;
   if (!p || !p.pct) return null;
@@ -182,7 +218,8 @@ const STAGE = (status, fulfilment) => {
         3: L("Cleaning", "Takarítás"), 4: L("Done ✨", "Kész ✨") };
   return M[Number(status)] || "";
 };
-const stageList = () => (HUL() ? ["Új", "Kiosztva", "Úton", "Takarítás", "Kész ✨"] : ["New", "Assigned", "On the way", "Cleaning", "Done ✨"]);
+/* Branching on HUL() left the other ten languages on the English list. */
+const stageList = () => [L("New", "Új"), L("Assigned", "Kiosztva"), L("On the way", "Úton"), L("Cleaning", "Takarítás"), L("Done ✨", "Kész ✨")];
 /* Bookable hours. Companies tick the ones they work; customers see only those. */
 const HOURS = ["06:00","07:00","08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
 const SLOTS = HOURS;   // legacy alias — the app books on whole hours now
@@ -578,6 +615,12 @@ const shortLeft = (ms) => {
    The server enforces its own outer limit, so this is only the UI. */
 const BOOK_AHEAD_DAYS = 60;
 
+/* A radius that comfortably contains a Hungarian city and the villages that
+   commute into it. Used as the "whole city" preset so a company never has to
+   guess which number means "all of Debrecen". */
+const CITY_WIDE_KM = 30;
+
+
 /* Bounds shared by the customer's date strip and the company's busy-slot editor,
    so the two can never disagree about how far ahead the diary runs. */
 const todayISO = () => localISO(new Date());
@@ -726,7 +769,7 @@ const Field = ({ label, hint, area, ...props }) => {
             <input {...props} type={isPw && showPw ? "text" : props.type}
               style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", paddingRight: isPw ? 46 : 15, borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, outline: "none", background: C.card, color: C.ink }} />
             {isPw && (
-              <button type="button" tabIndex={-1} onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Hide password" : "Show password"}
+              <button type="button" tabIndex={-1} onClick={() => setShowPw((v) => !v)} aria-label={showPw ? L("Hide password", "Jelszó elrejtése") : L("Show password", "Jelszó mutatása")}
                 style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 17, opacity: .7, padding: 6 }}>
                 {showPw ? "🙈" : "👁️"}
               </button>
@@ -1101,14 +1144,17 @@ function cityFromAddress(addr) {
 }
 
 /* Street autocomplete via Photon (OpenStreetMap, free, typo-tolerant). */
-async function suggestStreets(q, city) {
+async function suggestStreets(q, city, country) {
   try {
+    const cc = String(country || getCountry() || "HU").toUpperCase();
     const query = city ? `${q}, ${city}` : q;
     const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=${getLang() === "hu" ? "hu" : "en"}`, { signal: AbortSignal.timeout(5000) });
     const j = await r.json();
     const seen = new Set();
     return (j.features || [])
-      .filter((f) => f.properties?.countrycode === "HU" && (f.properties.street || f.properties.name))
+      /* Was hard-coded to "HU". Anyone outside Hungary typed a real street and
+         watched nothing appear, with no explanation offered. */
+      .filter((f) => f.properties?.countrycode === cc && (f.properties.street || f.properties.name))
       .map((f) => {
         const pr = f.properties;
         const street = pr.street || pr.name;
@@ -1166,6 +1212,8 @@ function AddressPicker({ value, onChange }) {
   const [floor, setFloor] = useState("");
   const [extra, setExtra] = useState("");
   const [saveAs, setSaveAs] = useState("");
+  const [country, setCountry] = useState(getCountry());
+  const [cityIn, setCityIn] = useState(getCity());
   const debounceRef = React.useRef(null);
   /* JSONB, so this arrives parsed in production and as a raw string from some
      other paths. `|| []` only catches null — a truthy string sails through and
@@ -1177,7 +1225,7 @@ function AddressPicker({ value, onChange }) {
     setStreet(v); setStreetPicked(null);
     clearTimeout(debounceRef.current);
     if (v.trim().length < 2) { setSugs([]); return; }
-    debounceRef.current = setTimeout(async () => setSugs(await suggestStreets(v.trim(), getCity())), 350);
+    debounceRef.current = setTimeout(async () => setSugs(await suggestStreets(v.trim(), cityIn, country)), 350);
   };
 
   const applyCityFrom = (addr) => { const c = cityFromAddress(addr); if (c) saveCity(c); };
@@ -1272,6 +1320,23 @@ function AddressPicker({ value, onChange }) {
         <Opt icon="🏠" label={L("Home address", "Lakcím")} sub={session.address}
           selected={value === session.address} onPress={() => { onChange(session.address); applyCityFrom(session.address); setAdding(false); }} />
       )}
+      {/* A saved address could be added and deleted but never corrected: one
+          wrong house number meant deleting it and typing the whole thing again.
+          Editing loads it back into the form below. */}
+      {saved.length > 0 && !adding && (
+        <button onClick={() => {
+          const a = saved.find((x) => x.address === value) || saved[0];
+          const parts = String(a?.address || "").split(",");
+          setStreet((parts[0] || "").replace(/\s*\d+\S*$/, "").trim());
+          setHouseNo(((parts[0] || "").match(/(\d+\S*)\s*$/) || [])[1] || "");
+          setCityIn((parts[1] || "").trim() || cityIn);
+          setSaveAs(a?.label || "");
+          setStreetPicked(null); setAdding(true);
+        }} style={{ background: "none", border: "none", padding: "2px 2px 10px", cursor: "pointer",
+                    fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft }}>
+          ✏️ {L("Edit a saved address", "Mentett cím szerkesztése")}
+        </button>
+      )}
       {recent.map((a) => (
         <Opt key={a} icon="🕘" label={a} sub={L("Recently used", "Korábban használt")}
           selected={value === a} onPress={() => { onChange(a); applyCityFrom(a); setAdding(false); }} />
@@ -1285,6 +1350,23 @@ function AddressPicker({ value, onChange }) {
         </button>
       ) : (
         <div style={{ background: C.card, borderRadius: 15, padding: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+          {/* Country first, then city, then street — because the street
+              suggestions are filtered by both. Guessing the country from the
+              phone's locale is close enough to be useful and wrong often enough
+              that it has to stay editable. */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Country", "Ország")}</div>
+              <select value={country} onChange={(e) => { setCountry(e.target.value); saveCountry(e.target.value); setSugs([]); setStreetPicked(null); }}
+                style={{ width: "100%", padding: "11px 12px", borderRadius: 13, border: `1px solid ${C.line}`, background: C.bg, color: C.ink, fontFamily: B, fontSize: 13 }}>
+                {COUNTRIES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label={L("City", "Város")} placeholder={L("e.g. Debrecen", "pl. Debrecen")}
+                value={cityIn} onChange={(e) => { setCityIn(e.target.value); saveCity(e.target.value); setSugs([]); setStreetPicked(null); }} />
+            </div>
+          </div>
           <div style={{ position: "relative" }}>
             <Field label={L("Street", "Utca")} placeholder={L("Start typing — e.g. Bolyai", "Kezdj el gépelni — pl. Bolyai")}
               value={streetPicked ? `${streetPicked.street}` : street} onChange={(e) => onStreetInput(e.target.value)} />
@@ -1324,7 +1406,10 @@ function AddressPicker({ value, onChange }) {
           </div>}
           <Btn small full disabled={!(streetPicked || street.trim().length >= 3) || !houseNo.trim()} onClick={async () => {
             const st = streetPicked ? streetPicked.street : street.trim();
-            const cty = (streetPicked && (cityFromAddress(streetPicked.city) || streetPicked.city)) || getCity();
+            /* The typed city wins over the suggestion's, because the customer
+               just chose it deliberately and the geocoder often answers with a
+               district or a county instead. */
+            const cty = cityIn.trim() || (streetPicked && (cityFromAddress(streetPicked.city) || streetPicked.city)) || getCity();
             const full = `${st} ${houseNo.trim()}${floor.trim() ? ", " + floor.trim() : ""}, ${cty}${extra.trim() ? " (" + extra.trim() + ")" : ""}`;
             onChange(full); applyCityFrom(full);
             if (canSave && saveAs.trim()) {
@@ -1461,7 +1546,7 @@ function ProfileSheet({ close }) {
         <div>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink }}>{session.name}</div>
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
-            {session.role === "customer" ? (session.custType === "student" ? "🎓 Student" : "🏡 Resident") : session.role === "employee" ? "🧽 Cleaner" : session.role === "admin" ? "🛡️ Platform admin" : "🏢 Company admin"}
+            {session.role === "customer" ? (session.custType === "student" ? L("🎓 Student", "🎓 Diák") : L("🏡 Resident", "🏡 Lakos")) : session.role === "employee" ? L("🧽 Cleaner", "🧽 Takarító") : session.role === "admin" ? L("🛡️ Platform admin", "🛡️ Platform admin") : L("🏢 Company admin", "🏢 Cég admin")}
           </div>
         </div>
       </div>
@@ -1472,7 +1557,7 @@ function ProfileSheet({ close }) {
         <div style={{ marginBottom: 13 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.accountType")}</div>
           <div style={{ display: "flex", gap: 10 }}>
-            {[{ id: "student", label: "🎓 Student", sub: "Save up to 20%" }, { id: "resident", label: "🏡 Resident", sub: "Standard pricing" }].map((o) => (
+            {[{ id: "student", label: L("🎓 Student", "🎓 Diák"), sub: L("Save up to 20%", "Akár 20% kedvezmény") }, { id: "resident", label: L("🏡 Resident", "🏡 Lakos"), sub: L("Standard pricing", "Normál árazás") }].map((o) => (
               <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{
                 flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: 14, cursor: "pointer",
                 border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent",
@@ -1519,7 +1604,7 @@ function ProfileSheet({ close }) {
           <PhoneField label={L("Phone number", "Telefonszám")} value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
           <DocUpload
             label={L("Identity documents", "Személyazonosító okmányok")}
-            hint="ID card or residence card — your company and the platform admin can verify you."
+            hint={L("ID card or residence card — your company and the platform admin can verify you.", "Személyi vagy lakcímkártya — a céged és a platform adminja tudja ellenőrizni.")}
             docs={f.documents}
             onChange={(docs) => setF({ ...f, documents: docs })}
           />
@@ -1576,6 +1661,111 @@ function ProfileSheet({ close }) {
    AUTH
 ════════════════════════════════════════════════════════════ */
 
+/* ── A field you must prove before it is yours ────────────────────────────
+   The old flow created the account first and asked for a code afterwards, so
+   unverified accounts existed, and a mistyped number could only be corrected by
+   an admin — the person could never receive the code that would let them fix it.
+
+   Here nothing is created until the code checks out. While unverified the field
+   stays editable, so a typo is just a typo. Once verified it locks, because the
+   proof is bound to that exact value: letting it change afterwards would leave a
+   token vouching for a number nobody entered.                                 */
+function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, token, onToken, disabled }) {
+  const { signupCodeSend, signupCodeCheck } = useStore();
+  const toast = useToast();
+  const [sent, setSent] = useState(false);
+  const [ticket, setTicket] = useState(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const isPhone = kind === "phone";
+  const clean = String(value || "").trim();
+  const enough = isPhone ? clean.replace(/[^0-9]/g, "").length >= 8 : /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean);
+  const verified = !!token;
+
+  const send = async () => {
+    setErr(""); setBusy(true);
+    const r = await signupCodeSend(isPhone ? { phone: clean } : { email: clean });
+    setBusy(false);
+    if (r?.error) { setErr(r.error); return; }
+    if (r?.ticket) setTicket(r.ticket);
+    setSent(true);
+    toast(L("Code sent", "Kód elküldve"));
+  };
+
+  const check = async () => {
+    setErr(""); setBusy(true);
+    const r = await signupCodeCheck(isPhone ? { phone: clean, code } : { email: clean, code, ticket });
+    setBusy(false);
+    if (r?.error || !r?.verified) { setErr(r?.error || L("That code didn't match", "A kód nem egyezik")); return; }
+    onToken(r.token);
+    setSent(false); setCode("");
+    toast(isPhone ? L("Phone verified ✓", "Telefonszám igazolva ✓") : L("Email verified ✓", "E-mail igazolva ✓"));
+  };
+
+  return (
+    <div style={{ marginBottom: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+        <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{label}</span>
+        {verified && (
+          <span style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.green, background: C.mintSoft, borderRadius: 99, padding: "2px 8px" }}>
+            ✓ {L("Verified", "Igazolva")}
+          </span>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <input type={type || "text"} value={value} placeholder={placeholder}
+          onChange={(e) => { if (verified) return; onChange(e); }}
+          readOnly={verified} disabled={disabled}
+          inputMode={isPhone ? "tel" : "email"} autoCapitalize="none" autoCorrect="off"
+          style={{ flex: 1, padding: "13px 14px", borderRadius: 14, fontFamily: B, fontSize: 14,
+                   border: `1.5px solid ${verified ? C.green + "66" : C.line}`,
+                   background: verified ? C.mintSoft : C.bg, color: C.ink }} />
+        {!verified && (
+          <button onClick={send} disabled={!enough || busy}
+            style={{ border: "none", borderRadius: 14, padding: "0 14px", cursor: enough && !busy ? "pointer" : "default",
+                     background: enough && !busy ? C.navy : C.bg, color: enough && !busy ? "#fff" : C.inkFaint,
+                     fontFamily: B, fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>
+            {busy ? "…" : sent ? L("Resend", "Újraküldés") : L("Send code", "Kód kérése")}
+          </button>
+        )}
+      </div>
+
+      {hint && !verified && <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
+      {verified && (
+        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5 }}>
+          {isPhone
+            ? L("This number is now locked to your account. Contact us if it ever needs changing.",
+                "Ez a szám mostantól a fiókodhoz tartozik. Ha változtatni kell, keress minket.")
+            : L("This address is now locked to your account.", "Ez a cím mostantól a fiókodhoz tartozik.")}
+        </div>
+      )}
+
+      {sent && !verified && (
+        <div style={{ display: "flex", gap: 8, marginTop: 9 }}>
+          <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))}
+            inputMode="numeric" placeholder={L("6-digit code", "6 jegyű kód")}
+            style={{ flex: 1, padding: "13px 14px", borderRadius: 14, border: `1.5px solid ${C.line}`, background: C.bg,
+                     color: C.ink, fontFamily: B, fontSize: 16, letterSpacing: 3, textAlign: "center" }} />
+          <button onClick={check} disabled={code.length < 4 || busy}
+            style={{ border: "none", borderRadius: 14, padding: "0 18px", cursor: code.length >= 4 ? "pointer" : "default",
+                     background: code.length >= 4 && !busy ? C.mint : C.bg, color: code.length >= 4 && !busy ? C.navyDeep : C.inkFaint,
+                     fontFamily: B, fontWeight: 700, fontSize: 12.5 }}>
+            {busy ? "…" : L("Verify", "Igazolás")}
+          </button>
+        </div>
+      )}
+
+      {err && (
+        <div style={{ fontFamily: B, fontSize: 11.5, color: C.coralText || C.coral, background: C.coralSoft,
+                      borderRadius: 10, padding: "8px 11px", marginTop: 8, lineHeight: 1.5 }}>{err}</div>
+      )}
+    </div>
+  );
+}
+
 function Auth() {
   // wake the free-tier server while the user is still looking at the welcome screen
   React.useEffect(() => { if (isLive) fetch((API_BASE || "") + "/api/health").catch(() => {}); }, []);
@@ -1596,6 +1786,19 @@ function Auth() {
   ];
 
   const [pendingScreen, setPendingScreen] = useState(false);
+  /* Proof tokens from /verify/signup/check. Held here, sent with the
+     registration, and never written to disk — they are short-lived and bound to
+     the exact value that was verified. */
+  const [phoneToken, setPhoneToken] = useState(null);
+  const [emailToken, setEmailToken] = useState(null);
+  const [verifyOn, setVerifyOn] = useState(false);
+  React.useEffect(() => {
+    if (!isLive) return;
+    /* If neither Twilio nor the mailer is configured the server cannot send a
+       code, so asking for one would strand every signup. Fall back to the plain
+       fields in that case rather than blocking the door. */
+    store.verifyConfig?.().then((c) => setVerifyOn(!!(c?.enabled || c?.emailEnabled))).catch(() => {});
+  }, [isLive]);
   const [forgot, setForgot] = useState(0); // 0=off 1=email sent, enter code+new pw
   const [fpCode, setFpCode] = useState("");
   const [fpNew, setFpNew] = useState("");
@@ -1603,9 +1806,10 @@ function Auth() {
     setBusy(true); setErr(null);
     let res;
     if (mode === "login") res = await store.login(f);
-    else if (role === "customer") res = await store.signupCustomer(f);
-    else if (role === "employee") res = await store.signupEmployee(f);
-    else res = await store.signupCompany(f);
+    const withProof = { ...f, phoneToken, emailToken };
+    if (role === "customer") res = await store.signupCustomer(withProof);
+    else if (role === "employee") res = await store.signupEmployee(withProof);
+    else res = await store.signupCompany(withProof);
     setBusy(false);
     if (res?.pending) { setPendingScreen(true); return; }
     if (res?.error) setErr(res.error);
@@ -1614,11 +1818,22 @@ function Auth() {
   if (pendingScreen)
     return (
       <div className="cl-fade" style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center" }}>
-        <div className="cl-pop" style={{ fontSize: 58 }}>🎓</div>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>{L("Application received!", "Jelentkezés beérkezett!")}</div>
+        {/* Three different people reach this screen and only one of them is a
+            student. A cleaner reading "we are verifying your student card"
+            reasonably concludes something has gone wrong. */}
+        <div className="cl-pop" style={{ fontSize: 58 }}>{role === "employee" ? "🧽" : role === "company" ? "🏢" : "🎓"}</div>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>
+          {role === "employee" ? L("You're in — pending approval", "Kész — jóváhagyásra vár") : L("Application received!", "Jelentkezés beérkezett!")}
+        </div>
         <div style={{ fontFamily: B, fontSize: 13.5, color: C.inkSoft, marginTop: 12, lineHeight: 1.7, maxWidth: 340 }}>
-          {L("Our team is verifying your student card. You'll get an email as soon as your account is approved — then just log in.",
-             "Csapatunk ellenőrzi a diákigazolványodat. E-mailt küldünk, amint jóváhagytuk a fiókodat — utána már be is léphetsz.")}
+          {role === "employee"
+            ? L("Your company has been told. As soon as they approve you in their Team tab, log in with the email and password you just chose.",
+                "Szóltunk a cégednek. Amint jóváhagynak a Csapat fülön, lépj be a most megadott e-mail-címmel és jelszóval.")
+            : role === "company"
+              ? L("The Cleano team is checking your company documents. You'll get an email as soon as you're approved — then just log in.",
+                  "A Cleano csapata ellenőrzi a céges dokumentumokat. E-mailt küldünk, amint jóváhagytunk — utána már be is léphetsz.")
+              : L("Our team is verifying your student card. You'll get an email as soon as your account is approved — then just log in.",
+                  "Csapatunk ellenőrzi a diákigazolványodat. E-mailt küldünk, amint jóváhagytuk a fiókodat — utána már be is léphetsz.")}
         </div>
         <Btn style={{ marginTop: 26 }} onClick={() => { setPendingScreen(false); setRole(null); }}>{L("Back to start", "Vissza a kezdőlapra")}</Btn>
       </div>
@@ -1673,14 +1888,20 @@ function Auth() {
     );
 
   const h = {
-    customer: { icon: "🛋️", title: mode === "login" ? "Welcome back" : "Create your account", sub: "Students get automatic discounts at checkout." },
+    customer: { icon: "🛋️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Students get automatic discounts at checkout.", "A diákok automatikus kedvezményt kapnak fizetéskor.") },
     employee: { icon: "🧽", title: "Cleaner sign-up", sub: "Use the invite code your company gave you." },
     company: { icon: "🏢", title: "Register your company", sub: "Free to list — manage your team and bookings." },
   }[role];
 
+  /* With verification on, the account must not be creatable until both proofs
+     exist. This is the whole point: no unverified account is ever written. */
+  const proofsOk = !verifyOn || mode === "login" ||
+    (!!emailToken && (role === "company" ? true : !!phoneToken));
+
   const ready = mode === "login"
     ? f.email && f.password
     : !f.terms ? false
+    : !proofsOk ? false
     : role === "customer" ? f.name && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (f.custType !== "student" || f.documents.length >= 1) && (!isLive || (f.email && f.password.length >= 6))
     : role === "employee" ? f.code.trim().length >= 4 && f.address.trim() && f.phone.replace(/[^0-9]/g, "").length >= 8 && (!isLive || (f.name && f.email && f.password.length >= 6))
     : (f.companyName.trim() && huTaxIdValid(f.taxId) && (!f.regNumber.trim() || huRegNumberValid(f.regNumber)) && (!isLive || (f.email && f.password.length >= 6)));
@@ -1702,7 +1923,7 @@ function Auth() {
           )}
           {mode === "signup" && role === "customer" && (
             <>
-              <Field label="Your name" placeholder="e.g. Musa Gillani" value={f.name} onChange={set("name")} />
+              <Field label={L("Your name", "A neved")} placeholder={L("e.g. Musa Gillani", "pl. Kovács Anna")} value={f.name} onChange={set("name")} />
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>I am a…</div>
               <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                 {[{ id: "student", icon: "🎓", t: "Student", s: "Uni email verification · save up to 20%" }, { id: "resident", icon: "🏡", t: "Resident", s: "Standard pricing, full service" }].map((o) => (
@@ -1715,7 +1936,13 @@ function Auth() {
               </div>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Residence address *", "Lakcím *")}</div>
               <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
-              <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account. Country code detected automatically.", "Egy szám = egy fiók. Az országkódot automatikusan felismertük.")} value={f.phone} onChange={set("phone")} />
+              {verifyOn
+                ? <VerifiedField kind="phone" label={L("Phone number", "Telefonszám")}
+                    hint={L("Fix it here if it's wrong, then ask for the code. Once verified it cannot be changed.",
+                            "Ha hibás, itt javítsd, aztán kérd a kódot. Igazolás után már nem módosítható.")}
+                    placeholder="+36 30 123 4567" value={f.phone} onChange={set("phone")}
+                    token={phoneToken} onToken={setPhoneToken} />
+                : <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account. Country code detected automatically.", "Egy szám = egy fiók. Az országkódot automatikusan felismertük.")} value={f.phone} onChange={set("phone")} />}
               {f.custType === "student" && (
                 <DocUpload
                   label={L("Student card photo *", "Diákigazolvány fotó *")}
@@ -1732,10 +1959,16 @@ function Auth() {
               {isLive && <Field label={L("Your name", "A neved")} placeholder={L("Full name", "Teljes név")} value={f.name} onChange={set("name")} />}
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Residence address *", "Lakcím *")}</div>
               <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
-              <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account.", "Egy szám = egy fiók.")} value={f.phone} onChange={set("phone")} />
+              {verifyOn
+                ? <VerifiedField kind="phone" label={L("Phone number", "Telefonszám")}
+                    hint={L("Fix it here if it's wrong, then ask for the code. Once verified it cannot be changed.",
+                            "Ha hibás, itt javítsd, aztán kérd a kódot. Igazolás után már nem módosítható.")}
+                    placeholder="+36 30 123 4567" value={f.phone} onChange={set("phone")}
+                    token={phoneToken} onToken={setPhoneToken} />
+                : <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account.", "Egy szám = egy fiók.")} value={f.phone} onChange={set("phone")} />}
               <DocUpload
                 label={L("Identity document", "Személyazonosító okmány")}
-                hint="ID card or residence card (lakcímkártya / tartózkodási engedély) — required before your first job."
+                hint={L("ID card or residence card (lakcímkártya / tartózkodási engedély) — required before your first job.", "Személyi vagy lakcímkártya / tartózkodási engedély — az első munka előtt kötelező.")}
                 docs={f.documents}
                 onChange={(docs) => setF({ ...f, documents: docs })}
               />
@@ -1743,7 +1976,7 @@ function Auth() {
           )}
           {mode === "signup" && role === "company" && (
             <>
-              <Field label={L("Company name *", "Cégnév *")} placeholder="e.g. SparkClean Kft." value={f.companyName} onChange={set("companyName")} />
+              <Field label={L("Company name *", "Cégnév *")} placeholder={L("e.g. SparkClean Kft.", "pl. Ragyogó Kft.")} value={f.companyName} onChange={set("companyName")} />
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("City you serve *", "Melyik városban dolgoztok? *")}</div>
               <select value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })}
                 style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
@@ -1756,7 +1989,7 @@ function Auth() {
               <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contactPhone} onChange={(v) => setF((p) => ({ ...p, contactPhone: v }))} />
               <DocUpload
                 label={L("Verification documents", "Igazoló dokumentumok")}
-                hint="Company registration extract (cégkivonat), tax certificate — photos or PDFs. Speeds up approval."
+                hint={L("Company registration extract, tax certificate — photos or PDFs. Speeds up approval.", "Cégkivonat, adóigazolás — fotó vagy PDF. Gyorsítja a jóváhagyást.")}
                 docs={f.documents}
                 onChange={(docs) => setF({ ...f, documents: docs })}
               />
@@ -1767,7 +2000,13 @@ function Auth() {
           )}
           {isLive && (
             <>
-              <Field label="Email" type="email" placeholder="you@example.com" value={f.email} onChange={set("email")} />
+              {verifyOn && mode !== "login"
+                ? <VerifiedField kind="email" label={L("Email", "E-mail")} type="email"
+                    hint={L("We send the code here. Correct it now if it's wrong.",
+                            "Ide küldjük a kódot. Ha hibás, most javítsd.")}
+                    placeholder="you@example.com" value={f.email} onChange={set("email")}
+                    token={emailToken} onToken={setEmailToken} />
+                : <Field label={L("Email", "E-mail")} type="email" placeholder="you@example.com" value={f.email} onChange={set("email")} />}
               <Field label="Password" type="password" placeholder="Min. 6 characters" value={f.password} onChange={set("password")} />
             </>
           )}
@@ -1813,11 +2052,11 @@ function Auth() {
             </label>
           )}
         <Btn full disabled={!ready || busy} onClick={submit}>
-          {busy ? "One moment…" : mode === "login" ? "Log in →" : role === "customer" ? "Create account →" : role === "company" ? "Register company →" : "Join my company →"}
+          {busy ? L("One moment…", "Egy pillanat…") : mode === "login" ? L("Log in →", "Belépés →") : role === "customer" ? L("Create account →", "Fiók létrehozása →") : role === "company" ? L("Register company →", "Cég regisztrálása →") : L("Join my company →", "Csatlakozás a céghez →")}
         </Btn>
         {isLive && (
           <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(null); }} style={{ background: "none", border: "none", width: "100%", fontFamily: B, fontSize: 12, fontWeight: 700, color: C.navySoft, cursor: "pointer", marginTop: 12 }}>
-            {mode === "login" ? "New here? Create an account" : "Already registered? Log in"}
+            {mode === "login" ? L("New here? Create an account", "Új vagy? Hozz létre fiókot") : L("Already registered? Log in", "Már regisztráltál? Lépj be")}
           </button>
         )}
       </div>
@@ -1973,6 +2212,15 @@ function CustomerHome({ openBooking, openProfile }) {
                   {availOf(co)?.paused && <Pill bg={C.amberSoft} color={C.amber}>{L("Fully booked", "Betelt")}</Pill>}
                   {promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{promoOf(co).pct}%{promoOf(co).label ? ` ${promoOf(co).label}` : ""}</Pill>}
                   {isStudent && !promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
+                  {(() => {
+                    /* Only worth showing when it beats what is already on the
+                       card — two pills saying different numbers is worse than
+                       one saying the best. */
+                    const deal = bestServiceDeal(services, co.id);
+                    const already = Math.max(promoOf(co)?.pct || 0, isStudent ? co.student_discount || 0 : 0);
+                    if (!deal || deal.pct <= already) return null;
+                    return <Pill bg={C.mintSoft} color={C.green}>−{deal.pct}% {deal.name}</Pill>;
+                  })()}
                 </div>
                 {co.tagline && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3 }}><Translated map={co.tagline_i18n} fallback={co.tagline} /></div>}
                 {hitSvcs.length > 0 && (
@@ -2854,7 +3102,7 @@ function EmployeeNotices() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>
-        From {co?.name || "your company"} {unread > 0 && <Pill bg={C.coral} color="#fff" style={{ marginLeft: 6 }}>{unread} new</Pill>}
+        From {co?.name || L("your company", "a céged")} {unread > 0 && <Pill bg={C.coral} color="#fff" style={{ marginLeft: 6 }}>{unread} new</Pill>}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={L("Message your company…", "Írj a cégednek…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 14, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
@@ -2862,11 +3110,11 @@ function EmployeeNotices() {
       </div>
       {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>{L("No messages from your company yet.", "Még nincs üzenet a cégedtől.")}</div>}
       {mine.map((n) => (
-        <div key={n.id} onClick={() => { if (!n.from_employee && !n.is_read) { markNoticeRead(n.id); toast("Marked as read"); } }} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: (n.from_employee || n.is_read) ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: (n.from_employee || n.is_read) ? "default" : "pointer" }}>
+        <div key={n.id} onClick={() => { if (!n.from_employee && !n.is_read) { markNoticeRead(n.id); toast(L("Marked as read", "Olvasottnak jelölve")); } }} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: (n.from_employee || n.is_read) ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: (n.from_employee || n.is_read) ? "default" : "pointer" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
               {n.from_employee ? <div style={{ width: 32, height: 32, borderRadius: 10, background: C.mint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>🧽</div> : <CompanyLogo co={co} size={32} radius={10} />}
-              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? "You → company" : (co?.name || "Company")}</span>
+              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? L("You → company", "Te → cég") : (co?.name || L("Company", "Cég"))}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontFamily: B, fontSize: 10, color: C.inkFaint }}>{typeof n.created_at === "string" && n.created_at.length < 25 ? n.created_at : new Date(n.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
@@ -2967,7 +3215,7 @@ function CompanyJobs({ openProfile }) {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 4px" }}>
         <div>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{co?.name || "My company"}</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{co?.name || L("My company", "A cégem")}</div>
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
             Admin · {new Date().toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "short" })}
           </div>
@@ -2979,9 +3227,9 @@ function CompanyJobs({ openProfile }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "16px 0" }}>
         {[
-          { k: "Open jobs", v: open.length, accent: C.navy, sub: `${unassigned} unassigned` },
-          { k: "Pipeline", v: huf(pipeline), accent: C.navySoft, sub: "potential revenue" },
-          { k: "Total earned", v: huf(revenue), accent: C.green, sub: `${done.length} jobs done` },
+          { k: L("Open jobs", "Nyitott munkák"), v: open.length, accent: C.navy, sub: `${unassigned} ${L("unassigned", "kiosztatlan")}` },
+          { k: L("Pipeline", "Várható"), v: huf(pipeline), accent: C.navySoft, sub: L("potential revenue", "lehetséges bevétel") },
+          { k: L("Total earned", "Összes bevétel"), v: huf(revenue), accent: C.green, sub: `${done.length} ${L("jobs done", "kész munka")}` },
           { k: "Today", v: huf(todayRevenue), accent: unassigned ? C.coral : C.navySoft, sub: `${todayJobs.length} completed today` },
         ].map((s) => (
           <div key={s.k} style={{ background: C.card, borderRadius: 16, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
@@ -3190,10 +3438,10 @@ function CompanyJobs({ openProfile }) {
       {declining && (
         <Sheet title={L("Decline this booking?", "Elutasítod ezt a foglalást?")} close={() => setDeclining(null)}>
           <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.6, marginBottom: 14 }}>
-            Tell {declining.customer_name || "the customer"} why you can't take <b style={{ color: C.ink }}>{(declining.service_snapshot || {}).name}</b> on {dayLabel(declining.scheduled_date)} at {declining.scheduled_slot}.
+            Tell {declining.customer_name || L("the customer", "az ügyfélnek")} why you can't take <b style={{ color: C.ink }}>{(declining.service_snapshot || {}).name}</b> on {dayLabel(declining.scheduled_date)} at {declining.scheduled_slot}.
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-            {["Not available at this time", "Fully booked that day", "Outside our service area", "Team off that day"].map((q) => (
+            {[L("Not available at this time", "Ebben az időpontban nem elérhető"), L("Fully booked that day", "Aznap tele vagyunk"), L("Outside our service area", "A területünkön kívül esik"), L("Team off that day", "Aznap nem dolgozik a csapat")].map((q) => (
               <button key={q} onClick={() => setReason(q)} style={{ fontFamily: B, fontSize: 11.5, fontWeight: 600, padding: "8px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: reason === q ? C.coralSoft : C.card, color: reason === q ? C.coral : C.navySoft, cursor: "pointer" }}>{q}</button>
             ))}
           </div>
@@ -3304,7 +3552,7 @@ function CompanySchedule() {
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>🕘 {b.scheduled_slot} · {svc.icon} {svc.name}{b.pricing_type === "subscription" ? " 🔁" : ""}</div>
                 <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
                   👤 {b.customer_name || "Customer"} · 📍 {b.address}<br />
-                  🧽 {cleaner || "Unassigned — assign in Jobs tab"}
+                  🧽 {cleaner || L("Unassigned — assign in Jobs tab", "Nincs kiosztva — oszd ki a Munkák fülön")}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -3370,7 +3618,7 @@ function CompanyServices() {
       {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30 }}>No services yet — add your first one so customers can book you.</div>}
 
       {editing && (
-        <Sheet title={editing === "new" ? "New service" : "Edit service"} close={() => setEditing(null)}>
+        <Sheet title={editing === "new" ? L("New service", "Új szolgáltatás") : L("Edit service", "Szolgáltatás szerkesztése")} close={() => setEditing(null)}>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ width: 84 }}>
               <Field label={L("Icon", "Ikon")} placeholder="🏠" value={f.icon} onChange={(e) => setF({ ...f, icon: e.target.value })} />
@@ -3509,7 +3757,7 @@ function CompanyServices() {
             </>
           )}
 
-          <Field area rows={5} label={L("Cleaner task checklist (one per line)", "Takarítói feladatlista (soronként egy)")} placeholder={"Kitchen surfaces & sink\nBathroom full clean\nVacuum & mop"} value={f.tasksText} onChange={(e) => setF({ ...f, tasksText: e.target.value })} />
+          <Field area rows={5} label={L("Cleaner task checklist (one per line)", "Takarítói feladatlista (soronként egy)")} placeholder={L("Kitchen surfaces & sink\nBathroom full clean\nVacuum & mop", "Konyhapult és mosogató\nFürdő teljes takarítás\nPorszívózás és felmosás")} value={f.tasksText} onChange={(e) => setF({ ...f, tasksText: e.target.value })} />
           <Field area rows={3}
             label={L("What the customer must agree to — for this service only (one per line)", "Amit az ügyfélnek el kell fogadnia — csak ehhez a szolgáltatáshoz (soronként egy)")}
             hint={L("Added to your company-wide notice. Shown before payment, and the customer has to tick it.",
@@ -3525,10 +3773,10 @@ function CompanyServices() {
               fulfilment: f.fulfilment || "onsite",
               turnaround_days: parseInt(f.turnaround_days, 10) || 3,
               slot_capacity: f.slot_capacity == null || f.slot_capacity === "" ? null : parseInt(f.slot_capacity, 10) });
-            toast(editing === "new" ? "Service added" : "Service updated");
+            toast(editing === "new" ? L("Service added", "Szolgáltatás hozzáadva") : L("Service updated", "Szolgáltatás frissítve"));
             setEditing(null);
           }}>
-            {editing === "new" ? "Add service" : "Save changes"}
+            {editing === "new" ? L("Add service", "Szolgáltatás hozzáadása") : L("Save changes", "Változtatások mentése")}
           </Btn>
         </Sheet>
       )}
@@ -3665,7 +3913,7 @@ function CompanyTeam() {
             </>
           ) : (
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 12 }}>Share this code with {label || "your employee"}:</div>
+              <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 12 }}>Share this code with {label || L("your employee", "a munkatársaddal")}:</div>
               <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 26, color: C.navy, letterSpacing: 3, background: C.card, borderRadius: 16, padding: "18px 0", boxShadow: "0 2px 12px rgba(20,28,58,.07)", marginBottom: 14 }}>{newCode}</div>
               <Btn ghost full onClick={() => copyCode(newCode)} style={{ marginBottom: 10 }}>📋 {L("Copy to clipboard", "Másolás a vágólapra")}</Btn>
               <Btn full mint onClick={() => setShowAdd(false)}>Done</Btn>
@@ -3707,7 +3955,7 @@ function CompanyTeam() {
         <ConfirmDialog
           title={`Remove ${confirmRm.full_name}?`}
           body="They lose access to the app, and their unfinished jobs return to the unassigned pool. This cannot be undone."
-          confirmLabel="Remove cleaner"
+          confirmLabel={L("Remove cleaner", "Takarító eltávolítása")}
           danger
           onCancel={() => setConfirmRm(null)}
           onConfirm={async () => {
@@ -3719,7 +3967,7 @@ function CompanyTeam() {
       {showMsg && (
         <Sheet title={`Notice to ${showMsg.full_name.split(" ")[0]}`} close={() => setShowMsg(null)}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-            {["Bring HEPA vacuum 🌬️", "Call me when free 📞", "Schedule change tomorrow 🗓️", "Check the job notes carefully 📋"].map((q) => (
+            {[L("Bring HEPA vacuum 🌬️", "Hozz HEPA porszívót 🌬️"), L("Call me when free 📞", "Hívj, ha ráérsz 📞"), L("Schedule change tomorrow 🗓️", "Holnap változik a beosztás 🗓️"), L("Check the job notes carefully 📋", "Olvasd el figyelmesen a munka jegyzetét 📋")].map((q) => (
               <button key={q} onClick={() => setMsg(q)} style={{ fontFamily: B, fontSize: 11.5, fontWeight: 600, padding: "8px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: msg === q ? C.mintSoft : C.card, color: C.navySoft, cursor: "pointer" }}>{q}</button>
             ))}
           </div>
@@ -3773,14 +4021,14 @@ function PayoutSetup() {
         <span style={{ fontSize: 22 }}>{ready ? "✅" : "⚡"}</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>
-            {ready ? "Automatic payouts active" : "Set up automatic payouts"}
+            {ready ? L("Automatic payouts active", "Automatikus kifizetés aktív") : L("Set up automatic payouts", "Automatikus kifizetés beállítása")}
           </div>
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.5 }}>
             {ready
-              ? "Card payments land in your bank automatically, service fee already deducted."
+              ? L("Card payments land in your bank automatically, service fee already deducted.", "A kártyás fizetések automatikusan a bankszámládra érkeznek, a jutalék már levonva.")
               : st.connected
-              ? "Onboarding started but not finished — continue below."
-              : "Connect your bank via Stripe: card bookings then pay out to you automatically."}
+              ? L("Onboarding started but not finished — continue below.", "A regisztráció elkezdődött, de nem fejeződött be — folytasd lent.")
+              : L("Connect your bank via Stripe: card bookings then pay out to you automatically.", "Kösd össze a bankszámlád a Stripe-pal: a kártyás foglalások utána automatikusan kifizetődnek.")}
           </div>
         </div>
         {!ready && (
@@ -3789,7 +4037,7 @@ function PayoutSetup() {
             const r = await connectOnboard();
             setBusy(false);
             if (r?.url) window.open(r.url, "_blank");
-            else toast(r?.error || "Could not start onboarding", "error");
+            else toast(r?.error || L("Could not start onboarding", "A regisztrációt nem sikerült elindítani"), "error");
           }}>{st.connected ? "Continue" : "Connect"}</Btn>
         )}
         {ready && (
@@ -3798,7 +4046,7 @@ function PayoutSetup() {
             const r = await connectDashboard();
             setBusy(false);
             if (r?.url) window.open(r.url, "_blank");
-            else toast(r?.error || "Could not open payouts", "error");
+            else toast(r?.error || L("Could not open payouts", "A kifizetéseket nem sikerült megnyitni"), "error");
           }}>{L("View payouts", "Kifizetések")}</Btn>
         )}
       </div>
@@ -3934,7 +4182,7 @@ async function addBookingToCalendar(bookingId, orderNo) {
       const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
       const { Share } = await import("@capacitor/share");
       const w = await Filesystem.writeFile({ path: name, data: text, directory: Directory.Cache, encoding: Encoding.UTF8 });
-      await Share.share({ title: "Add to calendar", url: w.uri });
+      await Share.share({ title: L("Add to calendar", "Hozzáadás a naptárhoz"), url: w.uri });
       return;
     }
   } catch (e) { /* fall through to the browser path */ }
@@ -4366,7 +4614,7 @@ function CompanySettings() {
         {DIAL_CODES.map((x) => <option key={x.c} value={x.c}>{x.f} {x.n}</option>)}
       </select>
       <Field label={L("Tagline", "Szlogen")} placeholder={L("What makes you different?", "Miben vagytok mások?")} value={f.tagline} onChange={set("tagline")} />
-      <Field label={L("Service area (shown on your card)", "Ellátott terület (a kártyádon látszik)")} placeholder="e.g. Belváros · Nagyerdő" value={f.area} onChange={set("area")} />
+      <Field label={L("Service area (shown on your card)", "Ellátott terület (a kártyádon látszik)")} placeholder={L("e.g. Belváros · Nagyerdő", "pl. Belváros · Nagyerdő")} value={f.area} onChange={set("area")} />
 
       {/* ── 4.6 the circle that actually decides who can book you ── */}
       <div style={{ marginBottom: 14 }}>
@@ -4380,8 +4628,35 @@ function CompanySettings() {
           <input type="range" min="1" max="50" value={f.service_radius_km || 10}
             onChange={(e) => setF((p) => ({ ...p, service_radius_km: Number(e.target.value) }))}
             style={{ flex: 1, accentColor: C.navy }} />
-          <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, minWidth: 52, textAlign: "right" }}>{f.service_radius_km || 10} km</span>
+          <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, minWidth: 62, textAlign: "right" }}>
+            {Number(f.service_radius_km) >= CITY_WIDE_KM ? L("Whole city", "Egész város") : `${f.service_radius_km || 10} km`}
+          </span>
         </div>
+
+        {/* Most companies do not think in kilometres — they think "we cover
+            Debrecen". Dragging a slider to the number that happens to contain a
+            whole city is guesswork, and guessing low quietly hides you from
+            customers you would happily have driven to. */}
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          {[{ km: 5, label: L("Just nearby", "Csak a közelben") },
+            { km: 15, label: L("Wider area", "Tágabb környék") },
+            { km: CITY_WIDE_KM, label: `🏙️ ${L("Whole city and around", "Az egész város és környéke")}` }].map((o) => {
+            const on = Number(f.service_radius_km || 10) === o.km;
+            return (
+              <button key={o.km} onClick={() => setF((p) => ({ ...p, service_radius_km: o.km }))}
+                style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: "none", cursor: "pointer",
+                         background: on ? C.navy : C.bg, color: on ? "#fff" : C.navySoft }}>
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+        {Number(f.service_radius_km) >= CITY_WIDE_KM && (
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 8, lineHeight: 1.5 }}>
+            {L("Anyone in the city and the surrounding villages can book you. Turn this down if you would rather stay close to your base.",
+               "A városban és a környező településeken bárki foglalhat nálad. Vedd lejjebb, ha inkább a bázisod közelében maradnál.")}
+          </div>
+        )}
       </div>
 
       {/* ── 5.4 What you need the customer to have ready ── */}
@@ -4414,16 +4689,16 @@ function CompanySettings() {
 
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>Business details (for verification & invoicing)</div>
       <Field label={L("Tax number (adószám)", "Adószám")} placeholder="12345678-1-42"
-        hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? "✅ Valid" : "❌ Invalid format — 12345678-1-42") : undefined}
+        hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? L("✅ Valid", "✅ Érvényes") : L("❌ Invalid format — 12345678-1-42", "❌ Hibás formátum — 12345678-1-42")) : undefined}
         value={f.tax_id} onChange={set("tax_id")} />
       <Field label={L("Company registration no.", "Cégjegyzékszám")} placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
       <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contact_phone} onChange={(v) => setF((p) => ({ ...p, contact_phone: v }))} />
       <JobHistory />
       <PayoutSetup />
-      <Field label="Google Place ID (optional)" hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
+      <Field label={L("Google Place ID (optional)", "Google Place ID (nem kötelező)")} hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
       <DocUpload
         label={L("Verification documents", "Igazoló dokumentumok")}
-        hint="Cégkivonat, tax certificate, insurance — reviewed by the Cleano admin."
+        hint={L("Company extract, tax certificate, insurance — reviewed by the Cleano admin.", "Cégkivonat, adóigazolás, biztosítás — a Cleano adminja ellenőrzi.")}
         docs={f.documents || []}
         onChange={(docs) => setF({ ...f, documents: docs })}
       />
@@ -4651,15 +4926,15 @@ function CompanySettings() {
         </div>
       </div>
 
-      <Btn full disabled={busy} onClick={save}>{busy ? "Saving…" : "Save company profile"}</Btn>
+      <Btn full disabled={busy} onClick={save}>{busy ? L("Saving…", "Mentés…") : L("Save company profile", "Cégprofil mentése")}</Btn>
 
       <div style={{ marginTop: 22, padding: "14px 16px", background: co?.is_approved ? C.mintSoft : C.amberSoft, borderRadius: 16 }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 5 }}>
-          {co?.is_approved ? "✅ Approved & live" : "⏳ Pending admin approval"}
+          {co?.is_approved ? L("✅ Approved & live", "✅ Jóváhagyva és élő") : L("⏳ Pending admin approval", "⏳ Adminra vár")}
         </div>
         <div style={{ fontFamily: B, fontSize: 11.5, color: co?.is_approved ? C.greenDeep : C.amber, lineHeight: 1.6 }}>
           {co?.is_approved
-            ? "Your company is verified and visible to customers in search."
+            ? L("Your company is verified and visible to customers in search.", "A céged ellenőrzött, és megjelenik az ügyfelek keresésében.")
             : "Your documents are under review. Set everything up now — customers will see you as soon as an admin approves your account."}
         </div>
       </div>
@@ -4781,7 +5056,7 @@ function AnnouncementComposer() {
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder={L("Title — e.g. 20% off your first clean this week", "Cím — pl. 20% kedvezmény az első takarításra a héten")} style={{ ...inputS, marginBottom: 8 }} />
           <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} rows={3} placeholder={L("Message (optional)", "Üzenet (nem kötelező)")} style={{ ...inputS, resize: "vertical", marginBottom: 10 }} />
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 8 }}>Sending to: <b style={{ color: C.ink }}>{describe()}</b></div>
-          <Btn full onClick={preview} disabled={busy || !title.trim()}>{busy ? "Checking…" : "Review before sending"}</Btn>
+          <Btn full onClick={preview} disabled={busy || !title.trim()}>{busy ? L("Checking…", "Ellenőrzés…") : L("Review before sending", "Ellenőrzés küldés előtt")}</Btn>
         </div>
       )}
 
@@ -4795,7 +5070,7 @@ function AnnouncementComposer() {
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
               <Btn full ghost onClick={() => setConfirm(null)}>{L("Cancel", "Mégse")}</Btn>
-              <Btn full onClick={send} disabled={busy}>{busy ? "Sending…" : "Send now"}</Btn>
+              <Btn full onClick={send} disabled={busy}>{busy ? L("Sending…", "Küldés…") : L("Send now", "Küldés most")}</Btn>
             </div>
           </div>
         </div>
@@ -4825,12 +5100,12 @@ function AdminDashboard() {
 
   const s = adminStats;
   const kpis = [
-    { k: "Total users", v: s.totalUsers, icon: "👤" },
+    { k: L("Total users", "Összes felhasználó"), v: s.totalUsers, icon: "👤" },
     { k: "Companies", v: s.totalCompanies, icon: "🏢" },
     { k: "Bookings", v: s.totalBookings, icon: "📅" },
     { k: "Completed", v: s.completedBookings, icon: "✅" },
-    { k: "Active now", v: s.activeBookings, icon: "🔥" },
-    { k: "Platform revenue", v: huf(s.totalRevenue || 0), icon: "💰" },
+    { k: L("Active now", "Most aktív"), v: s.activeBookings, icon: "🔥" },
+    { k: L("Platform revenue", "Platform bevétel"), v: huf(s.totalRevenue || 0), icon: "💰" },
   ];
 
   const maxRev = Math.max(...(adminRevenue || []).map((r) => r.revenue || 0), 1);
@@ -4946,14 +5221,14 @@ function AdminCompanies() {
             <button onClick={async () => {
               const res = await adminUpdateCompany(co.id, { is_approved: !co.is_approved });
               if (res?.error) toast(res.error, "error");
-              else { toast(co.is_approved ? "Company suspended" : "Company approved"); adminFetchAllCompanies(); }
+              else { toast(co.is_approved ? L("Company suspended", "Cég felfüggesztve") : L("Company approved", "Cég jóváhagyva")); adminFetchAllCompanies(); }
             }} style={{ marginLeft: "auto", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${co.is_approved ? C.coral : C.green}`, background: C.card, color: co.is_approved ? C.coral : C.green, cursor: "pointer" }}>
               {co.is_approved ? "Suspend" : "Approve"}
             </button>
             <button onClick={async () => {
               const res = await adminUpdateCompany(co.id, { is_listed: !co.is_listed });
               if (res?.error) toast(res.error, "error");
-              else { toast(co.is_listed ? "Company unlisted" : "Company listed"); adminFetchAllCompanies(); }
+              else { toast(co.is_listed ? L("Company unlisted", "Cég levéve a listáról") : L("Company listed", "Cég listázva")); adminFetchAllCompanies(); }
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               {co.is_listed ? "Unlist" : "Re-list"}
             </button>
@@ -5034,11 +5309,11 @@ function ComplaintThread({ complaint, role, close, onChange }) {
         <div style={{ background: C.card, borderRadius: 16, padding: 14, marginBottom: 12 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Who replies to the customer?", "Ki válaszol az ügyfélnek?")}</div>
           <div style={{ display: "flex", gap: 8 }}>
-            {[["admin", "🛡️ Cleano handles it"], ["company", "🏢 Hand to the company"]].map(([id, label]) => (
+            {[["admin", L("🛡️ Cleano handles it", "🛡️ A Cleano intézi")], ["company", L("🏢 Hand to the company", "🏢 Átadás a cégnek")]].map(([id, label]) => (
               <button key={id} onClick={async () => {
                 const r = await setComplaintHandler(complaint.id, id);
                 if (r?.error) toast(r.error, "error");
-                else { setHandledBy(id); toast(id === "company" ? "Handed to the company" : "Cleano is handling it"); onChange && onChange(); }
+                else { setHandledBy(id); toast(id === "company" ? L("Handed to the company", "Átadva a cégnek") : L("Cleano is handling it", "A Cleano intézi")); onChange && onChange(); }
               }} style={{ flex: 1, fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "9px 10px", borderRadius: 12, cursor: "pointer",
                 border: handledBy === id ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`,
                 background: handledBy === id ? C.navyChip : C.bg, color: handledBy === id ? C.navy : C.inkSoft }}>{label}</button>
@@ -5049,7 +5324,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
           )}
           {coAction && (
             <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 8 }}>
-              Company chose: <b style={{ color: C.ink }}>{coAction === "callback" ? "call the customer back" : "solve it in chat"}</b>
+              Company chose: <b style={{ color: C.ink }}>{coAction === "callback" ? L("call the customer back", "visszahívja az ügyfelet") : L("solve it in chat", "chatben oldja meg")}</b>
             </div>
           )}
         </div>
@@ -5059,10 +5334,10 @@ function ComplaintThread({ complaint, role, close, onChange }) {
       {role === "company" && (complaint.handled_by === "company" || handledBy === "company") && (
         <div style={{ background: coAction ? C.mintSoft : C.amberSoft, borderRadius: 16, padding: 14, marginBottom: 12 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 4 }}>
-            {coAction ? (coAction === "callback" ? "You chose to call the customer" : "You're solving this in chat") : "Cleano passed this report to you"}
+            {coAction ? (coAction === "callback" ? L("You chose to call the customer", "Azt választottad, hogy felhívod az ügyfelet") : L("You're solving this in chat", "Ezt chatben oldod meg")) : L("Cleano passed this report to you", "A Cleano átadta neked ezt a bejelentést")}
           </div>
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
-            {coAction ? "You can still reply here at any time." : "Solve it right here in the chat, or call the customer back and report the outcome afterwards."}
+            {coAction ? L("You can still reply here at any time.", "Bármikor válaszolhatsz itt.") : L("Solve it right here in the chat, or call the customer back and report the outcome afterwards.", "Oldd meg itt a chatben, vagy hívd vissza az ügyfelet, és utána számolj be az eredményről.")}
           </div>
           {!coAction && (
             <>
@@ -5084,7 +5359,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
       {status !== "resolved" ? (
 
         <div style={{ display: "flex", gap: 8, marginBottom: (role === "admin" || role === "company") ? 14 : 0 }}>
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a reply…" style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={L("Write a reply…", "Írj választ…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
           <Btn small mint disabled={!text.trim()} onClick={send}>Send</Btn>
         </div>
       ) : (
@@ -5119,7 +5394,7 @@ function CompanyComplaints() {
   React.useEffect(() => { fetchMyComplaints().finally(() => setBusy(false)); }, []);
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
   const list = myComplaints || [];
-  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: "To resolve", bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
+  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: L("To resolve", "Megoldásra vár"), bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Issues to resolve", "Megoldandó ügyek")}</div>
@@ -5133,7 +5408,7 @@ function CompanyComplaints() {
           </div>
           <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>{c.user_name || "Customer"} · {new Date(c.created_at).toLocaleDateString()}</div>
           {c.body && <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 8, background: C.bg, borderRadius: 11, padding: "8px 11px", lineHeight: 1.55 }}>{c.body}</div>}
-          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>{c.status === "resolved" ? "View thread" : "Open & resolve →"}</Btn>
+          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>{c.status === "resolved" ? L("View thread", "Beszélgetés megnyitása") : L("Open & resolve →", "Megnyitás és megoldás →")}</Btn>
         </div>
       ))}
       {open && <ComplaintThread complaint={open} role="company" close={() => { setOpen(null); fetchMyComplaints(); }} onChange={fetchMyComplaints} />}
@@ -5146,7 +5421,7 @@ function CustomerReports({ close }) {
   const [open, setOpen] = React.useState(null);
   React.useEffect(() => { fetchMyComplaints(); }, []);
   const list = myComplaints || [];
-  const stat = { open: "🟠 Open", in_progress: "🔵 In progress", resolved: "🟢 Resolved" };
+  const stat = { open: L("🟠 Open", "🟠 Nyitott"), in_progress: L("🔵 In progress", "🔵 Folyamatban"), resolved: L("🟢 Resolved", "🟢 Megoldva") };
   return (
     <Sheet title={`🛟 ${L("My reports", "Bejelentéseim")}`} close={close}>
       {list.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("You haven't filed any reports.", "Még nem küldtél be bejelentést.")}</div>}
@@ -5242,7 +5517,7 @@ function CustomerReportQueue() {
   if (!list || !list.length) return null;
   const open = list.filter((r) => r.status === "open");
 
-  const CAT = { abusive: "Abusive or threatening", absent: "Nobody there / no access", unsafe: "Unsafe conditions", payment: "Payment problem", other: "Something else" };
+  const CAT = { abusive: L("Abusive or threatening", "Bántó vagy fenyegető"), absent: L("Nobody there / no access", "Nem volt otthon senki / nem lehetett bemenni"), unsafe: L("Unsafe conditions", "Nem biztonságos körülmények"), payment: L("Payment problem", "Fizetési probléma"), other: L("Something else", "Egyéb") };
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -5287,13 +5562,13 @@ function CustomerReportQueue() {
         <div onClick={() => setActing(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>
-              {acting.decision === "reviewed" ? "Record what you did" : "Close without action"}
+              {acting.decision === "reviewed" ? L("Record what you did", "Rögzítsd, mit tettél") : L("Close without action", "Lezárás intézkedés nélkül")}
             </div>
             <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
               Your note is kept permanently against this report and signed with your name.
             </div>
             <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
-              placeholder={acting.decision === "reviewed" ? "e.g. called the customer, warned them, company reassigned" : "e.g. spoke to both sides, misunderstanding"}
+              placeholder={acting.decision === "reviewed" ? L("e.g. called the customer, warned them, company reassigned", "pl. felhívtuk az ügyfelet, figyelmeztettük, a cég új takarítót adott") : L("e.g. spoke to both sides, misunderstanding", "pl. mindkét féllel beszéltünk, félreértés volt")}
               style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
               <Btn full ghost onClick={() => setActing(null)}>Cancel</Btn>
@@ -5319,7 +5594,7 @@ function AdminComplaints() {
   React.useEffect(() => { if (!adminComplaints) adminFetchComplaints().finally(() => setBusy(false)); }, []);
   if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
   const list = adminComplaints || [];
-  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: "In progress", bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
+  const stat = { open: { l: "Open", bg: C.amberSoft, c: C.amber }, in_progress: { l: L("In progress", "Folyamatban"), bg: C.navyChip, c: C.navySoft }, resolved: { l: "Resolved", bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 14px" }}>Complaints ({list.filter(c => c.status !== "resolved").length} open)</div>
@@ -5447,7 +5722,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
                       <input type="range" min="1" max="200" value={f.service_radius_km} onChange={(e) => setF({ ...f, service_radius_km: Number(e.target.value) })} style={{ flex: 1, accentColor: C.navy }} />
                       <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, minWidth: 48, textAlign: "right" }}>{f.service_radius_km} km</span>
                     </div>
-                    {[["is_approved", "Approved"], ["is_listed", "Listed publicly"]].map(([k, label]) => (
+                    {[["is_approved", L("Approved", "Jóváhagyva")], ["is_listed", L("Listed publicly", "Nyilvánosan listázva")]].map(([k, label]) => (
                       <label key={k} style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 0", cursor: "pointer" }}>
                         <input type="checkbox" checked={!!f[k]} onChange={(e) => setF({ ...f, [k]: e.target.checked })} style={{ width: 17, height: 17, accentColor: C.navy }} />
                         <span style={{ fontFamily: B, fontWeight: 700, fontSize: 12, color: C.ink }}>{label}</span>
@@ -5559,7 +5834,7 @@ function AdminUsers() {
               )}
               <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 3 }}>
                 {u.customer_type ? u.customer_type + " · " : ""}
-                {u.email_verified ? "email ✓ " : ""}
+                {u.email_verified ? L("email ✓ ", "e-mail ✓ ") : ""}
                 {L("joined", "csatlakozott")} {(() => { try { return new Date(u.created_at).toLocaleDateString(LOC()); } catch { return ""; } })()}
               </div>
             </div>
@@ -5619,15 +5894,15 @@ function AdminUsers() {
               <button onClick={async () => {
                 const res = await adminUpdateUser(u.id, { makeAdmin: u.role !== "admin" });
                 if (res?.error) toast(res.error, "error");
-                else { toast(u.role !== "admin" ? "Admin access granted" : "Admin access removed"); adminFetchUsers(); }
+                else { toast(u.role !== "admin" ? L("Admin access granted", "Admin jogosultság megadva") : L("Admin access removed", "Admin jogosultság visszavonva")); adminFetchUsers(); }
               }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${u.role === "admin" ? C.coral : C.navySoft}`, background: C.card, color: u.role === "admin" ? C.coral : C.navySoft, cursor: "pointer" }}>
-                {u.role === "admin" ? "🛡️ Remove admin" : "🛡️ Make admin"}
+                {u.role === "admin" ? L("🛡️ Remove admin", "🛡️ Admin visszavonása") : L("🛡️ Make admin", "🛡️ Adminná tesz")}
               </button>
             )}
             {(u.role !== "admin" || isCeo) && !u.is_super && <button onClick={async () => {
               const res = await adminUpdateUser(u.id, { is_active: !u.is_active });
               if (res?.error) toast(res.error, "error");
-              else { toast(u.is_active === false ? "User activated" : "User deactivated"); adminFetchUsers(); }
+              else { toast(u.is_active === false ? L("User activated", "Felhasználó aktiválva") : L("User deactivated", "Felhasználó letiltva")); adminFetchUsers(); }
             }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${u.is_active === false ? C.green : C.coral}`, background: C.card, color: u.is_active === false ? C.green : C.coral, cursor: "pointer" }}>
               {u.is_active === false ? "Activate" : "Deactivate"}
             </button>}
@@ -5736,7 +6011,23 @@ function AdminLog() {
   React.useEffect(() => { if (isLive) adminFetchLog(); }, []);
   const rows = adminLog || [];
   const fmt = (ts) => { try { return new Date(ts).toLocaleString(); } catch { return String(ts); } };
-  const LBL = { company_approved: "✅ Approved company", company_rejected: "⛔ Rejected company", company_listed: "👁️ Listed company", company_unlisted: "🚫 Unlisted company", student_approved: "🎓 Approved student", student_rejected: "⛔ Rejected student", student_pending: "↩️ Reset student to pending", admin_granted: "🛡️ Granted admin access", admin_revoked: "🛡️ Revoked admin access", user_activated: "🔓 Reactivated account", user_deactivated: "🔒 Deactivated account", complaint_resolved: "🛟 Resolved complaint", complaint_in_progress: "🛟 Complaint in progress", complaint_open: "🛟 Reopened complaint", account_deleted: "🗑️ Deleted account" };
+  const LBL = {
+    company_approved: L("✅ Approved company", "✅ Cég jóváhagyva"),
+    company_rejected: L("⛔ Rejected company", "⛔ Cég elutasítva"),
+    company_listed: L("👁️ Listed company", "👁️ Cég listázva"),
+    company_unlisted: L("🚫 Unlisted company", "🚫 Cég levéve a listáról"),
+    student_approved: L("🎓 Approved student", "🎓 Diák jóváhagyva"),
+    student_rejected: L("⛔ Rejected student", "⛔ Diák elutasítva"),
+    student_pending: L("↩️ Reset student to pending", "↩️ Diák visszaállítva függőbe"),
+    admin_granted: L("🛡️ Granted admin access", "🛡️ Admin jog megadva"),
+    admin_revoked: L("🛡️ Revoked admin access", "🛡️ Admin jog visszavonva"),
+    user_activated: L("🔓 Reactivated account", "🔓 Fiók újraaktiválva"),
+    user_deactivated: L("🔒 Deactivated account", "🔒 Fiók letiltva"),
+    complaint_resolved: L("🛟 Resolved complaint", "🛟 Panasz megoldva"),
+    complaint_in_progress: L("🛟 Complaint in progress", "🛟 Panasz folyamatban"),
+    complaint_open: L("🛟 Reopened complaint", "🛟 Panasz újranyitva"),
+    account_deleted: L("🗑️ Deleted account", "🗑️ Fiók törölve"),
+  };
   return (
     <div style={{ padding: "16px 18px 40px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginBottom: 4 }}>{L("Decision log", "Döntési napló")}</div>
@@ -5950,7 +6241,7 @@ function AdminPanel({ tab }) {
           <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{L("Admin panel", "Admin felület")}</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? "CEO admin · Cleano Magyarország" : "Company review team"}</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? L("CEO admin · Cleano Hungary", "CEO admin · Cleano Magyarország") : L("Company review team", "Cégellenőrző csapat")}</div>
           </div>
           <button onClick={logout} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 99, padding: "7px 14px", fontFamily: B, fontWeight: 700, fontSize: 11, color: "#C9D2F5", cursor: "pointer" }}>
             🚪 Log out
@@ -6068,7 +6359,7 @@ function Shell() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 16px", background: C.navyDeep }}>
             <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.mint, letterSpacing: .8 }}>🧪 DEMO</span>
             <select value={role} onChange={(e) => { demoSwitchRole(e.target.value); setTab("home"); }}
-              title="Demo — switch role"
+              title={L("Demo — switch role", "Demó — szerepváltás")}
               style={{ background: "rgba(94,230,168,.14)", color: C.mint, border: `1px solid ${C.mint}55`, borderRadius: 9, fontFamily: B, fontSize: 10.5, fontWeight: 700, padding: "4px 6px", cursor: "pointer", outline: "none" }}>
               <option value="customer" style={{ color: "#111" }}>⇄ Customer</option>
               <option value="employee" style={{ color: "#111" }}>⇄ Cleaner</option>

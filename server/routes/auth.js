@@ -34,7 +34,28 @@ function safeUser(u) {
 
 /* POST /api/auth/register */
 router.post("/register", async (req, res) => {
-  if (!rateLimit("reg:" + ipOf(req), 6, 60 * 60e3)) return res.status(429).json({ error: "Too many registrations from this network — try again later" });
+  /* Six signups per IP per hour was far too tight, and it fails in exactly the
+     places Cleano is trying to grow.
+
+     A university dormitory in Debrecen puts hundreds of students behind one
+     address. Worse, mobile carriers use carrier-grade NAT — every Telekom or
+     Vodafone customer in a region can share a single public IP. Six an hour
+     across all of them meant real students hitting "try again later" for
+     something a stranger did, and simply not signing up. Silent lost growth,
+     invisible in any log.
+
+     So the IP limit is now generous, and the tight limits sit where abuse
+     actually shows: one person hammering one email or one phone number. That
+     is what stops account farming; blocking a shared IP never did. */
+  const ip = ipOf(req);
+  const emailKey = String(req.body?.email || "").toLowerCase().trim();
+  const phoneKey = String(req.body?.phone || "").replace(/[^0-9+]/g, "");
+  if (!rateLimit("reg-ip:" + ip, 40, 60 * 60e3))
+    return res.status(429).json({ error: "Too many registrations from this network — try again later" });
+  if (emailKey && !rateLimit("reg-mail:" + emailKey, 4, 60 * 60e3))
+    return res.status(429).json({ error: "Too many attempts for this email — try again later" });
+  if (phoneKey && !rateLimit("reg-phone:" + phoneKey, 4, 60 * 60e3))
+    return res.status(429).json({ error: "Too many attempts for this phone number — try again later" });
   const { email, password, role, fullName, customerType, inviteCode, companyName, taxId, regNumber, contactPhone, documents, address, city, phone, termsAccepted } = req.body;
   const normPhone = phone ? String(phone).replace(/[^0-9+]/g, "").slice(0, 20) : null;
   const docsJson = JSON.stringify(Array.isArray(documents) ? documents.slice(0, 6) : []);
@@ -53,8 +74,15 @@ router.post("/register", async (req, res) => {
   let phoneVerified = false, emailVerified = false;
   if (req.body.phoneToken && phone && verifySignupToken(req.body.phoneToken, "phone", phone)) phoneVerified = true;
   if (req.body.emailToken && email && verifySignupToken(req.body.emailToken, "email", email)) emailVerified = true;
-  if (needProof && !phoneVerified && !emailVerified)
-    return res.status(400).json({ error: "Please verify your phone number before creating the account." });
+  /* Both, not either. The signup form now proves each field separately and
+     locks it, so accepting one proof would leave the other unchecked while the
+     screen implied otherwise. A company has no personal phone on the form, so
+     only its email is demanded. */
+  if (needProof) {
+    if (!emailVerified) return res.status(400).json({ error: "Please verify your email address before creating the account." });
+    if (role !== "company" && !phoneVerified)
+      return res.status(400).json({ error: "Please verify your phone number before creating the account." });
+  }
   if (["customer", "employee"].includes(role)) {
     if (!normPhone || normPhone.replace(/[^0-9]/g, "").length < 8) return res.status(400).json({ error: "A valid phone number is required" });
     const phoneTaken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true", [normPhone]);
@@ -145,7 +173,16 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
-  if (!rateLimit("login:" + ipOf(req), 10, 5 * 60e3) || !rateLimit("login:" + String(email).toLowerCase(), 8, 5 * 60e3))
+  /* Ten attempts per IP per five minutes had the same flaw as the old signup
+     limit, and it bites harder: people log in every day, and a cleaning team
+     arriving on the same wifi would lock each other out of their own accounts.
+     A mobile carrier is one address for a whole region.
+
+     The per-EMAIL limit is what actually stops a brute-force attempt, and it
+     stays tight. The per-IP one is a blunt second line against someone trying
+     many different accounts from one place, so it only needs to be low enough
+     to make that slow — not low enough to catch a family. */
+  if (!rateLimit("login-ip:" + ipOf(req), 60, 5 * 60e3) || !rateLimit("login:" + String(email).toLowerCase(), 8, 5 * 60e3))
     return res.status(429).json({ error: "Too many attempts — wait a few minutes and try again" });
 
   try {
@@ -288,7 +325,14 @@ router.delete("/me", requireAuth, async (req, res) => {
 router.post("/forgot", async (req, res) => {
   const { email } = req.body || {};
   if (!email) return res.status(400).json({ error: "Email required" });
-  if (!rateLimit("forgot:" + ipOf(req), 5, 15 * 60e3)) return res.status(429).json({ error: "Too many attempts — try later" });
+  /* Same reasoning. The tight limit belongs on the address being reset — that
+     is the thing an attacker would hammer — not on the network it came from. */
+  if (!rateLimit("forgot-ip:" + ipOf(req), 25, 15 * 60e3)) return res.status(429).json({ error: "Too many attempts — try later" });
+  {
+    const fEmail = String(req.body?.email || "").toLowerCase().trim();
+    if (fEmail && !rateLimit("forgot-mail:" + fEmail, 4, 15 * 60e3))
+      return res.status(429).json({ error: "Too many attempts for this email — try later" });
+  }
   if (!mailerConfigured()) return res.status(503).json({ error: "Password reset by email is not enabled yet — contact support" });
   try {
     const u = await query("SELECT id, full_name FROM users WHERE email = $1 AND is_active = true", [String(email).toLowerCase()]);
@@ -313,7 +357,14 @@ router.post("/reset", async (req, res) => {
   const { email, code, newPassword } = req.body || {};
   if (!email || !code || !newPassword) return res.status(400).json({ error: "Email, code and new password required" });
   if (String(newPassword).length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
-  if (!rateLimit("reset:" + ipOf(req), 8, 15 * 60e3)) return res.status(429).json({ error: "Too many attempts — try later" });
+  /* A reset token is single-use and short-lived, so guessing it is the attack.
+     Limit per token, generously per network. */
+  if (!rateLimit("reset-ip:" + ipOf(req), 40, 15 * 60e3)) return res.status(429).json({ error: "Too many attempts — try later" });
+  {
+    const tok = String(req.body?.token || "").slice(0, 64);
+    if (tok && !rateLimit("reset-tok:" + tok, 6, 15 * 60e3))
+      return res.status(429).json({ error: "Too many attempts — request a new link" });
+  }
   try {
     const hash = await bcrypt.hash(newPassword, 10);
     const r = await query(

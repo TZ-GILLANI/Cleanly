@@ -320,10 +320,10 @@ export function StoreProvider({ children }) {
 
   /* ════════════ AUTH ════════════ */
 
-  const signupCustomer = async ({ name, email, password, custType, address, phone, documents }) => {
+  const signupCustomer = async ({ name, email, password, custType, address, phone, documents, phoneToken, emailToken }) => {
     if (!isApiMode) { setSession({ role: "customer", userId: "demo-customer", name, custType, companyId: null, address: address || "" }); return {}; }
     try {
-      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents, termsAccepted: true } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "customer", fullName: name, customerType: custType || "resident", address, phone, documents, termsAccepted: true, phoneToken, emailToken } });
       if (resp.pendingApproval) return { pending: true };
       const { token, user } = resp;
       setToken(token);
@@ -333,10 +333,10 @@ export function StoreProvider({ children }) {
     } catch (e) { return { error: e.message }; }
   };
 
-  const signupCompany = async ({ companyName, name, email, password, taxId, regNumber, contactPhone, documents, city }) => {
+  const signupCompany = async ({ companyName, name, email, password, taxId, regNumber, contactPhone, documents, city, phoneToken, emailToken }) => {
     if (!isApiMode) { setSession({ role: "company", userId: "owner1", name: name || "Bálint Erdős", custType: null, companyId: "co1" }); return {}; }
     try {
-      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "company", fullName: name || companyName, companyName, taxId, regNumber, contactPhone, documents, city, termsAccepted: true } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "company", fullName: name || companyName, companyName, taxId, regNumber, contactPhone, documents, city, termsAccepted: true, phoneToken, emailToken } });
       if (resp.pendingApproval) return { pending: true };
       const { token, user } = resp;
       setToken(token);
@@ -346,10 +346,17 @@ export function StoreProvider({ children }) {
     } catch (e) { return { error: e.message }; }
   };
 
-  const signupEmployee = async ({ name, email, password, code, documents, address, phone }) => {
+  const signupEmployee = async ({ name, email, password, code, documents, address, phone, phoneToken, emailToken }) => {
     if (!isApiMode) { setSession({ role: "employee", userId: "e1", name: "Eszter Kovács", custType: null, companyId: "co1" }); return {}; }
     try {
-      const { token, user } = await api("/auth/register", { method: "POST", body: { email, password, role: "employee", fullName: name, inviteCode: code, documents, address, phone, termsAccepted: true } });
+      const resp = await api("/auth/register", { method: "POST", body: { email, password, role: "employee", fullName: name, inviteCode: code, documents, address, phone, termsAccepted: true, phoneToken, emailToken } });
+      /* A cleaner cannot sign straight in: the company owner has to approve them
+         first, so the server answers { pendingApproval: true } and sends no user.
+         The customer and company paths both checked for this; this one did not,
+         and went on to read user.role off undefined — which is why signing up as
+         a cleaner failed with "undefined is not an object" every single time. */
+      if (resp.pendingApproval) return { pending: true };
+      const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
       try { await loadAllData(sess); } catch (e) { setToken(null); return { error: "Could not load your data — " + e.message }; }
@@ -768,6 +775,21 @@ export function StoreProvider({ children }) {
   };
 
   /* ── Phone verification (Twilio, dormant until configured) ── */
+  /* ── Verifying a phone or email BEFORE the account exists ────────────────
+     The endpoints were built and never called by anything. The old flow made
+     the account first and nagged afterwards, which meant unverified accounts
+     existed, and a typo in the number could only be fixed by an admin. */
+  const signupCodeSend = async ({ phone, email, channel }) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { return await api("/verify/signup/start", { method: "POST", body: { phone, email, channel } }); }
+    catch (e) { return { error: e.message }; }
+  };
+  const signupCodeCheck = async ({ phone, email, code, ticket }) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { return await api("/verify/signup/check", { method: "POST", body: { phone, email, code, ticket } }); }
+    catch (e) { return { error: e.message }; }
+  };
+
   const verifyConfig = async () => {
     if (!isApiMode) return { enabled: false };
     try { return await api("/verify/config"); } catch { return { enabled: false }; }
@@ -998,6 +1020,7 @@ export function StoreProvider({ children }) {
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
+    signupCodeSend, signupCodeCheck,
     forgotPassword, resetPassword,
     connectStatus, connectOnboard, connectDashboard,
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,

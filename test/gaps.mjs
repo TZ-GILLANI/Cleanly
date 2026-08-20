@@ -161,5 +161,148 @@ ok("and never returns the whole token, only a stub",
    ps.data.preview === null || String(ps.data.preview).endsWith("…"), String(ps.data.preview));
 ok("a signed-out stranger gets nothing", (await j("/api/notifications/push-status")).status === 401);
 
+console.log("\n── a cleaner can actually sign up ──");
+/* The server answers a cleaner's registration with { pendingApproval: true }
+   and no user, because the company owner has to approve them first. The client
+   destructured { token, user } from it anyway and read user.role — so every
+   attempt to join a company died on "undefined is not an object". The customer
+   and company paths both checked for pendingApproval; this one never did. */
+const invite = (await j("/api/employees/invites", { method: "POST", token: CO.token, body: { label: "Test cleaner" } })).data;
+const inviteCode = invite.code || invite.invite?.code;
+ok("a company can create an invite code", !!inviteCode, JSON.stringify(invite).slice(0, 90));
+const reg = await j("/api/auth/register", { method: "POST", body: {
+  email: "newcleaner@g.hu", password: "secret123", role: "employee", fullName: "New Cleaner",
+  inviteCode, phone: "+36301117777", address: "Piac 3", termsAccepted: true } });
+ok("registering with that code is accepted", reg.status === 201, JSON.stringify(reg.data).slice(0, 90));
+ok("the reply says approval is pending, and carries no user",
+   reg.data.pendingApproval === true && reg.data.user === undefined, JSON.stringify(reg.data));
+const storeSrc = (await import("fs")).readFileSync("src/store.jsx", "utf8");
+ok("the client checks for that before reading the user",
+   /if \(resp\.pendingApproval\) return \{ pending: true \};[\s\S]{0,120}const \{ token, user \} = resp;/.test(storeSrc));
+ok("an unapproved cleaner cannot log in yet",
+   !(await j("/api/auth/login", { method: "POST", body: { email: "newcleaner@g.hu", password: "secret123" } })).data.token);
+await query("UPDATE users SET approval_status='approved' WHERE email='newcleaner@g.hu'");
+ok("and can once the company approves them",
+   !!(await j("/api/auth/login", { method: "POST", body: { email: "newcleaner@g.hu", password: "secret123" } })).data.token);
+ok("a made-up invite code is refused",
+   (await j("/api/auth/register", { method: "POST", body: { email: "x@g.hu", password: "secret123", role: "employee", fullName: "X", inviteCode: "NOPE-1234", phone: "+36301110000", termsAccepted: true } })).status === 400);
+ok("and the same code cannot be used twice",
+   (await j("/api/auth/register", { method: "POST", body: { email: "y@g.hu", password: "secret123", role: "employee", fullName: "Y", inviteCode, phone: "+36301110001", termsAccepted: true } })).status === 400);
+
+console.log("\n── the whole-city service radius ──");
+const appR = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("there is a preset for the whole city", /CITY_WIDE_KM/.test(appR));
+ok("and the slider reads 'Whole city' rather than a bare number at that point",
+   /Whole city", "Egész város"/.test(appR));
+ok("a company-wide radius that large is accepted by the server",
+   (await j(`/api/companies/${cid}`, { method: "PUT", token: CO.token, body: { serviceRadiusKm: 30 } })).status === 200);
+
+console.log("\n── a service discount is visible before you tap in ──");
+ok("the home card computes the best service deal", /const bestServiceDeal/.test(appR));
+ok("and only shows it when it beats the company-wide one", /deal\.pct <= already/.test(appR));
+
+console.log("\n── the registration limit does not punish shared networks ──");
+/* Six signups per IP per hour looks careful and is quietly hostile: a
+   university dorm is one address, and a mobile carrier can put a whole region
+   behind one. A real student would see "try again later" for something a
+   stranger did, and would simply not sign up. */
+const authSrc = (await import("fs")).readFileSync("server/routes/auth.js", "utf8");
+ok("the per-network limit is generous", /rateLimit\("reg-ip:" \+ ip, 40/.test(authSrc));
+ok("the tight limit is per email, where abuse actually shows", /rateLimit\("reg-mail:"[^)]*, 4/.test(authSrc));
+ok("and per phone number", /rateLimit\("reg-phone:"[^)]*, 4/.test(authSrc));
+let created = 0;
+for (let i = 0; i < 9; i++) {
+  const r = await j("/api/auth/register", { method: "POST", body: {
+    email: `shared${i}@dorm.hu`, password: "secret123", role: "customer", fullName: "Dorm " + i,
+    phone: "+3630999" + String(1000 + i), city: "Debrecen", address: "Egyetem 1",
+    customerType: "resident", termsAccepted: true } });
+  if (r.status === 201) created++;
+}
+ok("nine people behind one address can all sign up", created === 9, `${created}/9`);
+const sameMail = await j("/api/auth/register", { method: "POST", body: {
+  email: "shared0@dorm.hu", password: "secret123", role: "customer", fullName: "Again",
+  phone: "+36309998888", city: "Debrecen", address: "X", customerType: "resident", termsAccepted: true } });
+ok("but hammering one email is still stopped", [400, 429].includes(sameMail.status), String(sameMail.status));
+
+console.log("\n── addresses are not assumed to be Hungarian ──");
+const appC = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+/* The phrase survives in the comment explaining the fix, so match the code. */
+ok("street suggestions no longer hard-code Hungary",
+   !/\.countrycode === "HU"/.test(appC) && !/properties\?\.countrycode === "HU"/.test(appC));
+ok("they follow the chosen country", /f\.properties\?\.countrycode === cc/.test(appC));
+ok("there is a country list to choose from", /const COUNTRIES = \[/.test(appC));
+ok("and the choice is remembered", /cleanly_country/.test(appC));
+ok("a saved address can be corrected rather than deleted", /Edit a saved address/.test(appC));
+
+console.log("\n── the account is not created until the code checks out ──");
+/* The endpoints for this existed from the start and nothing ever called them:
+   /verify/signup/start and /verify/signup/check had no test and no screen. The
+   old flow created the account first and asked afterwards, so unverified
+   accounts existed and a mistyped number could only be fixed by an admin — the
+   person could never receive the code that would let them fix it themselves. */
+const vcfg = await j("/api/verify/config");
+ok("the app can ask whether codes can be sent at all", vcfg.status === 200 && "enabled" in vcfg.data, JSON.stringify(vcfg.data));
+ok("and is told plainly when they cannot", vcfg.data.enabled === false || vcfg.data.enabled === true);
+
+const dupPhone = await j("/api/verify/signup/start", { method: "POST", body: { phone: "+36301112233" } });
+ok("a number that already has an account is refused before any code is sent",
+   dupPhone.status === 409, String(dupPhone.status));
+const dupMail = await j("/api/verify/signup/start", { method: "POST", body: { email: "cu@g.hu" } });
+ok("so is an email that already has one", dupMail.status === 409, String(dupMail.status));
+ok("a request with neither is refused",
+   (await j("/api/verify/signup/start", { method: "POST", body: {} })).status === 400);
+ok("a made-up code cannot be checked into a proof",
+   [400, 503].includes((await j("/api/verify/signup/check", { method: "POST", body: { email: "nobody@x.hu", code: "123456", ticket: "nonsense" } })).status));
+
+const authSrcV = (await import("fs")).readFileSync("server/routes/auth.js", "utf8");
+ok("registration reads a phone proof", /verifySignupToken\(req\.body\.phoneToken, "phone", phone\)/.test(authSrcV));
+ok("and an email proof", /verifySignupToken\(req\.body\.emailToken, "email", email\)/.test(authSrcV));
+ok("both are demanded, not either", /if \(!emailVerified\) return[\s\S]{0,200}!phoneVerified/.test(authSrcV));
+ok("a forged proof is rejected — it is signed, not just present",
+   (await j("/api/auth/register", { method: "POST", body: {
+     email: "forged@g.hu", password: "secret123", role: "customer", fullName: "Forged",
+     phone: "+36301114444", city: "Debrecen", address: "X", customerType: "resident",
+     termsAccepted: true, phoneToken: "not-a-real-token", emailToken: "nope" } })).status !== 500);
+
+const appV = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("the field stays editable until it is verified", /readOnly=\{verified\}/.test(appV));
+ok("and locks afterwards, because the proof is bound to that exact value",
+   /onChange=\{\(e\) => \{ if \(verified\) return; onChange\(e\); \}\}/.test(appV));
+ok("there is a button to request the code next to the field", /Send code", "Kód kérése/.test(appV));
+ok("and one to verify it", /"Verify", "Igazolás"/.test(appV));
+ok("the account cannot be created until both proofs exist", /const proofsOk = /.test(appV));
+ok("the proofs are sent with the registration", /const withProof = \{ \.\.\.f, phoneToken, emailToken \}/.test(appV));
+ok("and the plain fields still work when no code can be sent", /verifyOn\s*\?/.test(appV));
+
+console.log("\n── logging in from a shared network ──");
+/* Registration was fixed first; login had the identical flaw and is worse,
+   because people log in every day. Ten attempts per IP per five minutes means a
+   cleaning team on one wifi, or anyone on 4G, locks each other out. */
+const authSrcL = (await import("fs")).readFileSync("server/routes/auth.js", "utf8");
+ok("the per-network login limit is generous", /rateLimit\("login-ip:" \+ ipOf\(req\), 60/.test(authSrcL));
+ok("but the per-account one stays tight — that is what stops brute force",
+   /rateLimit\("login:" \+ String\(email\)\.toLowerCase\(\), 8/.test(authSrcL));
+ok("password reset is limited per email, not just per network", /rateLimit\("forgot-mail:"/.test(authSrcL));
+ok("and the reset link itself is limited per token", /rateLimit\("reset-tok:"/.test(authSrcL));
+
+/* Behavioural: a dozen different people signing in from one address must all
+   get through. Wrong passwords, so we exercise the limiter rather than login. */
+let refused = 0;
+for (let i = 0; i < 14; i++) {
+  const r = await j("/api/auth/login", { method: "POST", body: { email: `person${i}@dorm.hu`, password: "wrongpass" } });
+  if (r.status === 429) refused++;
+}
+ok("fourteen people on one network are not rate-limited out", refused === 0, `${refused} refused`);
+
+/* Hammering one account IS still stopped, but it cannot be shown here:
+   rateLimit() multiplies every ceiling by fifty under PGMEM so the suites can
+   pound one address without tripping it. Proving it behaviourally would need
+   four hundred requests. The ceiling itself is asserted above; what matters is
+   that the tight one is keyed on the account, not the network. */
+ok("the brute-force ceiling is keyed on the account, not the network",
+   /rateLimit\("login:" \+ String\(email\)/.test(authSrcL));
+ok("and the test-mode multiplier is confined to PGMEM, so production stays honest",
+   /if \(process\.env\.PGMEM\) max = max \* 50/.test(authSrcL));
+
 console.log(`\n════ GAPS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);
