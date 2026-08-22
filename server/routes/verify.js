@@ -30,7 +30,15 @@ router.post("/start", requireAuth, async (req, res) => {
     const phone = me.rows[0]?.phone;
     if (!phone) return res.status(400).json({ error: "No phone number on your account" });
     if (phoneIsWrong(phone)) return res.status(400).json({ error: badPhoneMsg });
-    const body = new URLSearchParams({ To: phone, Channel: channel === "sms" ? "sms" : "whatsapp" });
+    /* SMS unless WhatsApp is asked for by name.
+
+       This read `channel === "sms" ? "sms" : "whatsapp"`, so anything that was
+       not the exact string "sms" — including nothing at all, which is what the
+       signup screen sends — became WhatsApp. Every verification code was being
+       requested over a channel that needs an approved WhatsApp sender at our
+       end and the app installed at theirs. Twilio refused, and the customer saw
+       "We couldn't send the code just now." */
+    const body = new URLSearchParams({ To: phone, Channel: channel === "whatsapp" ? "whatsapp" : "sms" });
     const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/Verifications`, {
       method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body,
     });
@@ -170,6 +178,14 @@ function sendFailure(res, data, where) {
   if (String(data?.code) === "60200") return res.status(400).json({ error: badPhoneMsg });
   if (String(data?.code) === "60203") return res.status(429).json({ error: "Too many attempts for this number — try again later." });
   if (String(data?.code) === "60205") return res.status(400).json({ error: "We can't send SMS to that number. Try a mobile number." });
+  /* The customer gets a sentence. You get the provider's own code by email,
+     because "try again in a moment" is not something anyone can act on — and a
+     signup that cannot send a code is every new customer, not one. */
+  import("../lib/alerts.js")
+    .then(({ alert }) => alert("verify-send:" + (data?.code || "unknown"),
+      "Cleano: verification codes are failing",
+      `Twilio refused to send a code.\ncode: ${data?.code}\nmessage: ${data?.message}\nwhere: ${where}`))
+    .catch(() => {});
   return res.status(502).json({ error: "We couldn't send the code just now. Please try again in a moment." });
 }
 
@@ -204,7 +220,7 @@ router.post("/signup/start", async (req, res) => {
         }
         return res.status(503).json({ error: "verification_not_configured" });
       }
-      const body = new URLSearchParams({ To: String(phone).trim(), Channel: req.body.channel === "sms" ? "sms" : "whatsapp" });
+      const body = new URLSearchParams({ To: String(phone).trim(), Channel: req.body.channel === "whatsapp" ? "whatsapp" : "sms" });
       const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/Verifications`, {
         method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body });
       const data = await r.json();

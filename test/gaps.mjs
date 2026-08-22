@@ -287,8 +287,8 @@ ok("the country code is its own control, not something to type by hand",
    /isPhone && !verified && \(\s*<select/.test(appV) && /DIAL_CODES\.map/.test(appV));
 ok("and it disappears once the number is verified, like the number itself",
    /\{isPhone && !verified && \(/.test(appV));
-ok("the number sent for verification is the composed one, not the raw box",
-   /signupCodeSend\(isPhone \? \{ phone: composed \}/.test(appV) &&
+ok("the number sent for verification is the parsed one, not the raw box",
+   /signupCodeSend\(isPhone \? \{ phone: composed,/.test(appV) &&
    /signupCodeCheck\(isPhone \? \{ phone: composed/.test(appV));
 ok("the Send code button stays disabled until the number is possible",
    /const enough = isPhone \? phoneOk/.test(appV));

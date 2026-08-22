@@ -140,5 +140,25 @@ const good = await j("/api/verify/signup/start", { phone: "+36703031941" });
 ok("and lets a real number through to the provider", good.status !== 400,
    `${good.status} ${JSON.stringify(good.data.error || "")}`);
 
+console.log("\n── the code goes out by SMS, not WhatsApp ──");
+/* The server read `channel === "sms" ? "sms" : "whatsapp"`, so no channel at
+   all meant WhatsApp — which needs an approved sender at our end and the app
+   installed at theirs. Every signup code was being requested over a channel
+   almost nobody could receive, and the customer just saw "we couldn't send the
+   code". A default nobody states is a default nobody checks. */
+const vs = (await import("fs")).readFileSync("server/routes/verify.js", "utf8");
+ok("the server falls back to SMS, not WhatsApp",
+   (vs.match(/Channel: (?:req\.body\.)?channel === "whatsapp" \? "whatsapp" : "sms"/g) || []).length === 2,
+   "both the signup and logged-in paths must default to SMS");
+/* Matched inside the comment that explains the bug, which is exactly the kind
+   of false alarm that teaches people to ignore a checker. Anchor on the actual
+   parameter. */
+ok("and no Channel parameter still defaults to WhatsApp",
+   !/Channel: [^\n]*\? "sms" : "whatsapp"/.test(vs));
+const ap = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("the signup screen asks for SMS by name", /phone: composed, channel: "sms"/.test(ap));
+ok("a failure to send raises an alert, not just a red box",
+   /verification codes are failing/.test(vs));
+
 console.log(`\n════ PHONE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

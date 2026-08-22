@@ -1869,7 +1869,10 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
 
   const send = async () => {
     setErr(""); setBusy(true);
-    const r = await signupCodeSend(isPhone ? { phone: composed } : { email: clean });
+    /* Ask for SMS by name rather than relying on the server's default — the
+       default used to be WhatsApp, and a default nobody states is a default
+       nobody checks. */
+    const r = await signupCodeSend(isPhone ? { phone: composed, channel: "sms" } : { email: clean });
     setBusy(false);
     /* The server has one machine-readable code — everything else is already a
        sentence. Showing "verification_not_configured" to a customer tells them
