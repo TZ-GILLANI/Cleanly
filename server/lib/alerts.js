@@ -31,8 +31,25 @@ export function paymentAlert(kind, detail) {
 }
 
 export function wire() {
-  process.on("uncaughtException", (e) => alert("uncaught", "uncaught exception", e?.stack || e));
-  process.on("unhandledRejection", (e) => alert("unhandled", "unhandled rejection", e?.stack || e));
+  /* Node crashes on an uncaught exception by default, and that default exists
+     for a good reason: after one, the process state is undefined — a half-run
+     handler may have left a transaction open or a lock held. Installing a
+     listener silently turns that safety off, which is what happened here: the
+     server kept answering /api/health from a broken state, so Render's health
+     check never restarted it, and in the test suite a fatal error became an
+     infinite hang instead of a failure. Twice today.
+
+     So: alert, then let the process die and be replaced. Render restarts it in
+     seconds; a corrupted one can run for days. */
+  process.on("uncaughtException", (e) => {
+    alert("uncaught", "uncaught exception", e?.stack || e);
+    console.error("uncaught exception — exiting so a clean instance replaces this one:", e?.stack || e);
+    setTimeout(() => process.exit(1), 1200);
+  });
+  process.on("unhandledRejection", (e) => {
+    alert("unhandled", "unhandled rejection", e?.stack || e);
+    console.error("unhandled rejection:", e?.stack || e);
+  });
   // weekly digest — Monday ~07:00 server time
   setInterval(() => {
     const d = new Date();

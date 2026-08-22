@@ -554,11 +554,17 @@ console.log("\n── the phone number ──");
 const appPh = (await import("fs")).readFileSync("src/App.jsx", "utf8");
 const vSrc = (await import("fs")).readFileSync("server/routes/verify.js", "utf8");
 
-ok("the field strips a national trunk zero before sending", /d = d\.replace\(\/\^0\+\/, ""\)/.test(appPh));
-ok("and a country code the person pasted in themselves", /startsWith\("00" \+ cc\)/.test(appPh));
+/* These used to pin the hand-written normaliser. It is gone: the library
+   parses what was typed and hands back the canonical number, so 06, 0036, a
+   pasted +36 and stray spaces all collapse without any prefix logic of ours.
+   The behaviour is driven for real in test/phone.mjs. */
+ok("the field parses what was typed rather than assembling the number itself",
+   /const parsePhone = /.test(appPh) && /parsePhoneNumberFromString/.test(appPh));
+ok("and stores the library's canonical E.164, never a string we glued together",
+   /parsed\.number/.test(appPh) && !/cleanLocal/.test(appPh));
 ok("the app has its own opinion about the number, before any provider does",
-   /const phoneLooksReal/.test(appPh) && /isValidPhoneNumber/.test(appPh));
-ok("and shows the number it will actually use", /We'll use: /.test(appPh));
+   /parsed && parsed\.isValid\(\)/.test(appPh));
+ok("and shows the number it will actually use", /We'll (use|send the code to): /.test(appPh));
 
 ok("the server validates the number before spending an SMS", /function phoneIsWrong/.test(vSrc));
 ok("both the signup path and the logged-in path check it",
@@ -569,6 +575,11 @@ ok("both the signup path and the logged-in path check it",
    Portuguese one, because Portugal was never on the list. */
 ok("the rules come from Google's phone metadata, not a table we maintain",
    /from "libphonenumber-js"/.test(vSrc) && !/const NAT_LEN/.test(vSrc));
+/* isValidPhoneNumber("+3606703031941") is true — the library strips Hungary's
+   06 before judging. Valid number, wrong string, and the string is what Twilio
+   gets. So the server demands the canonical form, not merely a verdict. */
+ok("the server requires the canonical form, not just a valid one",
+   /p\.number !== s/.test(vSrc));
 ok("client and server use the same source", /from "libphonenumber-js"/.test(appPh));
 ok("and no hand-written length table survives anywhere",
    !/const NAT_LEN/.test(appPh) && !/const NAT_LEN/.test(vSrc));

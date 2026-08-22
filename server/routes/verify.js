@@ -5,7 +5,7 @@ import { rateLimit } from "./auth.js";
 import { sendEmail, mailerConfigured } from "../lib/mailer.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { isValidPhoneNumber } from "libphonenumber-js";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 const router = Router();
 
@@ -147,7 +147,18 @@ export function verifySignupToken(token, kind, value) {
 function phoneIsWrong(raw) {
   const s = String(raw || "").trim();
   if (!/^\+[1-9][0-9]{6,14}$/.test(s)) return true;   // not even E.164-shaped
-  try { return !isValidPhoneNumber(s); } catch { return true; }
+  try {
+    const p = parsePhoneNumberFromString(s);
+    if (!p || !p.isValid()) return true;
+    /* Not just "is it valid" — is it already in the form we would store?
+
+       isValidPhoneNumber("+3606703031941") returns true, because the library
+       strips Hungary's 06 trunk prefix before judging. The number is real; the
+       string is not, and that string is what goes to Twilio. Requiring the
+       canonical form to equal what was sent closes that gap for every country
+       with a trunk prefix, not just this one. */
+    return p.number !== s;
+  } catch { return true; }
 }
 
 const badPhoneMsg = "That phone number doesn't look right. Check the country code and remove any leading zero.";

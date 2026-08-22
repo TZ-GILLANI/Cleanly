@@ -1,6 +1,8 @@
 /* Cleanly end-to-end API test — runs the real server against in-memory Postgres.
    Usage: npm run test:e2e */
 process.env.PGMEM = "1";
+process.on("unhandledRejection", (e) => { console.error("UNHANDLED:", e?.stack || e); process.exit(1); });
+process.on("uncaughtException", (e) => { console.error("UNCAUGHT:", e?.stack || e); process.exit(1); });
 process.env.NODE_ENV = "test";
 process.env.JWT_SECRET = "e2e-test-secret";
 process.env.PORT = "3399";

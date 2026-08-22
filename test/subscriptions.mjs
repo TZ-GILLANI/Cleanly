@@ -1,5 +1,7 @@
 /* Part 3 verification — runs standalone so payments can be judged on its own. */
 process.env.PGMEM = "1"; process.env.JWT_SECRET = "t"; process.env.PORT = "4488";
+process.on("unhandledRejection", (e) => { console.error("UNHANDLED:", e?.stack || e); process.exit(1); });
+process.on("uncaughtException", (e) => { console.error("UNCAUGHT:", e?.stack || e); process.exit(1); });
 await import("../server/index.js");
 await new Promise((r) => setTimeout(r, 900));
 const { query } = await import("../server/db.js");
@@ -21,9 +23,21 @@ ok("monthly Aug 31 → Sep 30", nextDateFrom("2026-08-31", "monthly") === "2026-
 console.log("\n── cancellation policy (5.12) ──");
 /* Build the slot in LOCAL hours: hoursUntilBooking parses the stored time as
    Budapest, so a UTC-built fixture is silently two hours out. */
+/* Build a fixture in ONE timezone, not two.
+
+   These read the date from toISOString() — which is UTC — and the hour from
+   getHours() — which is local. Between 22:00 and midnight Budapest time the two
+   disagree by a day, so a booking meant to be 49 hours away was written as 25,
+   and three cancellation tests failed. Only in that two-hour window, only in
+   summer: a flake that would have appeared at random, including on Codemagic.
+
+   Local components throughout, so the string means what it says. */
+const localDate = (t) =>
+  `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+
 const inH = (h) => {
   const t = new Date(Date.now() + h * 3600e3);
-  return { scheduled_date: t.toISOString().slice(0, 10),
+  return { scheduled_date: localDate(t),
            scheduled_slot: `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}` };
 };
 ok("49h before → still cancellable, full refund", customerMayCancel(inH(49)) === true && cancellationRefundPct() === 100);
@@ -118,7 +132,7 @@ console.log("\n── cancelling: one rule, no sliding scale ──");
 ok("the charge fires exactly when the cancellation right expires", /scheduled_date <= CURRENT_DATE \+ \$1/.test(subSrc2) && /CANCEL_FREE_H \|\| 48/.test(subSrc2));
 const mkBooking = (hoursAway) => {
   const t = new Date(Date.now() + hoursAway * 3600e3);
-  return { scheduled_date: t.toISOString().slice(0, 10),
+  return { scheduled_date: localDate(t),
            scheduled_slot: `${String(t.getHours()).padStart(2, "0")}:00` };
 };
 ok("4 days out — can cancel", pay2.customerMayCancel(mkBooking(96)) === true);

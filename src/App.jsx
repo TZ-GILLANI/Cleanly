@@ -1,6 +1,6 @@
 import ReactDOM from "react-dom";
 import React, { useState, useEffect, useMemo, useContext, createContext, useCallback } from "react";
-import { getCountries, getCountryCallingCode, isValidPhoneNumber } from "libphonenumber-js";
+import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from "libphonenumber-js";
 import { Capacitor } from "@capacitor/core";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
 import { LANGS, getLang, LOCALES } from "./lib/i18n.js";
@@ -62,15 +62,40 @@ const dialCodesFor = (lang) => {
     rank(a.c) - rank(b.c) || String(name(a.c)).localeCompare(String(name(b.c)), lang || "en"));
 };
 
+/* Which country the phone picker should start on.
+
+   Two things broke here when the list went from 21 hand-picked countries to all
+   245, and together they are why the field refused every number:
+
+   1. `DIAL_CODES[0]` used to be Hungary. The library returns countries
+      alphabetically, so it became Ascension Island, +247 — and every fallback
+      landed there.
+   2. This read the region out of the phone's *language* tag. With 21 countries
+      an English phone fell through to Hungary; with 245, "en-US" now matches,
+      so a Hungarian using the app in English got +1 and every Hungarian number
+      was correctly judged invalid for the United States.
+
+   The address the person already gave us is better evidence of where they are
+   than the language they read in. */
+const HOME_COUNTRY = "HU";
 const deviceCountry = () => {
+  try {
+    const saved = String(getCountry() || "").toUpperCase();
+    if (saved && DIAL_CODES.some((x) => x.c === saved)) return saved;
+  } catch {}
   try {
     const l = (navigator.languages && navigator.languages[0]) || navigator.language || "hu-HU";
     const m = String(l).split("-")[1];
-    if (m && DIAL_CODES.some((x) => x.c === m.toUpperCase())) return m.toUpperCase();
+    /* Only trust the locale's region when the language is not English —
+       "en-US" is the default on half the phones in Hungary. */
+    if (m && !/^en/i.test(String(l)) && DIAL_CODES.some((x) => x.c === m.toUpperCase())) return m.toUpperCase();
   } catch {}
-  return "HU";
+  return HOME_COUNTRY;
 };
-const dialOf = (cc) => (DIAL_CODES.find((x) => x.c === cc) || DIAL_CODES[0]).d;
+const dialOf = (cc) =>
+  (DIAL_CODES.find((x) => x.c === cc)
+   || DIAL_CODES.find((x) => x.c === HOME_COUNTRY)
+   || DIAL_CODES[0]).d;
 /* Split a stored E.164 number back into picker + local part. */
 const splitPhone = (v) => {
   const s = String(v || "").trim();
@@ -89,44 +114,36 @@ const splitPhone = (v) => {
      "0036 70 …"       -> +36 0036 70 …
    It was then sent straight to Twilio, which rejected it — and the rejection
    was shown to the customer as "Invalid parameter `To`". */
-const cleanLocal = (raw, dial) => {
-  let d = String(raw || "").replace(/[^0-9]/g, "");
-  const cc = String(dial || "").replace(/[^0-9]/g, "");
-  if (cc && d.startsWith("00" + cc)) d = d.slice(2 + cc.length);   // 0036…
-  else if (cc && d.startsWith(cc) && d.length > cc.length + 6) d = d.slice(cc.length);
-  /* Strip the national trunk prefix — 06 in Hungary, 0 in most of Europe, 8 in
-     Russia. Only when doing so produces a number the metadata accepts, so a
-     country whose numbers legitimately begin with 0 is left alone. */
-  const stripped = d.replace(/^0+/, "");
-  if (stripped !== d) {
-    try { if (isValidPhoneNumber("+" + cc + stripped)) return stripped; } catch {}
-    try { if (!isValidPhoneNumber("+" + cc + d)) return stripped; } catch { return stripped; }
-  }
-  return d;
+/* Parse what the person typed, then use the library's own canonical form.
+
+   The version this replaces asked isValidPhoneNumber a yes/no question and
+   built the number itself. That was subtly wrong in the one case that matters
+   here: isValidPhoneNumber("+3606703031941") returns **true**, because the
+   library strips Hungary's 06 trunk prefix internally before judging it. Valid,
+   yes — but the string we would then store still had the 06 in it, and that is
+   exactly the number Twilio rejected.
+
+   Asking for the parsed number instead of a verdict removes the whole class of
+   bug: spacing, 06, 0036 and a pasted +36 all collapse to +36703031941, and
+   there is no hand-written prefix logic left to get wrong. */
+const parsePhone = (isoCountry, typed) => {
+  const raw = String(typed || "").trim();
+  if (!raw.replace(/[^0-9]/g, "")) return null;
+  try { return parsePhoneNumberFromString(raw, isoCountry) || null; } catch { return null; }
 };
 
-
-/* Google's metadata decides, not a table we maintain.
-
-   The table this replaces listed twenty-one countries and one length each.
-   Austria has four valid lengths; Italy has two; a partner in Portugal was not
-   on the list at all. isValidPhoneNumber knows all of it, including which
-   ranges are real rather than merely the right length. */
-const phoneLooksReal = (dial, local) => {
-  const n = String(local || "").replace(/[^0-9]/g, "");
-  if (!n) return false;
-  try { return isValidPhoneNumber(String(dial) + n); } catch { return false; }
-};
 
 
 function PhoneField({ label, value, onChange }) {
   const init = splitPhone(value);
   const [cc, setCc] = useState(init.cc);
   const [local, setLocal] = useState(init.local);
-  const digits = cleanLocal(local, dialOf(cc));
-  const tooLong = digits.length > 13 || dialOf(cc).replace(/\D/g, "").length + digits.length > 15;
-  const bad = digits.length > 0 && !phoneLooksReal(dialOf(cc), digits);
-  React.useEffect(() => { onChange(digits ? dialOf(cc) + digits : ""); }, [cc, local]);
+  const parsed = parsePhone(cc, local);
+  const typedAny = String(local || "").replace(/[^0-9]/g, "").length > 0;
+  const ok = !!(parsed && parsed.isValid());
+  const bad = typedAny && !ok;
+  /* Store the library's canonical E.164, never a string we assembled. */
+  React.useEffect(() => { onChange(ok ? parsed.number : ""); }, [cc, local]);
   return (
     <div style={{ marginBottom: 13 }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{label}</div>
@@ -142,13 +159,12 @@ function PhoneField({ label, value, onChange }) {
       {/* Show what will actually be sent. A leading 0 or a pasted country code
           is removed silently, and silence is how someone ends up staring at a
           rejection they cannot explain. */}
-      {digits.length > 0 && (
-        <div style={{ fontFamily: B, fontSize: 11, marginTop: 5, color: bad ? C.coralText : C.inkSoft }}>
+      {typedAny && (
+        <div style={{ fontFamily: B, fontSize: 11, marginTop: 5, color: bad ? C.coralText : C.green }}>
           {bad
-            ? (tooLong
-                ? L("That looks too long — check for extra digits.", "Ez túl hosszúnak tűnik — nézd meg, nincs-e benne felesleges számjegy.")
-                : L("That looks too short.", "Ez túl rövidnek tűnik."))
-            : L("We'll use: ", "Ezt fogjuk használni: ") + dialOf(cc) + " " + digits}
+            ? L("That doesn't look like a valid number for this country — check the digits and leave out any leading zero.",
+                "Ez nem tűnik érvényes számnak ebben az országban — nézd meg a számjegyeket, és a kezdő nullát hagyd el.")
+            : L("We'll use: ", "Ezt fogjuk használni: ") + parsed.formatInternational()}
         </div>
       )}
     </div>
@@ -1835,11 +1851,13 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
   const [cc, setCc] = useState(() => splitPhone(value).cc || deviceCountry());
   const [local, setLocal] = useState(() => splitPhone(value).local);
   const dial = dialOf(cc);
-  const digits = isPhone ? cleanLocal(local, dial) : "";
-  const composed = digits ? dial + digits : "";
+  const parsed = isPhone ? parsePhone(cc, local) : null;
+  const typedAny = isPhone && String(local || "").replace(/[^0-9]/g, "").length > 0;
+  const phoneOk = !!(parsed && parsed.isValid());
+  const phoneBad = typedAny && !phoneOk;
+  /* The library's canonical E.164 — never a string we glued together. */
+  const composed = phoneOk ? parsed.number : "";
   const clean = isPhone ? composed : String(value || "").trim();
-  const phoneOk = phoneLooksReal(dial, digits);
-  const phoneBad = digits.length > 0 && !phoneOk;
   const enough = isPhone ? phoneOk : /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean);
   const verified = !!token;
 
@@ -1918,12 +1936,12 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
 
       {/* Say what will be sent. The old field normalised nothing and explained
           nothing, so a rejected number gave the person no way to see why. */}
-      {isPhone && !verified && digits.length > 0 && (
+      {isPhone && !verified && typedAny && (
         <div style={{ fontFamily: B, fontSize: 11, marginTop: 5, color: phoneBad ? C.coralText || C.coral : C.green }}>
           {phoneBad
             ? L("That doesn't look like a valid number for this country — check the digits and leave out any leading zero.",
                 "Ez nem tűnik érvényes számnak ebben az országban — nézd meg a számjegyeket, és a kezdő nullát hagyd el.")
-            : L("We'll send the code to: ", "Ide küldjük a kódot: ") + dial + " " + digits}
+            : L("We'll send the code to: ", "Ide küldjük a kódot: ") + parsed.formatInternational()}
         </div>
       )}
       {hint && !verified && <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
@@ -2136,7 +2154,12 @@ function Auth() {
                             "Ha hibás, itt javítsd, aztán kérd a kódot. Igazolás után már nem módosítható.")}
                     placeholder="+36 30 123 4567" value={f.phone} onChange={set("phone")}
                     token={phoneToken} onToken={setPhoneToken} />
-                : <Field label={L("Phone number", "Telefonszám")} hint={L("One number = one account. Country code detected automatically.", "Egy szám = egy fiók. Az országkódot automatikusan felismertük.")} value={f.phone} onChange={set("phone")} />}
+                : /* When no code can be sent, verification is skipped — but the number is
+                     still what the account is keyed on, so it still needs a country
+                     picker and the same checks. This used to be a bare text box with
+                     no dropdown and no validation whatsoever. */
+                  <PhoneField label={L("Phone number", "Telefonszám")} value={f.phone}
+                    onChange={(v) => setF((p) => ({ ...p, phone: v }))} />}
               {f.custType === "student" && (
                 <DocUpload
                   label={L("Student card photo *", "Diákigazolvány fotó *")}

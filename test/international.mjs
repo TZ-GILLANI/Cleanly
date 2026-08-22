@@ -1,4 +1,6 @@
 process.env.PGMEM = "1"; process.env.JWT_SECRET = "t"; process.env.PORT = "4491";
+process.on("unhandledRejection", (e) => { console.error("UNHANDLED:", e?.stack || e); process.exit(1); });
+process.on("uncaughtException", (e) => { console.error("UNCAUGHT:", e?.stack || e); process.exit(1); });
 await import("../server/index.js");
 await new Promise((r) => setTimeout(r, 900));
 const { query } = await import("../server/db.js");
