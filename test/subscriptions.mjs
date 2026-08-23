@@ -153,5 +153,80 @@ ok("and the company can still cancel or decline at any time",
 const appSrc2 = (await import("fs")).readFileSync("src/App.jsx", "utf8");
 ok("the app hides the cancel button once the window closes", /canStillCancel\(b\)/.test(appSrc2));
 
+/* ── THE RECURRING ENGINE, WHERE ERRORS COMPOUND SILENTLY ─────────────────
+   A one-off payment fails loudly: someone is standing at a checkout. A
+   subscription fault repeats monthly, in the background, and looks like churn
+   rather than a bug. Three were live here. */
+console.log("\n── a renewal is charged once, and can be given back ──");
+const fsS = (await import("fs")).default;
+const paySrcS = fsS.readFileSync("server/routes/payments.js", "utf8");
+const subSrcS = fsS.readFileSync("server/lib/subscriptions.js", "utf8");
+
+/* 1. Refunds. Checkout stores a SESSION reference; every renewal stores a
+      PAYMENT INTENT. The refund function recognised only the two session
+      forms, so it returned "no-stripe" and moved no money for every recurring
+      visit — while the customer was told "you've been refunded in full". */
+for (const p of ["stripedcpi:", "stripepi:", "stripe_pi:", "stripedc:", "stripe:"])
+  ok(`a ${p} reference can be refunded`, paySrcS.includes(`ref.startsWith("${p}")`));
+ok("the longer prefixes are tested before the shorter ones they contain",
+   paySrcS.indexOf('startsWith("stripedcpi:")') < paySrcS.indexOf('startsWith("stripedc:")') &&
+   paySrcS.indexOf('startsWith("stripepi:")') < paySrcS.indexOf('startsWith("stripe:")'),
+   "otherwise stripe: swallows stripepi: and the renewal is unrefundable again");
+ok("a payment intent is refunded directly, without looking for a session",
+   /let paymentIntent = piId;/.test(paySrcS));
+ok("every prefix the code writes is one the refunder understands",
+   ["stripe:", "stripedc:", "stripepi:", "stripedcpi:", "stripe_pi:"]
+     .every((p) => paySrcS.includes(`ref.startsWith("${p}")`)));
+
+/* 2. Double charging. No idempotency key meant that if Stripe took the money
+      and we died before recording it, the next pass thirty minutes later
+      charged the same saved card again. */
+ok("the scheduled renewal charge carries an idempotency key",
+   /idempotencyKey: `cleano-sub-\$\{b\.id\}-\$\{b\.payment_status\}`/.test(subSrcS));
+ok("and the key changes between a first attempt and a retry, so a decline can still be retried",
+   /\$\{b\.payment_status\}/.test(subSrcS));
+ok("the saved-card charge carries one too",
+   /idempotencyKey: `cleano-renewal-\$\{booking\.id\}`/.test(paySrcS));
+
+/* 3. Dates. Monthly must clamp, not overflow: Jan 31 + 1 month is Feb 28,
+      never Mar 3. */
+/* already imported above */
+for (const [from, to] of [["2026-01-31", "2026-02-28"], ["2028-01-31", "2028-02-29"],
+                          ["2026-03-31", "2026-04-30"], ["2026-12-31", "2027-01-31"]])
+  ok(`monthly: ${from} -> ${to}`, nextDateFrom(from, "monthly") === to, nextDateFrom(from, "monthly"));
+ok("weekly crosses a year end correctly", nextDateFrom("2026-12-28", "weekly") === "2027-01-04");
+ok("biweekly does too", nextDateFrom("2026-12-25", "biweekly") === "2027-01-08");
+ok("a renewal never lands on a date that does not exist",
+   ["2026-01-31", "2026-03-31", "2026-05-31", "2026-08-31", "2026-10-31"]
+     .every((d) => { const n = nextDateFrom(d, "monthly"); return !isNaN(Date.parse(n)) && n.slice(0, 7) !== d.slice(0, 7); }));
+
+console.log("\n── deleting an account stops the money ──");
+/* is_active = false was the whole of account deletion. The scheduler selects
+   on subscriptions.status = 'active' and never looked at the person, so a
+   deleted account carried on being charged every month — on a card we had also
+   kept a reference to. Being billed after asking to be forgotten fails someone
+   twice: on their money, and on the privacy policy. */
+const authSrcS = fsS.readFileSync("server/routes/auth.js", "utf8");
+ok("deletion cancels the customer's active plans",
+   /UPDATE subscriptions SET status = 'cancelled' WHERE customer_id = \$1 AND status = 'active'/.test(authSrcS));
+ok("and calls off the visits already scheduled from them",
+   /UPDATE bookings SET status = 9[\s\S]{0,200}payment_status IN \('scheduled','retry','unpaid'\)/.test(authSrcS));
+ok("and clears the saved card, which is payment data like any other",
+   /stripe_customer_id = NULL, default_payment_method = NULL, card_brand = NULL, card_last4 = NULL/.test(authSrcS));
+ok("the charger independently refuses a closed account", /AND cu\.is_active = true/.test(subSrcS));
+ok("and no new visits are generated for one either",
+   /WHERE s\.status = 'active' AND cu\.is_active = true/.test(subSrcS));
+
+console.log("\n── a webhook retry cannot undo a refund ──");
+/* Stripe retries an event for up to three days. This wrote 'paid'
+   unconditionally, so a retry arriving after a cancellation flipped a refunded
+   booking back to paid: money returned to the customer, the job showing as paid
+   to the company, and commission charged on it. */
+ok("a refunded or cancelled booking is not marked paid by a late retry",
+   /payment_status NOT IN \('refunded','partly-refunded'\)[\s\S]{0,80}status NOT IN \(8,9\)/.test(paySrcS));
+ok("the saved card is written only to the customer on that booking",
+   !/WHERE stripe_customer_id = \$1 OR id = /.test(paySrcS),
+   "a Stripe customer id is unique per account, not globally");
+
 console.log(`\n════ PART 3: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

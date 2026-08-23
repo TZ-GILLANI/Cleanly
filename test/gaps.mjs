@@ -630,5 +630,197 @@ ok("a blocked-signup outage raises an alert rather than failing quietly",
 ok("and the customer sees a sentence, not the internal code",
    /verification_not_configured/.test(appPh) && /We can't send codes right now/.test(appPh));
 
+/* ── STRIPE REFUSES HUF AMOUNTS NOT DIVISIBLE BY 100 ──────────────────────
+   Reported as "the payment system is broken — it says could not start
+   payment". The charge itself was always fine: a Hungarian price is a round
+   number of forints. The commission is not — it is the headline percentage
+   MINUS Stripe's own cut, and that subtraction lands on a non-round number
+   more often than not. Five of nine realistic prices produced an
+   application_fee_amount Stripe rejected outright.
+
+   Being price-dependent, it worked in testing at some prices, which is the
+   worst way for a payment bug to behave. */
+console.log("\n── payment amounts Stripe will actually accept ──");
+const { payableMinor, platformNetMinor } = await import("../server/routes/payments.js");
+
+ok("HUF amounts are rounded to something Stripe accepts", payableMinor(55250, "HUF") === 55200);
+ok("and rounded DOWN, so the difference comes out of our commission",
+   payableMinor(55299, "huf") === 55200);
+ok("currencies without the rule are left exactly alone", payableMinor(55250, "EUR") === 55250);
+ok("zero stays zero", payableMinor(0, "HUF") === 0);
+ok("a negative can never reach Stripe", payableMinor(-500, "HUF") === 0);
+
+let hufRefused = 0;
+for (const ft of [5000, 6500, 7500, 8000, 9900, 12000, 14500, 18000, 23500, 999]) {
+  const amount = payableMinor(ft * 100, "HUF");
+  const fee = payableMinor(platformNetMinor(ft * 100, Math.round(ft * 0.1) * 100), "HUF");
+  if (amount % 100 !== 0 || fee % 100 !== 0) hufRefused++;
+}
+ok("no realistic price produces an amount Stripe would refuse", hufRefused === 0, `${hufRefused} would be hufRefused`);
+
+const paySrc = (await import("fs")).readFileSync("server/routes/payments.js", "utf8");
+ok("the rule is applied to the charge, not just the fee", /unit_amount: payableMinor/.test(paySrc));
+/* Three: the direct charge, the legacy destination charge, and the off-session
+   renewal. Counting them exactly rather than "at least one", so a fourth path
+   added later without the rule is noticed. */
+ok("and on every path that takes a commission",
+   (paySrc.match(/application_fee_amount: payableMinor/g) || []).length === 3,
+   `${(paySrc.match(/application_fee_amount: payableMinor/g) || []).length} found`);
+ok("what we record as kept matches what we asked Stripe for",
+   /platform_net_minor = \$1[\s\S]{0,120}payableMinor/.test(paySrc));
+ok("a payment that cannot start alerts the operator, not just the customer",
+   /payments are failing to start/.test(paySrc));
+
+/* ── AN ACCOUNT IS CREATED AS A RESIDENT ──────────────────────────────────
+   Student was the default on the signup form, so anyone who did not read the
+   two cards created a student account — which demands a student card photo
+   and claims a discount they may not be entitled to. */
+console.log("\n── the signup form defaults to resident ──");
+const appD = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("a new account starts as a resident", /custType: "resident"/.test(appD));
+ok("and nothing still defaults to student", !/custType: "student"/.test(appD)
+   && !/custType: session\.custType \|\| "student"/.test(appD));
+ok("the login header no longer leads with the student discount",
+   !/Students get automatic discounts/.test(appD));
+ok("and the star beside the home heading is gone",
+   !/whatSparkle"\)\} <Sparkle/.test(appD));
+
+/* ── THE COMPANY MUST SEE THE WORK, AND HAVE TIME TO TAKE IT ──────────────
+   Reported as "companies never get the bookings, it is blank for them, and it
+   gets cancelled and refunded in 10 minutes". Two faults compounding:
+
+   1. The company list showed only PAID work, so a booking whose payment was
+      still going through the gateway was invisible. The partner saw an empty
+      screen and concluded the app was broken.
+   2. acceptDeadline took the EARLIER of "12 hours from booking" and "12 hours
+      before the job starts". Anything booked less than twelve hours ahead had
+      a deadline already in the past, so the sweep cancelled and refunded it on
+      its next tick. Short-notice work — the most valuable kind — could never
+      be accepted by anyone. */
+console.log("\n── the company can see the job, and has time to take it ──");
+const { acceptDeadline: dl } = await import("../server/lib/reminders.js");
+const at = (createdAgoH, startsInH) => {
+  const now = Date.now();
+  const st = new Date(now + startsInH * 3600e3);
+  const pad = (n) => String(n).padStart(2, "0");
+  return dl({ created_at: new Date(now - createdAgoH * 3600e3).toISOString(),
+              scheduled_date: `${st.getFullYear()}-${pad(st.getMonth() + 1)}-${pad(st.getDate())}`,
+              scheduled_slot: `${pad(st.getHours())}:00` });
+};
+const minsFromNow = (iso) => iso ? Math.round((Date.parse(iso) - Date.now()) / 60000) : null;
+
+for (const startsIn of [2, 6, 11, 12, 13]) {
+  const m = minsFromNow(at(0, startsIn));
+  ok(`a job starting in ${startsIn}h can still be accepted (was expired on arrival)`,
+     m !== null && m > 0, `${m} minutes`);
+}
+ok("short notice gives the company the full minimum window",
+   minsFromNow(at(0, 6)) >= 175, `${minsFromNow(at(0, 6))} minutes`);
+ok("plenty of notice still gives the full twelve hours",
+   minsFromNow(at(0, 72)) >= 700, `${minsFromNow(at(0, 72))} minutes`);
+ok("the deadline is never after the job was due to start",
+   Date.parse(at(0, 1)) <= Date.now() + 61 * 60e3, "must not outlive the slot");
+ok("a booking that has already sat unanswered for a day is out of time",
+   minsFromNow(at(30, 72)) <= 0, `${minsFromNow(at(30, 72))} minutes`);
+
+const bkSrcC = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
+ok("the company list includes work whose payment is still in flight",
+   /payment_status IN \('paid','pending','scheduled','retry'\)/.test(bkSrcC));
+
+/* The comment that broke this endpoint outright lived INSIDE the SQL string:
+   an em dash in a SQL block comment is more than the parser will lex, and
+   every company got a 500. No prose inside a query, ever. */
+let sqlProse = 0;
+for (const m of bkSrcC.matchAll(/query\(\s*`([\s\S]*?)`/g))
+  if ([...m[1]].some((c) => c.charCodeAt(0) > 127)) sqlProse++;
+ok("no SQL string in this file contains non-ASCII text", sqlProse === 0,
+   `${sqlProse} queries carry characters the parser may reject`);
+
+/* ── THE SAME TWO BUGS, EVERYWHERE ELSE THEY LIVED ────────────────────────
+   Fixing the booking list and the checkout was not the end of either fault.
+   The HUF divisibility rule was missing from four more amounts, including
+   every recurring subscription charge — so renewals would have been declined
+   by Stripe rather than by anyone's bank. And the "paid work only" filter had
+   a second copy in the calendar feed, so a company syncing their schedule saw
+   a gap where a real job was about to be. */
+console.log("\n── every amount we hand Stripe, not just the first one ──");
+const paySrcAll = (await import("fs")).readFileSync("server/routes/payments.js", "utf8");
+const subSrcAll = (await import("fs")).readFileSync("server/lib/subscriptions.js", "utf8");
+const calSrcAll = (await import("fs")).readFileSync("server/routes/calendar.js", "utf8");
+
+/* Any `amount:` or `application_fee_amount:` reaching Stripe must go through
+   payableMinor. Comment lines are excluded; a false alarm here teaches people
+   to ignore the check. */
+const unrounded = [];
+for (const [file, src] of [["payments.js", paySrcAll], ["subscriptions.js", subSrcAll]]) {
+  for (const line of src.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
+    if (!/\b(amount|application_fee_amount):\s/.test(t)) continue;
+    if (/payableMinor|subFeeNet|amount_minor|fee_minor/.test(t)) continue;
+    unrounded.push(`${file}: ${t.slice(0, 60)}`);
+  }
+}
+ok("no amount reaches Stripe without the HUF rule applied", unrounded.length === 0,
+   unrounded.join(" | "));
+
+ok("recurring subscription charges are rounded too", /amount: payableMinor\(amountMinor, cur\)/.test(subSrcAll));
+ok("and so is the commission taken from a renewal", /const subFeeNet = payableMinor\(/.test(subSrcAll));
+ok("partial refunds are rounded in the customer's favour, not ours",
+   /payableMinor\(amountMinor \+ 99/.test(paySrcAll));
+
+console.log("\n── one visibility rule, not two that drift ──");
+const rule = /payment_status IN \('paid','pending','scheduled','retry'\)/;
+ok("the booking list shows work whose payment is in flight", rule.test(bkSrcC));
+ok("and the calendar feed uses exactly the same rule", rule.test(calSrcAll));
+ok("neither still lists only paid work",
+   !/IN \('paid','scheduled','retry'\)/.test(bkSrcC) && !/IN \('paid','scheduled','retry'\)/.test(calSrcAll));
+
+/* The prose-in-SQL fault that produced a 500 for every company. */
+let proseAnywhere = 0;
+for (const [f, src] of [["bookings", bkSrcC], ["calendar", calSrcAll], ["payments", paySrcAll]])
+  for (const m of src.matchAll(/query\(\s*`([\s\S]*?)`/g))
+    if ([...m[1]].some((c) => c.charCodeAt(0) > 127)) proseAnywhere++;
+ok("no query anywhere carries characters the SQL parser may reject", proseAnywhere === 0,
+   `${proseAnywhere} affected`);
+
+/* ── A COMPANY CANNOT REWRITE WHAT HAPPENED ───────────────────────────────
+   The cleaner had a strict step-by-step ladder. The company had an ownership
+   check and nothing else, so a partner could take a booking from "waiting to
+   be accepted" straight to "completed" — telling the customer their cleaning
+   was done and asking for a review, with nobody having attended; reopen a
+   finished job after its invoice was issued; or decline work that had already
+   been carried out, refunding their own cleaner's labour. */
+console.log("\n── a job can move forward, never backward ──");
+const stSrc = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
+
+ok("accepting is the only way out of the waiting state",
+   /cur === 0 && want !== 1/.test(stSrc));
+ok("a finished job cannot be reopened", /iWant <= iCur/.test(stSrc));
+ok("a job that has started cannot be declined", /already started[\s\S]{0,60}no longer decline/.test(stSrc));
+ok("nor cancelled from the company side", /cannot be cancelled here/.test(stSrc));
+ok("a closed booking cannot be revived", /already declined or cancelled/.test(stSrc));
+ok("the collection ladder is respected as well as the on-site one",
+   /fulfilment === "collection" \? \[0, 1, 2, 5, 3, 6, 4\]/.test(stSrc));
+ok("admin stays able to correct the record", /req\.user\.role !== "admin"/.test(stSrc));
+
+/* Behavioural: the company owns the booking, so only the ladder can stop it. */
+const bkNew = (await j("/api/bookings", { method: "POST", token: CU.token,
+  body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(40), scheduledSlot: "09:00", address: "Piac 1" } })).data.booking;
+const setStatus = (id, st, token) => j(`/api/bookings/${id}/status`, { method: "PUT", token, body: { status: st } });
+
+const jump = await setStatus(bkNew.id, 4, CO.token);
+ok("a booking nobody accepted cannot be marked completed", jump.status === 400,
+   `${jump.status} ${JSON.stringify(jump.data.error || "")}`);
+ok("and the refusal explains what to do first", /Accept the booking first/i.test(jump.data.error || ""),
+   jump.data.error);
+
+ok("accepting works", (await setStatus(bkNew.id, 1, CO.token)).status < 300);
+ok("then completing works", (await setStatus(bkNew.id, 4, CO.token)).status < 300);
+const back = await setStatus(bkNew.id, 1, CO.token);
+ok("but reopening the finished job does not", back.status === 400, `${back.status}`);
+const late = await setStatus(bkNew.id, 8, CO.token);
+ok("and declining it afterwards does not either", late.status === 400, `${late.status}`);
+
 console.log(`\n════ GAPS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

@@ -1680,7 +1680,7 @@ function PaymentWait({ url, check, onPaid, onCancel }) {
 function ProfileSheet({ close }) {
   const { session, updateProfile, deleteAccount, logout, t, lang, setLang } = useStore();
   const toast = useToast();
-  const [f, setF] = useState({ name: session.name || "", phone: session.phone || "", custType: session.custType || "student", address: session.address || "", paymentMethod: session.paymentMethod || "card", documents: session.documents || [] });
+  const [f, setF] = useState({ name: session.name || "", phone: session.phone || "", custType: session.custType || "resident", address: session.address || "", paymentMethod: session.paymentMethod || "card", documents: session.documents || [] });
   const wantsUpgrade = session.role === "customer" && session.custType !== "student" && f.custType === "student";
   const [upgradeDocs, setUpgradeDocs] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1987,7 +1987,14 @@ function Auth() {
   const { t, lang, setLang } = store;
   const [role, setRole] = useState(null);
   const [mode, setMode] = useState("signup");
-  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", custType: "student", address: "", city: "", phone: "", documents: [], terms: false });
+  const [f, setF] = useState({ name: "", email: "", password: "", code: "", companyName: "", taxId: "", regNumber: "", contactPhone: "", /* Resident, not student.
+
+                 Student was the default, so anyone who did not read the two
+                 cards created a student account — which demands a student card
+                 photo and promises a discount they may not be entitled to. The
+                 safe default is the ordinary one; the discount is something a
+                 person opts into and proves. */
+    custType: "resident", address: "", city: "", phone: "", documents: [], terms: false });
   React.useEffect(() => { getDial().then((d) => setF((prev) => (prev.phone ? prev : { ...prev, phone: d + " " }))); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -2102,7 +2109,7 @@ function Auth() {
     );
 
   const h = {
-    customer: { icon: "🛋️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Students get automatic discounts at checkout.", "A diákok automatikus kedvezményt kapnak fizetéskor.") },
+    customer: { icon: "🛋️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Book a verified cleaner in a few taps.", "Foglalj ellenőrzött takarítót pár koppintással.") },
     employee: { icon: "🧽", title: L("Cleaner sign-up", "Takarító regisztráció"), sub: L("Use the invite code your company gave you.", "Használd a cégedtől kapott meghívókódot.") },
     company: { icon: "🏢", title: L("Register your company", "Cég regisztrálása"), sub: L("Free to list — manage your team and bookings.", "A listázás ingyenes — kezeld a csapatod és a foglalásaid.") },
   }[role];
@@ -2388,7 +2395,7 @@ function CustomerHome({ openBooking, openProfile }) {
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10, marginTop: 20 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 23, color: "#fff", lineHeight: 1.3 }}>
-            {t("home.whatSparkle")} <Sparkle size={15} style={{ display: "inline-block" }} />
+            {t("home.whatSparkle")}
           </div>
           <span style={{ flexShrink: 0, fontFamily: F, fontWeight: 700, fontSize: 12, color: "#C9D2F5", padding: "7px 4px" }}>
             📍 {city}

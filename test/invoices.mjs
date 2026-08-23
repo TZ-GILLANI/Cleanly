@@ -54,7 +54,11 @@ console.log("\n── nothing can issue a document on its own any more ──");
 const paySrc = fs.readFileSync("server/routes/payments.js", "utf8");
 const subSrc = fs.readFileSync("server/lib/subscriptions.js", "utf8");
 const invSrc = fs.readFileSync("server/routes/invoices.js", "utf8");
-ok("the direct charge asks Stripe for the reduced amount", /application_fee_amount: platformNetMinor\(amountMinor, feeMinor\)/.test(paySrc));
+/* Now wrapped in payableMinor(): Stripe refuses HUF amounts that are not
+   divisible by 100, and the reduced commission lands on a non-round number
+   more often than not. Still the reduced amount, just one Stripe will take. */
+ok("the direct charge asks Stripe for the reduced amount",
+   /application_fee_amount: payableMinor\(platformNetMinor\(amountMinor, feeMinor\), currency\)/.test(paySrc));
 ok("the destination charge is left alone, because Cleano is billed directly there", /Destination charge: Cleano is the merchant/.test(paySrc));
 ok("what we actually received is stored on the booking", /platform_net_minor = \$1/.test(paySrc));
 ok("a renewal records its own kept figure too", /platform_net_minor = \$1/.test(subSrc));

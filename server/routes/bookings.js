@@ -31,6 +31,23 @@ router.get("/", requireAuth, async (req, res) => {
         [req.user.id]
       );
     } else if (req.user.role === "company") {
+      /* 'pending' belongs in the list below.
+
+         It used to show only paid work, so a brand-new booking — status 0, the
+         customer still at the card screen — was invisible to the company. The
+         acceptance clock ran down against a job they could not see, and then
+         the booking cancelled and refunded itself. From the partner's side the
+         app simply never showed them any work at all.
+
+         A customer at the card screen has committed, and the company needs to
+         know a job is coming. If the payment never lands, the sweep cancels it
+         anyway, so nothing is held on a promise. A genuinely abandoned
+         checkout stays 'unpaid' and stays hidden.
+
+         This explanation lives out here on purpose. The same text placed inside
+         the SQL string broke the query outright: an em dash inside a SQL block
+         comment is more than the parser will lex, and the endpoint answered
+         500 to every company. Prose belongs in JavaScript, not in a query. */
       result = await query(
         `SELECT b.*, u.full_name AS assigned_name,
                 CASE WHEN cu.deleted_name IS NOT NULL
@@ -42,7 +59,7 @@ router.get("/", requireAuth, async (req, res) => {
          LEFT JOIN users u ON u.id = b.assigned_to
          LEFT JOIN users cu ON cu.id = b.customer_id
          WHERE b.company_id = $1
-           AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)
+           AND (b.payment_status IN ('paid','pending','scheduled','retry') OR b.status <> 0)
          ORDER BY b.created_at DESC`,
         [req.user.companyId]
       );
@@ -382,6 +399,40 @@ router.put("/:id/status", requireAuth, async (req, res) => {
       if (to > at + 1) return res.status(400).json({ error: "Finish the step before that one first" });
     } else if (req.user.role === "company") {
       if (b.company_id !== req.user.companyId) return res.status(403).json({ error: "Forbidden" });
+
+      /* A company had an ownership check and nothing else, while its own
+         cleaners were held to a strict step-by-step ladder. So a partner could
+         take a booking straight from "waiting to be accepted" to "completed"
+         without anyone attending, which tells the customer their cleaning is
+         done and asks them for a review; could reopen a finished job after the
+         invoice for it had been issued, leaving the accounting describing
+         something that no longer existed; and could decline a job that had
+         already been carried out, refunding work their own cleaner had done.
+
+         Forward is allowed to skip a step, because real work does: a cleaner
+         who is already on site does not need "on the way" recorded first.
+         Backwards is not, and neither is walking away from work that has
+         started. Admin is deliberately exempt below — correcting the record is
+         precisely what an operator is for. */
+      const cur = Number(b.status), want = Number(status);
+      const LADDER = b.fulfilment === "collection" ? [0, 1, 2, 5, 3, 6, 4] : [0, 1, 2, 3, 4];
+      const iCur = LADDER.indexOf(cur), iWant = LADDER.indexOf(want);
+
+      if (want === 8) {
+        if (cur > 1) return res.status(400).json({ error: "The job has already started — you can no longer decline it." });
+      } else if (want === 9) {
+        if (cur > 2) return res.status(400).json({ error: "The job has already started — it cannot be cancelled here." });
+      } else if (cur === 8 || cur === 9) {
+        return res.status(400).json({ error: "This booking was already declined or cancelled." });
+      } else if (cur === 0 && want !== 1) {
+        /* Accepting is the only way out of "waiting". Otherwise a booking the
+           customer is still waiting on could be reported as finished, with the
+           acceptance clock never stopped and the customer asked to review a
+           cleaning nobody agreed to do. */
+        return res.status(400).json({ error: "Accept the booking first, then update its progress." });
+      } else if (iCur !== -1 && iWant !== -1 && iWant <= iCur) {
+        return res.status(400).json({ error: "That step is already done — a job cannot go backwards." });
+      }
     } else if (req.user.role !== "admin") {
       return res.status(403).json({ error: "Forbidden" });
     }

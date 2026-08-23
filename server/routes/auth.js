@@ -316,6 +316,28 @@ router.delete("/me", requireAuth, async (req, res) => {
        WHERE id = $2`,
       [anonEmail, req.user.id]
     );
+    /* Stop the money before anything else.
+
+       Deleting the account only set is_active = false on the user. The
+       subscription scheduler selects on subscriptions.status = 'active' and
+       never looks at the person, so a deleted account carried on being charged
+       every month, on a card we had also kept a reference to. Someone who asks
+       to be forgotten and is then billed again has been failed twice: once on
+       their money and once on the promise in the privacy policy. */
+    await query("UPDATE subscriptions SET status = 'cancelled' WHERE customer_id = $1 AND status = 'active'", [req.user.id]);
+    /* And the future visits already materialised from those plans. */
+    await query(
+      `UPDATE bookings SET status = 9
+        WHERE customer_id = $1 AND status IN (0,1)
+          AND scheduled_date >= CURRENT_DATE
+          AND payment_status IN ('scheduled','retry','unpaid')`,
+      [req.user.id]);
+    /* The card reference is payment data. Anonymising the name while keeping a
+       pointer to their stored card is not deletion. */
+    await query(
+      "UPDATE users SET stripe_customer_id = NULL, default_payment_method = NULL, card_brand = NULL, card_last4 = NULL WHERE id = $1",
+      [req.user.id]);
+
     // company owners: unlist the company so it disappears from the marketplace
     if (req.user.role === "company" && req.user.companyId) {
       await query("UPDATE companies SET is_listed = false WHERE id = $1", [req.user.companyId]);

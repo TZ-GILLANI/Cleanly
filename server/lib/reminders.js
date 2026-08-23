@@ -46,14 +46,37 @@ function slotTime(dateVal, slot) {
    at all, which meant losing paid work to a deadline nobody had mentioned. It
    is exported so the app can show the countdown, and used by the sweep below
    so the number on screen and the number enforced can never drift apart. */
+/* When the company loses the job for not answering.
+
+   This took the EARLIER of two times: twelve hours from booking, and twelve
+   hours before the job starts. For anything booked less than twelve hours
+   ahead — a Friday evening booking for Saturday morning, which is most of the
+   short-notice work — the second was already in the past, so the deadline had
+   expired before the company's phone finished buzzing. The sweep then
+   cancelled and refunded on its next tick, and the partner saw an empty list
+   and assumed the app was broken.
+
+   A cutoff that has passed before anyone can act on it is not a cutoff, it is
+   a bug. So: the company always gets ACCEPT_MIN_H to answer — never less,
+   whatever the arithmetic says — bounded only by the job actually starting. */
 export function acceptDeadline(b) {
   try {
     const killH = Number(process.env.ACCEPT_TIMEOUT_H || 12);
+    const leadH = Number(process.env.ACCEPT_LEAD_H || 12);
+    const minH  = Number(process.env.ACCEPT_MIN_H || 3);
     const created = new Date(b.created_at).getTime();
+    if (isNaN(created)) return null;
     const start = slotTime(b.scheduled_date, b.scheduled_slot);
-    const byAge = isNaN(created) ? Infinity : created + killH * 3600e3;
-    const byStart = start ? start.getTime() - 12 * 3600e3 : Infinity;
-    const at = Math.min(byAge, byStart);
+
+    const byAge   = created + killH * 3600e3;
+    const byStart = start ? start.getTime() - leadH * 3600e3 : Infinity;
+    let at = Math.min(byAge, byStart);
+
+    /* The floor: however tight the job is, they get a real chance to say yes. */
+    at = Math.max(at, created + minH * 3600e3);
+    /* The ceiling: never past the moment the cleaner was due to arrive. */
+    if (start) at = Math.min(at, start.getTime());
+
     return Number.isFinite(at) ? new Date(at).toISOString() : null;
   } catch { return null; }
 }
@@ -159,7 +182,10 @@ export async function sweepUnaccepted() {
       }
       // 2) auto-cancel + refund — same rule the company sees counting down
       const deadline = acceptDeadline(b);
-      if (deadline ? now >= Date.parse(deadline) : (ageH >= killH || hoursToStart <= 12)) {
+      /* acceptDeadline is the single source of truth. The fallback only runs if
+         it could not be computed at all, and it must not re-introduce the
+         "already expired" rule it exists to replace. */
+      if (deadline ? now >= Date.parse(deadline) : (ageH >= killH && ageH >= Number(process.env.ACCEPT_MIN_H || 3))) {
         // Try to refund, but never let a payment-provider failure keep the customer
         // trapped in a booking nobody is coming to. Cancel first, shout about the money.
         if (b.payment_status === "paid") {

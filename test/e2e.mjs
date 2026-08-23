@@ -167,19 +167,37 @@ ok("subscription booked", sb.status === 201);
 const dup = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: dPlus(13), scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
 ok("duplicate active subscription blocked", dup.status === 400, JSON.stringify(dup.data));
 
+/* Walk a booking to "completed" the way the app does.
+
+   These used to PUT status 4 straight onto a booking still waiting to be
+   accepted. The company screen never offers that — "Complete job" appears only
+   once work is in progress — and the server now refuses it, because a partner
+   who can jump to completed can tell a customer their cleaning is done without
+   anyone attending. Walking the real ladder is both a truer test and the only
+   one that passes. */
+const completeJob = async (id, token) => {
+  for (const st of [1, 2, 3, 4]) {
+    const r = await j(`/api/bookings/${id}/status`, { method: "PUT", token, body: { status: st } });
+    if (st === 4) return r;
+  }
+};
+
 // UPDATE 1 (3.4): the old "chain" is gone. Completing a visit must NOT create
 // the next one — the scheduler owns the schedule. See test/subscriptions.mjs.
-const done = await j(`/api/bookings/${sb.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
+const done = await completeJob(sb.data.booking.id, coTok);
 ok("completing a visit no longer chains a new booking", done.status === 200 && !done.data.next, JSON.stringify(done.data.next));
+/* Re-completing is now refused outright rather than silently repeated: a
+   finished job cannot go round the ladder again. Either way, no chained
+   booking is ever produced, which is what this guards. */
 const again = await j(`/api/bookings/${sb.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
-ok("re-completing stays harmless", again.status === 200 && !again.data.next);
+ok("re-completing stays harmless", !again.data.next, JSON.stringify(again.data).slice(0, 80));
 const subsList = await j("/api/subscriptions", { token: custTok });
 ok("subscriptions endpoint responds for the customer", subsList.status === 200 && Array.isArray(subsList.data.subscriptions), JSON.stringify(subsList.data).slice(0, 80));
 
 console.log("\n── invoices & archiving ──");
 const invEarly = await j(`/api/bookings/${bkId}/invoice`, { method: "PUT", token: coTok, body: { invoice: { name: "szamla.pdf", type: "application/pdf", data: "data:application/pdf;base64,x" } } });
 ok("invoice rejected before completion", invEarly.status === 400);
-await j(`/api/bookings/${bkId}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
+await completeJob(bkId, coTok);
 const notifs = await j("/api/notifications", { token: custTok });
 ok("customer receives a notification on status change", notifs.status === 200 && (notifs.data.notifications || []).some((n) => n.type === "status") && notifs.data.unread > 0, `unread ${notifs.data.unread}`);
 const mrRead = await j("/api/notifications/read", { method: "PUT", token: custTok });

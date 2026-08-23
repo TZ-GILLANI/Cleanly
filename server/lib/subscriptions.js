@@ -21,7 +21,13 @@ async function getStripe() {
 }
 
 export async function materialise() {
-  const subs = await query("SELECT * FROM subscriptions WHERE status = 'active'");
+  /* A second lock on the same door. Cancelling the plan at deletion time is the
+     fix; this makes sure a plan belonging to a closed account can never generate
+     work or charges even if it was somehow missed. */
+  const subs = await query(
+    `SELECT s.* FROM subscriptions s
+     JOIN users cu ON cu.id = s.customer_id
+     WHERE s.status = 'active' AND cu.is_active = true`);
   for (const s of subs.rows) {
     try {
       let date = s.next_booking_date instanceof Date
@@ -64,9 +70,12 @@ export async function chargeDue() {
   const due = await query(
     `SELECT b.*, s.stripe_customer_id AS sub_cust, s.payment_method_id AS sub_pm,
             s.stripe_account_id AS sub_acct, s.fee_minor AS sub_fee
-     FROM bookings b JOIN subscriptions s ON s.id = b.subscription_id
+     FROM bookings b
+     JOIN subscriptions s ON s.id = b.subscription_id
+     JOIN users cu ON cu.id = b.customer_id
      WHERE b.payment_status IN ('scheduled','retry')
        AND s.status = 'active'
+       AND cu.is_active = true
        AND b.scheduled_date <= CURRENT_DATE + $1
        AND b.scheduled_date >= CURRENT_DATE
        AND b.status NOT IN (8,9)`,
@@ -79,13 +88,19 @@ export async function chargeDue() {
       const stripe = await getStripe();
       const opts = b.sub_acct ? { stripeAccount: b.sub_acct } : {};
       const amountMinor = Number(b.total_minor) || Number(b.total_huf) * 100;
-      const { platformNetMinor } = await import("../routes/payments.js");
-      const subFeeNet = b.sub_acct
+      const { platformNetMinor, payableMinor } = await import("../routes/payments.js");
+      const cur = String(b.currency || "HUF");
+      /* Stripe refuses HUF amounts that are not divisible by 100. The renewal
+         charge is a round price so it survives; the reduced commission is not,
+         and without this every single renewal would have been declined by
+         Stripe rather than by the customer's bank. Rounded down, so the
+         difference is ours and never the partner's. */
+      const subFeeNet = payableMinor(b.sub_acct
         ? platformNetMinor(amountMinor, Number(b.sub_fee) || 0)
-        : Number(b.sub_fee) || 0;
+        : Number(b.sub_fee) || 0, cur);
       const pi = await stripe.paymentIntents.create({
-        amount: amountMinor,
-        currency: String(b.currency || "HUF").toLowerCase(),
+        amount: payableMinor(amountMinor, cur),
+        currency: cur.toLowerCase(),
         customer: b.sub_cust, payment_method: b.sub_pm,
         off_session: true, confirm: true,
         /* Cleano absorbs Stripe's cut on renewals too. The subscription row
@@ -94,7 +109,22 @@ export async function chargeDue() {
            which is exactly what Partner Terms 3.4 promises they will not. */
         ...(b.sub_acct ? { application_fee_amount: subFeeNet } : {}),
         metadata: { booking_id: b.id, cleano_subscription: b.subscription_id },
-      }, opts);
+      }, {
+        ...opts,
+        /* Charge this visit once, whatever happens to us.
+
+           There was no idempotency key here. If Stripe took the money and the
+           process then died before the row was marked paid — a crash, a dropped
+           database connection, a Render restart mid-tick — the booking stayed
+           'scheduled' and the next pass charged the customer a second time.
+           Thirty minutes later, silently, on a card they had saved.
+
+           The key includes the attempt state so a genuine decline can still be
+           retried: 'scheduled' and 'retry' are different attempts and get
+           different keys, while a duplicate within one attempt collapses onto
+           the original charge. */
+        idempotencyKey: `cleano-sub-${b.id}-${b.payment_status}`,
+      });
       if (pi.status === "succeeded") {
         await query("UPDATE bookings SET payment_status = 'paid', barion_payment_id = $1 WHERE id = $2",
           [(b.sub_acct ? `stripedcpi:${b.sub_acct}:` : "stripepi:") + pi.id, b.id]);

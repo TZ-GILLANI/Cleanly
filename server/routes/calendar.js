@@ -89,6 +89,11 @@ async function bookingsFor(user) {
   }
   if (user.role === "company" && user.company_id) {
     const r = await query(
+      /* Same visibility rule as the company booking list, and it must stay the
+         same: a booking whose payment is still in flight was missing here too,
+         so a company syncing this feed to their phone calendar saw a gap where
+         a real job was about to be. Two copies of one rule drift; a test now
+         asserts they match. */
       `SELECT b.*,
               CASE WHEN cu.deleted_name IS NOT NULL THEN 'Cleano customer' ELSE cu.full_name END AS customer_name,
               CASE WHEN cu.deleted_name IS NOT NULL THEN NULL ELSE cu.phone END AS customer_phone,
@@ -97,7 +102,7 @@ async function bookingsFor(user) {
          LEFT JOIN users cu ON cu.id = b.customer_id
          LEFT JOIN users u  ON u.id  = b.assigned_to
         WHERE b.company_id = $1 AND b.scheduled_date >= $2
-          AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)
+          AND (b.payment_status IN ('paid','pending','scheduled','retry') OR b.status <> 0)
         ORDER BY b.scheduled_date ASC`, [user.company_id, since]);
     return { rows: r.rows, role: "company", name: "Cleano — company schedule" };
   }

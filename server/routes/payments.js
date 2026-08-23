@@ -65,6 +65,25 @@ export function minimumServicePriceHuf() {
 /* What Cleano actually keeps, after covering Stripe on the partner's behalf.
    Never negative: on a very small booking we simply earn nothing rather than
    charging the partner for the privilege of working with us. */
+/* Stripe refuses HUF amounts that are not evenly divisible by 100.
+
+   This is the rule that broke payments. A Hungarian price is always a round
+   number of forints, so the charge itself was fine — but the commission is the
+   headline percentage MINUS Stripe's own cut, and that subtraction lands on a
+   non-round number more often than not. Five of nine realistic prices produced
+   an application_fee_amount Stripe rejected outright, which surfaced to the
+   customer as "Could not start payment" and, being price-dependent, worked
+   perfectly in testing at some prices.
+
+   Rounding DOWN, never up: the difference comes out of our commission rather
+   than the partner's settlement. Same direction as every other rounding
+   decision in this file. */
+const NEEDS_100 = new Set(["huf", "twd", "ugx", "isk"]);
+export function payableMinor(minor, currency) {
+  const n = Math.max(0, Math.round(Number(minor) || 0));
+  return NEEDS_100.has(String(currency || "").toLowerCase()) ? Math.floor(n / 100) * 100 : n;
+}
+
 export function platformNetMinor(totalMinor, commissionMinor) {
   return Math.max(0, Math.round(Number(commissionMinor) - stripeFeeMinor(totalMinor)));
 }
@@ -137,27 +156,62 @@ export async function refundBookingPayment(booking, pct = 100) {
     if (!booking || booking.payment_status !== "paid") return { refunded: false, reason: "not-paid" };
     if (pct <= 0) return { refunded: false, reason: "policy-zero" };
     const ref = booking.barion_payment_id || "";
-    if (!ref.startsWith("stripe:") && !ref.startsWith("stripedc:")) return { refunded: false, reason: "no-stripe" };
     if (!process.env.STRIPE_SECRET_KEY) return { refunded: false, reason: "no-stripe" };
-    const stripe = await getStripe();
 
-    // stripedc:<acct>:<session> = DIRECT charge on the company's account (3.1).
-    // stripe:<session>          = legacy destination charge on the platform.
-    let sessionId = "", acct = null;
-    if (ref.startsWith("stripedc:")) {
-      const parts = ref.split(":"); acct = parts[1]; sessionId = parts.slice(2).join(":");
-    } else sessionId = ref.slice("stripe:".length);
+    /* Four reference shapes, not two.
+
+       A first payment goes through Checkout and is stored as a SESSION:
+         stripe:<session>              legacy destination charge
+         stripedc:<acct>:<session>     direct charge on the company's account
+
+       Every subscription RENEWAL is charged off-session and stores a
+       PaymentIntent instead:
+         stripepi:<pi>
+         stripedcpi:<acct>:<pi>
+
+       This function only recognised the two session forms, so it returned
+       "no-stripe" for every renewal and moved no money — while the customer was
+       told, in as many words, "you've been refunded in full". Cancel a
+       recurring visit inside the free window and nothing came back. Order
+       matters below: stripedcpi must be tested before stripedc, and stripepi
+       before stripe, or the shorter prefix swallows the longer one. */
+    let piId = null, sessionId = null, acct = null;
+    if (ref.startsWith("stripedcpi:")) {
+      const p = ref.split(":"); acct = p[1]; piId = p.slice(2).join(":");
+    } else if (ref.startsWith("stripepi:")) {
+      piId = ref.slice("stripepi:".length);
+    } else if (ref.startsWith("stripe_pi:")) {
+      /* A fifth spelling, written by chargeSavedCard. Kept rather than
+         renamed because rows already carry it. */
+      piId = ref.slice("stripe_pi:".length);
+    } else if (ref.startsWith("stripedc:")) {
+      const p = ref.split(":"); acct = p[1]; sessionId = p.slice(2).join(":");
+    } else if (ref.startsWith("stripe:")) {
+      sessionId = ref.slice("stripe:".length);
+    } else {
+      return { refunded: false, reason: "no-stripe" };
+    }
+
+    const stripe = await getStripe();
     const opts = acct ? { stripeAccount: acct } : {};
-    const session = await stripe.checkout.sessions.retrieve(sessionId, opts);
-    if (!session || !session.payment_intent) return { refunded: false, reason: "no-payment-intent" };
+    let paymentIntent = piId;
+    if (!paymentIntent) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, opts);
+      if (!session || !session.payment_intent) return { refunded: false, reason: "no-payment-intent" };
+      paymentIntent = session.payment_intent;
+    }
 
     const partial = pct < 100;
     const amountMinor = partial && booking.total_minor
       ? Math.round(Number(booking.total_minor) * pct / 100)
       : (partial ? Math.round(Number(booking.total_huf) * 100 * pct / 100) : null);
     await stripe.refunds.create({
-      payment_intent: session.payment_intent,
-      ...(amountMinor ? { amount: amountMinor } : {}),
+      payment_intent: paymentIntent,
+      /* A partial refund is a fraction of the price, so it lands on a non-round
+         number the same way the commission does — and Stripe refuses it for the
+         same reason. Rounding UP here, because this is the customer's money
+         coming back: the rounding should favour them, not us. */
+      ...(amountMinor ? { amount: payableMinor(amountMinor + 99, String(booking.currency || "HUF")) } : {}),
       refund_application_fee: true,               // proportional on partial refunds
       ...(acct ? {} : { reverse_transfer: true }),// only meaningful on destination charges
     }, opts);
@@ -231,12 +285,12 @@ export async function chargeSavedCard(booking) {
     if (acctId) {
       try {
         const acct = await stripe.accounts.retrieve(acctId);
-        if (acct.charges_enabled) split = { application_fee_amount: feeHuf * 100, transfer_data: { destination: acctId } };
+        if (acct.charges_enabled) split = { application_fee_amount: payableMinor(feeHuf * 100, "HUF"), transfer_data: { destination: acctId } };
       } catch {}
     }
 
     const pi = await stripe.paymentIntents.create({
-      amount: amount * 100,
+      amount: payableMinor(amount * 100, "HUF"),
       currency: "huf",
       customer: cust,
       payment_method: pm,
@@ -245,6 +299,11 @@ export async function chargeSavedCard(booking) {
       description: `Cleano renewal · ${(booking.service_snapshot && booking.service_snapshot.name) || "cleaning"}`,
       metadata: { booking_id: booking.id, renewal: "1" },
       ...split,
+    }, {
+      /* Same reason as the scheduler's charge: if Stripe takes the money and we
+         die before recording it, the caller retries and the customer pays
+         twice. Keyed on the booking, so a repeat collapses onto the original. */
+      idempotencyKey: `cleano-renewal-${booking.id}`,
     });
     if (pi.status === "succeeded") {
       await query("UPDATE bookings SET payment_status = 'paid', barion_payment_id = $1 WHERE id = $2", ["stripe_pi:" + pi.id, booking.id]);
@@ -339,7 +398,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
       const lineItems = [{
         price_data: {
           currency,
-          unit_amount: amountMinor,
+          unit_amount: payableMinor(amountMinor, currency),
           product_data: {
             name: (svc.name || "Cleaning service").slice(0, 250),
             description: `${booking.company_name} · ${String(booking.scheduled_date).slice(0, 10)} ${booking.scheduled_slot || ""}`.slice(0, 500),
@@ -370,7 +429,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
           payment_intent_data: {
             /* Reduced by Stripe's cut so the partner's settlement equals their
                listed price exactly. See platformNetMinor above. */
-            application_fee_amount: platformNetMinor(amountMinor, feeMinor),
+            application_fee_amount: payableMinor(platformNetMinor(amountMinor, feeMinor), currency),
             ...(isSub ? { setup_future_usage: "off_session" } : {}),
           },
           line_items: lineItems,
@@ -383,7 +442,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
         /* Remember what we actually asked Stripe to hand us, so the fee invoice
            is for the real figure rather than the headline commission. */
         await query("UPDATE bookings SET platform_net_minor = $1 WHERE id = $2",
-          [platformNetMinor(amountMinor, feeMinor), booking.id]);
+          [payableMinor(platformNetMinor(amountMinor, feeMinor), currency), booking.id]);
         return res.json({ gatewayUrl: session.url, paymentId: session.id });
       }
 
@@ -395,7 +454,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
           /* Destination charge: Cleano is the merchant, so Stripe bills Cleano
              directly and the partner already receives their price in full. No
              adjustment needed — deducting again would charge them twice. */
-          if (acct.charges_enabled) split = { application_fee_amount: feeMinor, transfer_data: { destination: booking.stripe_account_id } };
+          if (acct.charges_enabled) split = { application_fee_amount: payableMinor(feeMinor, currency), transfer_data: { destination: booking.stripe_account_id } };
         } catch {}
       }
       let customerId = null;
@@ -473,7 +532,18 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
     );
     res.json({ gatewayUrl: data.GatewayUrl, paymentId: data.PaymentId });
   } catch (err) {
-    console.error("payment start error:", err);
+    /* "Could not start payment" told the customer nothing and told us less.
+       A payment that will not start is not one lost sale — it is every sale
+       until someone notices. Stripe's own message names the reason exactly
+       (a rejected amount, a key that is not set, an account that cannot take
+       charges), so send it to the operator and keep the sentence for the
+       customer. */
+    console.error("payment start error:", err?.type, err?.code, err?.message, err?.param, err?.stack);
+    import("../lib/alerts.js")
+      .then(({ alert }) => alert("pay-start:" + (err?.code || err?.type || "unknown"),
+        "Cleano: payments are failing to start",
+        `A customer could not start a payment.\n\ntype: ${err?.type}\ncode: ${err?.code}\nparam: ${err?.param}\nmessage: ${err?.message}`))
+      .catch(() => {});
     res.status(500).json({ error: "Could not start payment" });
   }
 });
@@ -617,7 +687,21 @@ export async function stripeWebhook(req, res) {
       const sess = event.data.object;
       const bookingId = sess.metadata?.booking_id;
       if (bookingId) {
-        await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [bookingId]);
+        /* Do not resurrect a booking that has already moved on.
+
+           Stripe retries a webhook for up to three days. This wrote 'paid'
+           unconditionally, so a retry arriving after the booking was cancelled
+           and refunded flipped it back to paid — money returned to the
+           customer, the job showing as paid to the company, and the billing
+           list charging commission on it. The refund is the later truth.
+
+           status 9 = cancelled, 8 = declined. */
+        await query(
+          `UPDATE bookings SET payment_status = 'paid'
+            WHERE id = $1
+              AND payment_status NOT IN ('refunded','partly-refunded')
+              AND status NOT IN (8,9)`,
+          [bookingId]);
         // Recurring plan: remember the card the customer just approved so the
         // next visit can be charged automatically without asking again.
         try {
@@ -629,7 +713,15 @@ export async function stripeWebhook(req, res) {
             if (pmId) {
               const pm = await stripe2.paymentMethods.retrieve(String(pmId), acctOpts);
               await query(
-                "UPDATE users SET stripe_customer_id = $1, default_payment_method = $2, card_brand = $3, card_last4 = $4 WHERE stripe_customer_id = $1 OR id = (SELECT customer_id FROM bookings WHERE id = $5)",
+                /* Only the customer on THIS booking.
+
+                   The old clause also matched "OR stripe_customer_id = $1".
+                   A Stripe customer id is unique per account, not globally, so
+                   under direct charges the same string can belong to different
+                   people on different connected accounts — and this would have
+                   written one person's saved card onto another's record. The
+                   booking already tells us exactly whose card it is. */
+                "UPDATE users SET stripe_customer_id = $1, default_payment_method = $2, card_brand = $3, card_last4 = $4 WHERE id = (SELECT customer_id FROM bookings WHERE id = $5)",
                 [String(sess.customer), String(pmId), pm.card?.brand || null, pm.card?.last4 || null, bookingId]
               );
             }

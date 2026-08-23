@@ -969,6 +969,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Wir senden den Code an: ",
     "Could not load your data — ": "Deine Daten konnten nicht geladen werden — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Du hast bereits ein aktives Abo für diese Leistung — kündige es zuerst unter Buchungen.",
+    "Book a verified cleaner in a few taps.": "Buche eine geprüfte Reinigungskraft mit wenigen Tipps.",
   },
   ro: {
     "6-digit code": "Cod din 6 cifre",
@@ -1934,6 +1935,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Trimitem codul la: ",
     "Could not load your data — ": "Nu am putut încărca datele tale — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Ai deja un abonament activ pentru acest serviciu — anulează-l mai întâi la Rezervări.",
+    "Book a verified cleaner in a few taps.": "Rezervă un curățător verificat din câteva atingeri.",
   },
   sk: {
     "6-digit code": "6-miestny kód",
@@ -2899,6 +2901,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Kód pošleme na: ",
     "Could not load your data — ": "Nepodarilo sa načítať tvoje údaje — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Na túto službu už máš aktívne predplatné — najprv ho zruš v Rezerváciách.",
+    "Book a verified cleaner in a few taps.": "Objednaj si overeného upratovača na pár klikov.",
   },
   pl: {
     "6-digit code": "6-cyfrowy kod",
@@ -3864,6 +3867,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Wyślemy kod na: ",
     "Could not load your data — ": "Nie udało się wczytać twoich danych — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Masz już aktywny abonament na tę usługę — najpierw anuluj go w Rezerwacjach.",
+    "Book a verified cleaner in a few taps.": "Zamów zweryfikowanego sprzątacza w kilka kliknięć.",
   },
   uk: {
     "6-digit code": "6-значний код",
@@ -4829,6 +4833,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Надішлемо код на: ",
     "Could not load your data — ": "Не вдалося завантажити твої дані — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "У тебе вже є активна підписка на цю послугу — спочатку скасуй її в Бронюваннях.",
+    "Book a verified cleaner in a few taps.": "Замов перевіреного прибиральника за кілька дотиків.",
   },
   fr: {
     "6-digit code": "Code à 6 chiffres",
@@ -5794,6 +5799,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Nous enverrons le code à : ",
     "Could not load your data — ": "Impossible de charger vos données — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Vous avez déjà un abonnement actif pour cette prestation — annulez-le d'abord dans Réservations.",
+    "Book a verified cleaner in a few taps.": "Réservez un agent vérifié en quelques touches.",
   },
   es: {
     "6-digit code": "Código de 6 dígitos",
@@ -6759,6 +6765,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Enviaremos el código a: ",
     "Could not load your data — ": "No se pudieron cargar tus datos — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Ya tienes una suscripción activa para este servicio — cancélala primero en Reservas.",
+    "Book a verified cleaner in a few taps.": "Reserva un limpiador verificado en unos toques.",
   },
   tr: {
     "6-digit code": "6 haneli kod",
@@ -7652,6 +7659,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Kodu şuraya göndereceğiz: ",
     "Could not load your data — ": "Verilerin yüklenemedi — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Bu hizmet için zaten aktif bir aboneliğin var — önce Rezervasyonlar'dan iptal et.",
+    "Book a verified cleaner in a few taps.": "Birkaç dokunuşla doğrulanmış bir temizlikçi ayarla.",
   },
   zh: {
     "6-digit code": "6 位验证码",
@@ -8545,6 +8553,7 @@ export const EXTRA = {
     "We'll send the code to: ": "我们会把验证码发送到：",
     "Could not load your data — ": "无法加载你的数据 — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "你已有该服务的有效订阅 — 请先在「预约」中取消。",
+    "Book a verified cleaner in a few taps.": "轻点几下，预约已认证的保洁员。",
   },
   it: {
     "6-digit code": "Codice a 6 cifre",
@@ -9510,6 +9519,7 @@ export const EXTRA = {
     "We'll send the code to: ": "Invieremo il codice a: ",
     "Could not load your data — ": "Impossibile caricare i tuoi dati — ",
     "You already have an active subscription for this service — cancel it first under Bookings.": "Hai già un abbonamento attivo per questo servizio — annullalo prima in Prenotazioni.",
+    "Book a verified cleaner in a few taps.": "Prenota un addetto verificato in pochi tocchi.",
   },
 };
 
