@@ -822,5 +822,28 @@ ok("but reopening the finished job does not", back.status === 400, `${back.statu
 const late = await setStatus(bkNew.id, 8, CO.token);
 ok("and declining it afterwards does not either", late.status === 400, `${late.status}`);
 
+/* ── CHECKOUT MUST NOT DEPEND ON A DASHBOARD TOGGLE ───────────────────────
+   Live failure, 23 Aug, caught by the alert wired earlier the same day:
+
+     StripeInvalidRequestError: No valid payment method types for this Checkout
+     Session. Please ensure that you have activated payment methods compatible
+     with your chosen currency.
+
+   With payment_method_types unset, Stripe picks from whatever is enabled in
+   the dashboard for that currency — and for HUF on a connected account that
+   set can be empty, so the session cannot be created and the customer is told
+   "Could not start payment". Naming the method removes the dependency. */
+console.log("\n── the checkout says what it accepts ──");
+const paySrcPM = (await import("fs")).readFileSync("server/routes/payments.js", "utf8");
+ok("both Checkout sessions name the payment method explicitly",
+   (paySrcPM.match(/payment_method_types: \["card"\]/g) || []).length === 2,
+   `${(paySrcPM.match(/payment_method_types: \["card"\]/g) || []).length} of 2`);
+ok("every session we create has it, none left to infer",
+   (paySrcPM.match(/checkout\.sessions\.create\(/g) || []).length ===
+   (paySrcPM.match(/payment_method_types: \["card"\]/g) || []).length);
+/* Specifying both is a Stripe error in itself. */
+ok("and automatic selection is not also switched on",
+   !/automatic_payment_methods/.test(paySrcPM));
+
 console.log(`\n════ GAPS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

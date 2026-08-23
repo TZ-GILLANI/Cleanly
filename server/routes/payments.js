@@ -425,6 +425,21 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
           locale: "hu",
+        /* Say what we take, rather than letting Stripe infer it.
+
+           Live error, 23 Aug: "No valid payment method types for this Checkout
+           Session." With nothing specified, Stripe picks from whatever is
+           switched on in the dashboard for that currency — and for HUF, on a
+           connected account, that set can be empty. The session then cannot be
+           created at all and the customer sees "Could not start payment".
+
+           Cards work in HUF everywhere Cleano operates, and card is the only
+           method the app is built around: the saved-card renewals, the refund
+           path and the payout split all assume one. Naming it explicitly makes
+           the checkout independent of a dashboard toggle neither of us will
+           remember to check again. */
+        payment_method_types: ["card"],
+
           ...(customerId ? { customer: customerId } : {}),
           payment_intent_data: {
             /* Reduced by Stripe's cut so the partner's settlement equals their
@@ -474,6 +489,8 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         locale: "hu",
+        /* Same reason as the direct-charge session above. */
+        payment_method_types: ["card"],
         ...(customerId ? { customer: customerId } : {}),
         ...(Object.keys(piData).length ? { payment_intent_data: piData } : {}),
         line_items: lineItems,
