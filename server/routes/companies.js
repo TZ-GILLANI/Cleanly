@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, hasColumn } from "../db.js";
 import { geocode, distanceKm } from "../lib/geocode.js";
 import { translateAll, translateList, sourceChanged } from "../lib/translate.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -128,18 +128,18 @@ router.get("/", async (req, res) => {
        So: try the full list, and if the database says a column is missing,
        fall back to the columns that have always existed. The area rules then
        fall back to the legacy ones, which is exactly what they did yesterday. */
-    const FULL = "id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_areas, service_cities, eu_vat, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at";
+    /* Ask the schema which optional columns exist, rather than running the
+       full SELECT and reading the error. Postgres and pg-mem word that error
+       differently, and a guard that matches one wording passes its own tests
+       and fails on the real database — which is exactly how this went wrong
+       the first time. */
     const BASE = "id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_cities, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at";
-    const listQ = (cols) =>
-      query(`SELECT ${cols} FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC`);
-    let result;
-    try {
-      result = await listQ(FULL);
-    } catch (e) {
-      if (!/column .* does not exist|undefined column/i.test(e.message || "")) throw e;
-      console.error("companies: falling back, schema.sql has not been run —", e.message);
-      result = await listQ(BASE);
-    }
+    const extra = [];
+    for (const c of ["service_areas", "eu_vat"]) if (await hasColumn("companies", c)) extra.push(c);
+    const result = await query(
+      `SELECT ${BASE}${extra.length ? ", " + extra.join(", ") : ""} FROM companies
+        WHERE is_listed = true AND is_approved = true
+        ORDER BY rating DESC, review_count DESC`);
     let rows = result.rows;
 
     /* ── 4.6 Service areas. If the caller passes ?near=<address> we geocode it
@@ -277,18 +277,35 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
   }
 
   try {
-    /* Optional columns that arrived in 7.1.
+    /* The two columns added in 7.1 are appended only if the database has them.
 
-       If schema.sql has not been run — or was run before the later of the two
-       was added — writing them fails and the partner cannot save ANYTHING:
-       name, billing address, phone, all of it, behind one error reading
-       "Failed to update company". A column that is not there yet should cost
-       the feature that needs it, not every other field on the form.
+       My previous attempt ran the whole statement and retried on failure by
+       matching the error text. Postgres says `column "eu_vat" ... does not
+       exist`; pg-mem says `Column "eu_vat" not found` — so the guard passed
+       its own tests and would still have failed on the real database. And a
+       retry that strips an assignment leaves its $N parameter behind, which
+       Postgres rejects outright. Asking the schema avoids both, and the answer
+       is cached, so it costs one query per boot. */
+    const areasJson = (() => {
+         if (!Array.isArray(serviceAreas)) return null;
+         const clean = serviceAreas.slice(0, 40).map((a) => {
+           const city = String(a?.city || "").trim().slice(0, 80);
+           if (!city) return null;
+           const label = String(a?.label || "").trim().slice(0, 80) || undefined;
+           if (a?.mode === "radius") {
+             const lat = Number(a.lat), lng = Number(a.lng);
+             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+             if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+             const radiusKm = Math.min(Math.max(parseInt(a.radiusKm, 10) || 10, 1), 200);
+             return { city, mode: "radius", lat, lng, radiusKm, ...(label ? { label } : {}) };
+           }
+           return { city, mode: "all", ...(label ? { label } : {}) };
+         }).filter(Boolean);
+         return JSON.stringify(clean);
+       })();
+    const euVatValue = euVat !== undefined ? (normalizeVat(euVat) || null) : null;
 
-       So: attempt the whole write; if the database says a column is missing,
-       strip that column's assignment and save the rest. The log names the
-       migration, and /api/health reports the same state. */
-    const SQL = `UPDATE companies SET
+    let sql = `UPDATE companies SET
         name = COALESCE($1, name),
         emoji = COALESCE($2, emoji),
         tagline = COALESCE($3, tagline),
@@ -315,11 +332,9 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         billing_city = COALESCE($25, billing_city),
         billing_address = COALESCE($26, billing_address),
         billing_email = COALESCE($27, billing_email),
-        service_cities = CASE WHEN $28::text IS NULL THEN service_cities ELSE $28::jsonb END,
-        service_areas   = CASE WHEN $29::text IS NULL THEN service_areas   ELSE $29::jsonb END,
-        eu_vat = COALESCE($30, eu_vat)
+        service_cities = CASE WHEN $28::text IS NULL THEN service_cities ELSE $28::jsonb END
       WHERE id = $14 RETURNING *`;
-    const PARAMS = [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber ? formatRegNumber(regNumber) : null, contactPhone,
+    const params = [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber ? formatRegNumber(regNumber) : null, contactPhone,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id, promoJson === undefined ? null : promoJson, availJson === undefined ? null : availJson,
        country ? String(country).toUpperCase().slice(0, 2) : null,
        serviceLat != null && !Number.isNaN(Number(serviceLat)) ? Number(serviceLat) : null,
@@ -345,44 +360,17 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
          : null,
        /* Sanitised hard: a city name, a mode, and — only for a radius — a real
           point inside a sane range. Anything else is dropped rather than
-          stored, because this list decides who can book you. */
-       (() => {
-         if (!Array.isArray(serviceAreas)) return null;
-         const clean = serviceAreas.slice(0, 40).map((a) => {
-           const city = String(a?.city || "").trim().slice(0, 80);
-           if (!city) return null;
-           const label = String(a?.label || "").trim().slice(0, 80) || undefined;
-           if (a?.mode === "radius") {
-             const lat = Number(a.lat), lng = Number(a.lng);
-             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-             if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-             const radiusKm = Math.min(Math.max(parseInt(a.radiusKm, 10) || 10, 1), 200);
-             return { city, mode: "radius", lat, lng, radiusKm, ...(label ? { label } : {}) };
-           }
-           return { city, mode: "all", ...(label ? { label } : {}) };
-         }).filter(Boolean);
-         return JSON.stringify(clean);
-       })(),
-       euVat !== undefined ? (normalizeVat(euVat) || null) : null];
-    const RECENT = ["service_areas", "eu_vat"];
-    const runUpdate = (skip) => {
-      if (!skip.length) return query(SQL, PARAMS);
-      let sql = SQL;
-      for (const col of skip)
-        sql = sql.replace(new RegExp("\\n\\s*" + col + "\\s*=\\s*(?:COALESCE\\([^)]*\\)|CASE[\\s\\S]*?END),?"), "");
-      sql = sql.replace(/,(\s*)WHERE/, "$1WHERE");
-      return query(sql, PARAMS);
-    };
-    let result;
-    try {
-      result = await runUpdate([]);
-    } catch (e) {
-      const msg = e.message || "";
-      const miss = RECENT.filter((c) => msg.includes(c));
-      if (!/does not exist|undefined column/i.test(msg) || !miss.length) throw e;
-      console.error("companies: " + miss.join(", ") + " not in the database — run schema.sql. Saving everything else.");
-      result = await runUpdate(miss);
+          stored, because this list decides who can book you. */];
+    for (const [col, val] of [["service_areas", areasJson], ["eu_vat", euVatValue]]) {
+      if (!(await hasColumn("companies", col))) continue;
+      params.push(val);
+      const n = params.length;
+      const expr = col === "service_areas"
+        ? `CASE WHEN $${n}::text IS NULL THEN service_areas ELSE $${n}::jsonb END`
+        : `COALESCE($${n}, ${col})`;
+      sql = sql.replace(/\n(\s*)WHERE id =/, `,\n$1${col} = ${expr}\n$1WHERE id =`);
     }
+    const result = await query(sql, params);
     const saved = result.rows[0];
 
     /* ── 5.2 Translate what they typed, in the background. Never make the save

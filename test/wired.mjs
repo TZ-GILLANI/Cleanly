@@ -109,13 +109,18 @@ console.log("\n── a migration you have not run yet must not brick the app �
 
      A missing optional column should cost a feature, not the product. */
   const co = fs.readFileSync(new URL("../server/routes/companies.js", import.meta.url), "utf8");
-  ok("the listing has a fallback column set", /const BASE = "id, name/.test(co));
-  ok("it only falls back on a missing-column error, not on anything at all",
-     /column .\* does not exist\|undefined column/.test(co) || /does not exist\|undefined column/.test(co));
-  ok("and it says loudly which migration is missing",
-     /schema\.sql has not been run/.test(co));
-  ok("the area filter cannot take the whole list down",
-     /area filter failed, returning the unfiltered list/.test(co));
+  const db = fs.readFileSync(new URL("../server/db.js", import.meta.url), "utf8");
+  /* Behaviour is covered end to end in test/migration.mjs, which boots against
+     a database missing both columns. What matters here is that NOTHING decides
+     this by reading an error message — Postgres and pg-mem word it
+     differently, so that guard passes its own tests and fails in production. */
+  ok("there is a hasColumn helper that asks the schema", /export async function hasColumn/.test(db));
+  ok("it caches, so it costs one query per boot", /_cols\.set\(key, ok\)/.test(db));
+  ok("the listing builds its columns from what exists", /for \(const c of \["service_areas", "eu_vat"\]\) if \(await hasColumn/.test(co));
+  ok("so does the update", /if \(!\(await hasColumn\("companies", col\)\)\) continue;/.test(co));
+  ok("nothing matches on the wording of a database error",
+     !/does not exist\|undefined column/.test(co), "error-text matching is back");
+  ok("and a missing column is named in the log", /is missing — run schema\.sql/.test(db));
 
   const st = fs.readFileSync(new URL("../src/store.jsx", import.meta.url), "utf8");
   ok("signing in no longer throws the session away when a list fails",

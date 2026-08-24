@@ -64,3 +64,26 @@ pool.on?.("error", (err) => console.error("DB pool error:", err));
 export const query = (text, params) => pool.query(text, params);
 export const getClient = () => pool.connect();
 export default pool;
+
+/* ── Does this column exist? ──────────────────────────────────────
+   Cached after the first look, because it cannot change while the process is
+   running — a migration means a redeploy.
+
+   This replaces matching on error messages, which is where the previous
+   attempt broke: Postgres says `column "eu_vat" ... does not exist`, pg-mem
+   says `Column "eu_vat" not found`. A guard written against one wording passes
+   its own tests and fails in production, which is the worst of both. Asking
+   the schema is the same answer everywhere. */
+const _cols = new Map();
+export async function hasColumn(table, col) {
+  const key = `${table}.${col}`;
+  if (_cols.has(key)) return _cols.get(key);
+  let ok = false;
+  try {
+    await query(`SELECT ${col} FROM ${table} LIMIT 0`);
+    ok = true;
+  } catch { ok = false; }
+  _cols.set(key, ok);
+  if (!ok) console.error(`schema: ${table}.${col} is missing — run schema.sql.`);
+  return ok;
+}
