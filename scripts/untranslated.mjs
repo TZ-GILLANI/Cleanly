@@ -29,6 +29,11 @@ const FILES = [];
   }
 })("src");
 
+const LOOKS_LIKE_DATA = /^(https?:|data:|\/|#|[\d\s.,:%+-]+$|[a-z0-9_-]+$|[A-Z_]+$)/;
+const CSS_VALUE = /(^|\s)(\d+(\.\d+)?(px|rem|em|vh|vw|%|s|ms)\b|rgba?\(|calc\(|var\(|#[0-9a-f]{3,8}\b)/i;
+const CODE_FRAGMENT = /(=>|\)\s*\{|\bconst\b|\bMath\.|<\/|\/>|\$\{|\breturn\b|\bfunction\b|\.map\(|\.split\(|\bnew [A-Z])/;
+const HAS_WORDS = /[A-Za-zÀ-ſ][a-zà-ſ]{2,}/;
+
 const hits = [];
 for (const FILE of FILES) {
 const src = fs.readFileSync(FILE, "utf8");
@@ -81,13 +86,13 @@ for (const m of src.matchAll(/\b([Lt])\(/g)) {
 const inside = (i) => covered.some(([a, b]) => i > a && i < b);
 
 const SKIPPED_KEY = /\b(style|className|class|key|id|type|href|src|accept|autoComplete|inputMode|pattern|rel|target|method|role|fill|stroke|viewBox|xmlns|transform|points|icon|emoji|bg|color|url|status|code|lang|locale|currency|padding|margin|gap|inset|borderRadius|border|width|height|top|left|right|bottom|transition|animation|flex|grid|gridTemplateColumns|fontFamily|background|border|boxShadow|display|position|textAlign|flexDirection|justifyContent|alignItems|objectFit|whiteSpace|wordBreak|textDecoration|overflow|cursor|scrollSnapType|scrollSnapAlign|WebkitOverflowScrolling)\s*[:=]\s*$/;
-const LOOKS_LIKE_DATA = /^(https?:|data:|\/|#|[\d\s.,:%+-]+$|[a-z0-9_-]+$|[A-Z_]+$)/;
+/* LOOKS_LIKE_DATA hoisted above the loops — pass 2 needs it too */
 
 /* CSS values and code fragments are the bulk of the string literals in a file
    like this. Neither is copy, and a list full of "11px 8px" is a list nobody
    reads to the end. */
-const CSS_VALUE = /(^|\s)(\d+(\.\d+)?(px|rem|em|vh|vw|%|s|ms)\b|rgba?\(|calc\(|var\(|#[0-9a-f]{3,8}\b)/i;
-const CODE_FRAGMENT = /(=>|\)\s*\{|\bconst\b|\bMath\.|<\/|\/>|\$\{|\breturn\b|\bfunction\b|\.map\(|\.split\(|\bnew [A-Z])/;
+/* CSS_VALUE hoisted above the loops — pass 2 needs it too */
+/* CODE_FRAGMENT hoisted above the loops — pass 2 needs it too */
 /* A single word is still copy.
 
    This used to demand two or more words, on the theory that one word is
@@ -100,7 +105,7 @@ const CODE_FRAGMENT = /(=>|\)\s*\{|\bconst\b|\bMath\.|<\/|\/>|\$\{|\breturn\b|\b
    the word count is filtered by LOOKS_LIKE_DATA (lowercase identifiers,
    ALL_CAPS constants), CSS_VALUE and CODE_FRAGMENT instead — which is where it
    should have been done in the first place. */
-const HAS_WORDS = /[A-Za-zÀ-ſ][a-zà-ſ]{2,}/;
+/* HAS_WORDS hoisted above the loops — pass 2 needs it too */
 
 /* `hits` is declared once, above the per-file loop. A second `const hits = []`
    used to sit here — legal, because the loop body is its own scope, and
@@ -180,6 +185,71 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
               file: FILE.replace(/^src\//, "") });
 }
 }   /* ── end of per-file loop ── */
+
+/* ── Pass 2: bare JSX text children ──────────────────────────────
+
+   Pass 1 only ever looked at double-quoted STRING LITERALS. But half the text
+   in a React file is not a literal at all — it is a text node:
+
+       <div style={{...}}>Services & prices</div>
+
+   There is no quote anywhere near "Services & prices", so the scanner walked
+   straight past it. That is how ~45 strings across the company, cleaner and
+   admin screens sat in plain English while this script printed a confident
+   "0 untranslated strings". Musa found them by reading his own app.
+
+   A JSX text child is: >...< on one line, containing letters, with no braces
+   or angle brackets inside. Anything with && or === or =&gt; in it is a
+   JavaScript expression that merely looks like one, so it is dropped. */
+const JSX_TEXT = />([^<>{}\n]*[A-Za-z]{2}[^<>{}\n]*)</g;
+const EXPR_ISH = /(&&|\|\||===|!==|=>|\breturn\b|\btypeof\b)/;
+const ROLE2 = (name) =>
+  /^CustomerReportQueue$/.test(name) ? "admin" :
+  /^Customer/.test(name) ? "customer" :
+  /^Company/.test(name) ? "company" :
+  /^Employee/.test(name) ? "cleaner" :
+  /^(Admin|Billing|ReviewReports)/.test(name) ? "admin" : "shared";
+
+for (const FILE of FILES) {
+  const src = fs.readFileSync(FILE, "utf8");
+  const lines = src.split("\n");
+  const cmts = [];
+  for (const m of src.matchAll(/\/\*[\s\S]*?\*\//g)) cmts.push([m.index, m.index + m[0].length]);
+  for (const m of src.matchAll(/\/\/[^\n]*/g)) cmts.push([m.index, m.index + m[0].length]);
+  const inCmt = (i) => cmts.some(([a, b]) => i >= a && i < b);
+
+  const comps = [];
+  lines.forEach((ln, i) => {
+    const m = /^(?:export\s+(?:default\s+)?)?function ([A-Z]\w+)\s*\(/.exec(ln)
+           || /^(?:export\s+(?:default\s+)?)?const ([A-Z]\w+)\s*=\s*(?:\(|function|React\.memo)/.exec(ln);
+    if (m) comps.push({ name: m[1], role: ROLE2(m[1]), start: i });
+  });
+  comps.forEach((c, i) => { c.end = i + 1 < comps.length ? comps[i + 1].start : lines.length; });
+  const own = (i) => comps.find((c) => i >= c.start && i < c.end);
+
+  for (const m of src.matchAll(JSX_TEXT)) {
+    if (inCmt(m.index)) continue;
+    /* `(b) => b.status < 4` looks like a text node: the `>` of the arrow and
+       the `<` of the comparison bracket a run of letters. A real JSX `>` is
+       never preceded by =, !, < or >. */
+    if (/[=!<>]/.test(src[m.index - 1] || "")) continue;
+    const raw = m[1].trim();
+    if (raw.length < 3 || raw.length > 200) continue;
+    if (EXPR_ISH.test(raw)) continue;
+    const text = raw.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+    if (!HAS_WORDS.test(text) || LOOKS_LIKE_DATA.test(text)) continue;
+    if (CSS_VALUE.test(text) || CODE_FRAGMENT.test(text)) continue;
+    if (/^[\u{1F1E6}-\u{1F1FF}]{2}/u.test(raw)) continue;
+    const line = src.slice(0, m.index).split("\n").length - 1;
+    const o = own(line);
+    if (!o) continue;
+    hits.push({ role: o.role, comp: o.name, line: line + 1, text: raw.slice(0, 80),
+                file: FILE.replace(/^src\//, ""), kind: "jsx-text" });
+  }
+}
+
+
+
 
 const ROLES = ["customer", "company", "cleaner", "admin", "shared"];
 const byRole = Object.fromEntries(ROLES.map((r) => [r, hits.filter((h) => h.role === r)]));

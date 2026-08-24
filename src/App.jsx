@@ -52,7 +52,7 @@ const DIAL_CODES = (() => {
 })();
 
 /* Label built at render time, because it depends on the current language. */
-const dialLabel = (row, lang) => `${row.f} ${row.d} ${regionNamer(lang)(row.c)}`;
+const dialLabel = (row, lang) => `${row.f}  ${regionNamer(lang)(row.c)}  ${row.d}`;
 
 /* Priority first, then by the localised name. */
 const dialCodesFor = (lang) => {
@@ -147,11 +147,17 @@ function PhoneField({ label, value, onChange }) {
   return (
     <div style={{ marginBottom: 13 }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{label}</div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <select value={cc} onChange={(e) => setCc(e.target.value)}
-          style={{ width: 116, border: `1.5px solid ${C.line}`, borderRadius: 13, padding: "11px 8px", fontFamily: B, fontSize: 13, background: C.bg, color: C.ink, outline: "none" }}>
-          {dialCodesFor(getLang()).map((x) => <option key={x.c} value={x.c}>{dialLabel(x, getLang())}</option>)}
-        </select>
+      {/* The country used to share a row with the number at 116px wide, which
+          clipped every name — you saw a flag and a dial code and had to guess
+          the rest. It gets its own full-width row now. */}
+      <select value={cc} onChange={(e) => setCc(e.target.value)}
+        style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, border: `1.5px solid ${C.line}`, borderRadius: 13, padding: "11px 12px", fontFamily: B, fontSize: 13, background: C.bg, color: C.ink, outline: "none" }}>
+        {dialCodesFor(getLang()).map((x) => <option key={x.c} value={x.c}>{dialLabel(x, getLang())}</option>)}
+      </select>
+      <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "0 12px", borderRadius: 13, background: C.navyChip, fontFamily: B, fontWeight: 700, fontSize: 13.5, color: C.navy, flexShrink: 0 }}>
+          {(dialCodesFor(getLang()).find((x) => x.c === cc) || {}).d || ""}
+        </div>
         <input value={local} inputMode="tel" placeholder="30 123 4567"
           onChange={(e) => setLocal(e.target.value)}
           style={{ flex: 1, minWidth: 0, border: `1.5px solid ${bad ? C.coral : C.line}`, borderRadius: 13, padding: "11px 13px", fontFamily: B, fontSize: 13.5, background: C.bg, color: C.ink, outline: "none" }} />
@@ -2244,12 +2250,23 @@ function Auth() {
   const [fpNew, setFpNew] = useState("");
   const submit = async () => {
     setBusy(true); setErr(null);
+    /* This had no `else`.
+
+       Logging in called store.login(), and then — unconditionally — fell
+       straight through and called signupCustomer() as well, overwriting `res`
+       with the SIGNUP result. So a wrong password showed you whatever the
+       registration attempt complained about instead of "Invalid email or
+       password", and every successful login fired a pointless account-creation
+       request at the server behind your back. */
     let res;
-    if (mode === "login") res = await store.login(f);
-    const withProof = { ...f, phoneToken, emailToken };
-    if (role === "customer") res = await store.signupCustomer(withProof);
-    else if (role === "employee") res = await store.signupEmployee(withProof);
-    else res = await store.signupCompany(withProof);
+    if (mode === "login") {
+      res = await store.login(f);
+    } else {
+      const withProof = { ...f, phoneToken, emailToken };
+      if (role === "customer") res = await store.signupCustomer(withProof);
+      else if (role === "employee") res = await store.signupEmployee(withProof);
+      else res = await store.signupCompany(withProof);
+    }
     setBusy(false);
     if (res?.pending) { setPendingScreen(true); return; }
     if (res?.error) setErr(res.error);
@@ -2361,9 +2378,12 @@ function Auth() {
 
             Only on the customer's sign-in: a company owner or a cleaner opening
             this app is at work, not being welcomed. */}
+        {/* Sized to the artwork's real aspect ratio, and NOT pulled left. A
+            forced 104x104 square plus marginLeft:-6 slid the "Hello!" bubble
+            under the screen edge and clipped it. */}
         {role === "customer" ? (
-          <img src="/octopus-hello.png" alt="" width={104} height={104}
-            style={{ display: "block", marginLeft: -6, objectFit: "contain" }} />
+          <img src="/octopus-hello.png" alt="" width={132} height={121}
+            style={{ display: "block", objectFit: "contain", maxWidth: "100%" }} />
         ) : (
           <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: R.lg, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>
             <Ic name={role === "company" ? "building" : "sparkle"} size={30} sw={1.7} color="#fff" />
@@ -3066,7 +3086,11 @@ function BookingFlow({ company, close, onBooked }) {
             url={payWait.url}
             check={() => getPaymentStatus(payWait.row.id)}
             onPaid={() => { toast(L("Payment received", "Sikeres fizetés")); onBooked(payWait.row); }}
-            onCancel={async () => { await cancelBooking(payWait.row.id); toast(L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés")); close(); }}
+            onCancel={async () => {
+              const r = await cancelBooking(payWait.row.id);
+              if (!r?.error) toast(L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés"));
+              close();
+            }}
           />
         )}
         <div style={{ padding: "12px 22px calc(22px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.line}`, display: "flex", gap: 10 }}>
@@ -3196,7 +3220,7 @@ function CustomerBookings({ openBooking }) {
                   <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1 }}>{co ? `${co.emoji} ${co.name}` : ""}</div>
                 </div>
               </div>
-              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>Paid</Pill>} <StatusPill status={b.status} fulfilment={b.fulfilment} /></>
+              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>{L("Paid", "Fizetve")}</Pill>} <StatusPill status={b.status} fulfilment={b.fulfilment} /></>
             </div>
 
             {b.status !== 9 && b.status !== 8 && (
@@ -3217,7 +3241,7 @@ function CustomerBookings({ openBooking }) {
 
             {b.status === 8 && (
               <div style={{ background: C.coralSoft, border: "1px solid #FFD8D1", borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.coralText, lineHeight: 1.55 }}>
-                ✕ <b>{L("Declined by", "Elutasította:")} {co?.name || L("the company", "a cég")}.</b>{b.decline_reason ? ` ${b.decline_reason}.` : ""} {L("Try another time or company.", "Próbálj másik időpontot vagy céget.")}
+                ✕ <b>{L("Declined by", "Elutasította:")} {co?.name || L("the company", "a cég")}.</b>{` ${b.decline_reason || L("Not available for this time", "Ebben az időpontban nem elérhető")}.`} {L("Try another time or company.", "Próbálj másik időpontot vagy céget.")}
               </div>
             )}
 
@@ -3290,7 +3314,13 @@ function CustomerBookings({ openBooking }) {
           title={L("Cancel this booking?", "Lemondod a foglalást?")}
           body={fill(L("Your booking with {0} will be cancelled. This can't be undone.", "A(z) {0} felé leadott foglalásod törlésre kerül. Ez nem vonható vissza."), companies.find((c) => c.id === confirmCancel.company_id)?.name || L("the company", "cég"))}
           confirmLabel={L("Yes, cancel", "Igen, lemondom")}
-          onConfirm={() => { cancelBooking(confirmCancel.id); toast(L("Booking cancelled", "Foglalás lemondva")); setConfirmCancel(null); }}
+          onConfirm={async () => {
+            const id = confirmCancel.id;
+            setConfirmCancel(null);
+            const r = await cancelBooking(id);
+            // Only say it worked if it worked. setError already surfaced the why.
+            if (!r?.error) toast(L("Booking cancelled", "Foglalás lemondva"));
+          }}
           onCancel={() => setConfirmCancel(null)}
         />
       )}
@@ -3467,7 +3497,7 @@ function EmployeeJobs({ openProfile }) {
 
               {b.note && (
                 <div style={{ background: "#FFF8EA", border: `1px solid ${C.gold}55`, borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: "#8A6A1F", lineHeight: 1.55 }}>
-                  <b>Customer note:</b> {b.note}
+                  <b>{L("Customer note:", "Ügyfél megjegyzése:")}</b> {b.note}
                 </div>
               )}
 
@@ -3525,7 +3555,7 @@ function EmployeeJobs({ openProfile }) {
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{(b.service_snapshot || {}).name}</div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{b.customer_name} · {dayLabel(b.scheduled_date)}</div>
                 </div>
-                <Pill>Done</Pill>
+                <Pill>{L("Done", "Kész")}</Pill>
               </div>
             ))}
           </>
@@ -3550,7 +3580,7 @@ function EmployeeNotices() {
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={L("Message your company…", "Írj a cégednek…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
-        <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast(L("Message sent to your company", "Üzenet elküldve a cégednek")); setReply(""); } }}>Send</Btn>
+        <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast(L("Message sent to your company", "Üzenet elküldve a cégednek")); setReply(""); } }}>{L("Send", "Küldés")}</Btn>
       </div>
       {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>{L("No messages from your company yet.", "Még nincs üzenet a cégedtől.")}</div>}
       {mine.map((n) => (
@@ -3568,7 +3598,7 @@ function EmployeeNotices() {
             </div>
           </div>
           <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, lineHeight: 1.65, marginTop: 10 }}>{n.body}</div>
-          {!n.from_employee && !n.is_read && <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green, marginTop: 8 }}>Tap to mark as read ✓</div>}
+          {!n.from_employee && !n.is_read && <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green, marginTop: 8 }}>{L("Tap to mark as read", "Koppints az olvasottnak jelöléshez")}</div>}
         </div>
       ))}
     </div>
@@ -3790,7 +3820,7 @@ function CompanyJobs({ openProfile }) {
             )}
 
             <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.inkFaint }}>ASSIGN:</span>
+              <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.inkFaint }}>{L("ASSIGN:", "KIOSZTÁS:")}</span>
               {employees.filter((e) => e.is_active !== false).map((m) => (
                 <button key={m.id} onClick={() => { assignBooking(b.id, m.id); toast(`Assigned to ${m.full_name.split(" ")[0]}`); }} style={{ fontFamily: B, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 99, border: "none", cursor: "pointer", background: b.assigned_to === m.id ? C.navy : C.bg, color: b.assigned_to === m.id ? "#fff" : C.navySoft }}>
                   {b.assigned_to === m.id ? "✓ " : ""}{m.full_name.split(" ")[0]}
@@ -3855,7 +3885,7 @@ function CompanyJobs({ openProfile }) {
                   </div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{dayLabel(b.scheduled_date)} · {huf((b.total_huf || 0) - (b.service_fee_huf || 0))} your share</div>
                 </div>
-                <Pill>Done</Pill>
+                <Pill>{L("Done", "Kész")}</Pill>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
                 {/* The real uploader is <PartnerInvoiceBox> above: it posts to
@@ -3890,8 +3920,8 @@ function CompanyJobs({ openProfile }) {
             ))}
           </div>
           <Field area placeholder={L("Add a note (optional)…", "Megjegyzés (nem kötelező)…")} value={reason} onChange={(e) => setReason(e.target.value)} />
-          <Btn full danger onClick={() => { declineBooking(declining.id, reason || L("Not available for this time", "Ebben az időpontban nem elérhető")); toast(L("Booking declined", "Foglalás elutasítva")); setDeclining(null); }}>
-            Decline booking
+          <Btn full danger onClick={() => { declineBooking(declining.id, reason.trim()); toast(L("Booking declined", "Foglalás elutasítva")); setDeclining(null); }}>
+            {L("Decline booking", "Foglalás elutasítása")}
           </Btn>
         </Sheet>
       )}
@@ -3924,7 +3954,7 @@ function CompanyClients() {
   const totalSpend = clients.reduce((a, c) => a + c.spend, 0);
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>Clients ({clients.length})</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>{fill(L("Clients ({0})", "Ügyfelek ({0})"), clients.length)}</div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, background: C.card, borderRadius: R.md, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{huf(totalSpend)}</div>
@@ -3939,7 +3969,7 @@ function CompanyClients() {
         <span style={{ opacity: .45 }}></span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("Search clients…", "Ügyfelek keresése…")} style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
       </div>
-      {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No clients yet — they appear after the first booking.</div>}
+      {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, fontFamily: B, fontSize: 13, color: C.inkSoft }}>{L("No clients yet — they appear after the first booking.", "Még nincs ügyfél — az első foglalás után jelennek meg.")}</div>}
       {filtered.map((c) => (
         <div key={c.key} style={{ background: C.card, borderRadius: R.lg, padding: "14px 16px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -3948,14 +3978,14 @@ function CompanyClients() {
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}>
                 {c.name}
                 {c.kind === "student" && <Pill bg={C.mintSoft} color={C.green}></Pill>}
-                {c.hasSub && <Pill bg={C.navyChip} color={C.navySoft}>plan</Pill>}
+                {c.hasSub && <Pill bg={C.navyChip} color={C.navySoft}>{L("plan", "bérlet")}</Pill>}
               </div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
                 {c.done}/{c.jobs} jobs done · {huf(c.spend)} · last: {c.last ? dayLabel(c.last) : "—"}
               </div>
               {c.addresses.size > 0 && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[...c.addresses][0]}</div>}
             </div>
-            {c.phone && <a href={`tel:${c.phone}`} style={{ textDecoration: "none", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, background: C.card }}>Call</a>}
+            {c.phone && <a href={`tel:${c.phone}`} style={{ textDecoration: "none", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, background: C.card }}>{L("Call", "Hívás")}</a>}
           </div>
         </div>
       ))}
@@ -3977,7 +4007,7 @@ function CompanySchedule() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 6px" }}>{L("Schedule", "Beosztás")}</div>
-      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 14 }}>Your whole pipeline on a calendar — dots mark days with jobs.</div>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 14 }}>{L("Your whole pipeline on a calendar — dots mark days with jobs.", "A teljes munkamenet egy naptárban — a pontok a munkanapokat jelölik.")}</div>
       <Calendar selected={selDay} onSelect={setSelDay} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 10px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{dayLabel(selDay)} · {dayJobs.length} job{dayJobs.length === 1 ? "" : "s"}</div>
@@ -4028,7 +4058,7 @@ function CompanyServices() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px" }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>Services & prices</div>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("Services & prices", "Szolgáltatások és árak")}</div>
         <Btn small onClick={() => openEditor(null)}>+ {L("New service", "Új szolgáltatás")}</Btn>
       </div>
       <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, lineHeight: 1.6, marginBottom: 16 }}>
@@ -4049,7 +4079,7 @@ function CompanyServices() {
               </div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{s.description} · {s.minutes} min · {(s.tasks || []).length} tasks</div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <Btn small ghost onClick={() => openEditor(s)}>️ Edit</Btn>
+                <Btn small ghost onClick={() => openEditor(s)}>{L("Edit", "Szerkesztés")}</Btn>
                 {s.promo_pct > 0 && <Pill bg={C.mintSoft} color={C.greenDeep}>−{s.promo_pct}%</Pill>}
                 <Btn small ghost onClick={() => { upsertService({ ...s, is_active: !s.is_active }); toast(s.is_active ? L("Service hidden", "Szolgáltatás elrejtve") : L("Service re-listed", "Szolgáltatás újra látható")); }} style={{ color: s.is_active ? C.coral : C.green }}>
                   {s.is_active ? L("Hide", "Elrejtés") : L("Re-list", "Újra listázom")}
@@ -4059,7 +4089,7 @@ function CompanyServices() {
           </div>
         </div>
       ))}
-      {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30 }}>No services yet — add your first one so customers can book you.</div>}
+      {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30 }}>{L("No services yet — add your first one so customers can book you.", "Még nincs szolgáltatás — add hozzá az elsőt, hogy foglalni tudjanak.")}</div>}
 
       {editing && (
         <Sheet title={editing === "new" ? L("New service", "Új szolgáltatás") : L("Edit service", "Szolgáltatás szerkesztése")} close={() => setEditing(null)}>
@@ -4253,7 +4283,7 @@ function CompanyTeam() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px" }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>Team</div>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("Team", "Csapat")}</div>
         <Btn small onClick={() => { setShowAdd(true); setNewCode(null); setLabel(""); }}>+ {L("Invite employee", "Munkatárs meghívása")}</Btn>
       </div>
 
@@ -4261,7 +4291,7 @@ function CompanyTeam() {
         <div style={{ textAlign: "center", padding: "44px 24px", background: C.card, borderRadius: R.lg, boxShadow: "0 2px 10px rgba(20,28,58,.05)", marginBottom: 16 }}>
           <div style={{ fontSize: 34 }}></div>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginTop: 12 }}>{L("No team members yet", "Még nincs csapattag")}</div>
-          <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>Invite your first cleaner. They sign up with the code and are instantly linked to your company.</div>
+          <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>{L("Invite your first cleaner. They sign up with the code and are instantly linked to your company.", "Hívd meg az első takarítót. A kóddal regisztrál, és azonnal a céghez kapcsolódik.")}</div>
         </div>
       )}
 
@@ -4338,7 +4368,7 @@ function CompanyTeam() {
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 <Btn small ghost style={{ flex: 1 }} onClick={() => copyCode(i.code)}>{L("Copy code", "Kód másolása")}</Btn>
-                <Btn small ghost style={{ flex: 1, color: C.coral }} onClick={() => { deleteInvite(i.code); toast(L("Invite deleted", "Meghívó törölve")); }}>✕ Revoke</Btn>
+                <Btn small ghost style={{ flex: 1, color: C.coral }} onClick={() => { deleteInvite(i.code); toast(L("Invite deleted", "Meghívó törölve")); }}>{L("Revoke", "Visszavonás")}</Btn>
               </div>
             </div>
           ))}
@@ -4360,7 +4390,7 @@ function CompanyTeam() {
               <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 12 }}>Share this code with {label || L("your employee", "a munkatársaddal")}:</div>
               <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 26, color: C.navy, letterSpacing: 3, background: C.card, borderRadius: R.lg, padding: "18px 0", boxShadow: "0 2px 12px rgba(20,28,58,.07)", marginBottom: 14 }}>{newCode}</div>
               <Btn ghost full onClick={() => copyCode(newCode)} style={{ marginBottom: 10 }}>{L("Copy to clipboard", "Másolás a vágólapra")}</Btn>
-              <Btn full mint onClick={() => setShowAdd(false)}>Done</Btn>
+              <Btn full mint onClick={() => setShowAdd(false)}>{L("Done", "Kész")}</Btn>
             </div>
           )}
         </Sheet>
@@ -4383,7 +4413,7 @@ function CompanyTeam() {
                 <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.body}</div>
               </div>
               {n.from_employee
-                ? <Pill bg={C.mintSoft} color={C.green}>Reply</Pill>
+                ? <Pill bg={C.mintSoft} color={C.green}>{L("Reply", "Válasz")}</Pill>
                 : n.is_read
                 ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : L("Seen", "Látta")}</Pill>
                 : <Pill bg={C.amberSoft} color={C.amber}>✓ {L("Not seen yet", "Még nem látta")}</Pill>}
@@ -4416,7 +4446,7 @@ function CompanyTeam() {
             ))}
           </div>
           <Field area placeholder={L("Write your message…", "Írd meg az üzeneted…")} value={msg} onChange={(e) => setMsg(e.target.value)} />
-          <Btn full disabled={!msg.trim()} onClick={() => { sendNotice(showMsg.id, msg); toast(`Notice sent to ${showMsg.full_name.split(" ")[0]}`); setShowMsg(null); }}>Send notice →</Btn>
+          <Btn full disabled={!msg.trim()} onClick={() => { sendNotice(showMsg.id, msg); toast(`Notice sent to ${showMsg.full_name.split(" ")[0]}`); setShowMsg(null); }}>{L("Send notice →", "Értesítés küldése →")}</Btn>
         </Sheet>
       )}
     </div>
@@ -4847,7 +4877,7 @@ function CompanyReviews() {
   const [reason, setReason] = React.useState("");
   const [rBusy, setRBusy] = React.useState(false);
   React.useEffect(() => { fetchCompanyReviews().then(setData); }, [dataVersion]);
-  if (!data) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading reviews…</div>;
+  if (!data) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading reviews…", "Értékelések betöltése…")}</div>;
   const reviews = data.reviews || [];
   const cleaners = data.cleaners || [];
   const shown = filter === "all" ? reviews : reviews.filter((r) => String(r.cleaner_id || "unassigned") === filter);
@@ -5501,7 +5531,7 @@ function CompanySettings() {
         <Field label={L("Where should we send invoices?", "Hová küldjük a számlákat?")} value={f.billing_email} onChange={set("billing_email")} placeholder="szamla@ceged.hu" />
       </div>
 
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>Business details (for verification & invoicing)</div>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>{L("Business details (for verification & invoicing)", "Céges adatok (ellenőrzéshez és számlázáshoz)")}</div>
       <Field label={L("Tax number (adószám)", "Adószám")} placeholder="12345678-1-42"
         hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? L("Valid", "Érvényes") : L("Invalid format — 12345678-1-42", "Hibás formátum — 12345678-1-42")) : undefined}
         value={f.tax_id} onChange={set("tax_id")} />
@@ -5530,7 +5560,7 @@ function CompanySettings() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Special offer", "Akció")}</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>A discount for all customers — shown on your card and applied at checkout.</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{L("A discount for all customers — shown on your card and applied at checkout.", "Kedvezmény minden ügyfélnek — a kártyádon látszik, és a fizetésnél érvényesül.")}</div>
           </div>
           <button onClick={() => setF({ ...f, promo_on: !f.promo_on })} style={{ width: 46, height: 26, borderRadius: 99, border: "none", cursor: "pointer", background: f.promo_on ? C.green : C.line, position: "relative", transition: "background .2s", flexShrink: 0 }}>
             <span style={{ position: "absolute", top: 3, left: f.promo_on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,.25)" }} />
@@ -5544,7 +5574,7 @@ function CompanySettings() {
             </div>
             <Field label={L("Offer name (optional)", "Akció neve (nem kötelező)")} placeholder={L("e.g. Spring cleaning week", "pl. Tavaszi nagytakarítás hete")} value={f.promo_label} onChange={set("promo_label")} />
             <Field label={L("Ends on (optional — empty = until you turn it off)", "Meddig tart (nem kötelező — üresen: amíg ki nem kapcsolod)")} type="date" value={f.promo_until} onChange={set("promo_until")} />
-            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>If a student's discount is higher, they get the better one — never both.</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>{L("If a student’s discount is higher, they get the better one — never both.", "Ha a diákkedvezmény magasabb, azt kapja — de sosem mindkettőt.")}</div>
           </div>
         )}
       </div>
@@ -5861,7 +5891,7 @@ function AnnouncementComposer() {
       <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", padding: 0, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
         <div style={{ textAlign: "left" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{L("Send announcement", "Hirdetmény küldése")}</div>
-          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>Target everyone, a role, a city, a country — or one person. You see the recipient count before it sends.</div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>{L("Target everyone, a role, a city, a country — or one person. You see the recipient count before it sends.", "Célozz mindenkit, egy szerepkört, várost, országot — vagy egyetlen embert. Küldés előtt látod a címzettek számát.")}</div>
         </div>
         <span style={{ color: C.inkFaint, fontSize: 15 }}>{open ? "▴" : "▾"}</span>
       </button>
@@ -5905,7 +5935,7 @@ function AnnouncementComposer() {
 
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder={L("Title — e.g. 20% off your first clean this week", "Cím — pl. 20% kedvezmény az első takarításra a héten")} style={{ ...inputS, marginBottom: 8 }} />
           <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} rows={3} placeholder={L("Message (optional)", "Üzenet (nem kötelező)")} style={{ ...inputS, resize: "vertical", marginBottom: 10 }} />
-          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 8 }}>Sending to: <b style={{ color: C.ink }}>{describe()}</b></div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 8 }}>{L("Sending to:", "Címzettek:")} <b style={{ color: C.ink }}>{describe()}</b></div>
           <Btn full onClick={preview} disabled={busy || !title.trim()}>{busy ? L("Checking…", "Ellenőrzés…") : L("Review before sending", "Ellenőrzés küldés előtt")}</Btn>
         </div>
       )}
@@ -5939,12 +5969,12 @@ function AdminDashboard() {
   }, [tries]);
 
   if (busy)
-    return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading stats…</div>;
+    return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading stats…", "Statisztika betöltése…")}</div>;
   if (!adminStats)
     return (
       <div style={{ textAlign: "center", padding: 60 }}>
         <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginBottom: 14 }}>{L("Couldn't load platform stats.", "Nem sikerült betölteni a statisztikákat.")}</div>
-        <Btn small onClick={() => setTries(t => t + 1)}>↻ Retry</Btn>
+        <Btn small onClick={() => setTries(t => t + 1)}>{L("Retry", "Újra")}</Btn>
       </div>
     );
 
@@ -5977,7 +6007,7 @@ function AdminDashboard() {
 
       {adminRevenue && adminRevenue.length > 0 && (
         <>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 12 }}>Revenue — last 30 days</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 12 }}>{L("Revenue — last 30 days", "Bevétel — utolsó 30 nap")}</div>
           <div style={{ background: C.card, borderRadius: R.lg, padding: "16px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 80 }}>
               {adminRevenue.map((r, i) => (
@@ -6139,7 +6169,7 @@ function AdminCompanies() {
     if (!adminAllCompanies) adminFetchAllCompanies().finally(() => setBusy(false));
   }, []);
 
-  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
+  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>;
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
@@ -6328,7 +6358,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
 
         <div style={{ display: "flex", gap: 8, marginBottom: (role === "admin" || role === "company") ? 14 : 0 }}>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder={L("Write a reply…", "Írj választ…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
-          <Btn small mint disabled={!text.trim()} onClick={send}>Send</Btn>
+          <Btn small mint disabled={!text.trim()} onClick={send}>{L("Send", "Küldés")}</Btn>
         </div>
       ) : (
         <div style={{ fontFamily: B, fontSize: 12, fontWeight: 700, color: C.green, textAlign: "center", padding: 8 }}>✓ Resolved{complaint.resolution ? ` — ${complaint.resolution}` : ""}</div>
@@ -6338,17 +6368,17 @@ function ComplaintThread({ complaint, role, close, onChange }) {
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{L("Move to a company to resolve", "Céghez rendelés megoldásra")}</div>
           <div style={{ display: "flex", gap: 8 }}>
             <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink }}>
-              <option value="">Select a company…</option>
+              <option value="">{L("Select a company…", "Válassz céget…")}</option>
               {(adminAllCompanies || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <Btn small ghost disabled={!assignTo} onClick={doAssign}>Assign →</Btn>
+            <Btn small ghost disabled={!assignTo} onClick={doAssign}>{L("Assign →", "Kiosztás →")}</Btn>
           </div>
         </div>
       )}
       {(role === "admin" || role === "company") && status !== "resolved" && (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={L("Resolution note…", "Megoldás leírása…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink, outline: "none" }} />
-          <Btn small mint onClick={doResolve}>✓ Resolve</Btn>
+          <Btn small mint onClick={doResolve}>{L("Resolve", "Lezárás")}</Btn>
         </div>
       )}
     </Sheet>
@@ -6360,14 +6390,14 @@ function CompanyComplaints() {
   const [busy, setBusy] = useState(true);
   const [open, setOpen] = useState(null);
   React.useEffect(() => { fetchMyComplaints().finally(() => setBusy(false)); }, []);
-  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
+  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>;
   const list = myComplaints || [];
   const stat = { open: { l: L("Open", "Nyitott"), bg: C.amberSoft, c: C.amber }, in_progress: { l: L("To resolve", "Megoldásra vár"), bg: C.navyChip, c: C.navySoft }, resolved: { l: L("Resolved", "Megoldva"), bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Issues to resolve", "Megoldandó ügyek")}</div>
       <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{L("Complaints Cleano assigned to your company.", "A Cleano által a cégedhez rendelt panaszok.")}</div>
-      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>Nothing assigned to you</div>}
+      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>{L("Nothing assigned to you", "Nincs hozzád rendelve semmi")}</div>}
       {list.map((c) => (
         <div key={c.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -6539,7 +6569,7 @@ function CustomerReportQueue() {
               placeholder={acting.decision === "reviewed" ? L("e.g. called the customer, warned them, company reassigned", "pl. felhívtuk az ügyfelet, figyelmeztettük, a cég új takarítót adott") : L("e.g. spoke to both sides, misunderstanding", "pl. mindkét féllel beszéltünk, félreértés volt")}
               style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
-              <Btn full ghost onClick={() => setActing(null)}>Cancel</Btn>
+              <Btn full ghost onClick={() => setActing(null)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full disabled={busy || note.trim().length < 5} onClick={async () => {
                 setBusy(true);
                 const res = await adminHandleCustomerReport(acting.id, acting.decision, note.trim());
@@ -6560,13 +6590,13 @@ function AdminComplaints() {
   const [busy, setBusy] = useState(!adminComplaints);
   const [open, setOpen] = useState(null);
   React.useEffect(() => { if (!adminComplaints) adminFetchComplaints().finally(() => setBusy(false)); }, []);
-  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
+  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>;
   const list = adminComplaints || [];
   const stat = { open: { l: L("Open", "Nyitott"), bg: C.amberSoft, c: C.amber }, in_progress: { l: L("In progress", "Folyamatban"), bg: C.navyChip, c: C.navySoft }, resolved: { l: L("Resolved", "Megoldva"), bg: C.mintSoft, c: C.green } };
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 14px" }}>Complaints ({list.filter(c => c.status !== "resolved").length} open)</div>
-      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No complaints — happy customers</div>}
+      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>{L("No complaints — happy customers", "Nincs panasz — elégedett ügyfelek")}</div>}
       {list.map((c) => (
         <div key={c.id} style={{ background: C.card, borderRadius: R.lg, padding: "14px 16px", marginBottom: 12, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -6578,7 +6608,7 @@ function AdminComplaints() {
           </div>
           {c.body && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.6, background: C.bg, borderRadius: R.md, padding: "9px 12px" }}>{c.body}</div>}
           {c.resolution && <div style={{ fontFamily: B, fontSize: 11.5, color: C.green, marginTop: 8 }}>✓ {c.resolution}</div>}
-          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>Manage / assign →</Btn>
+          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>{L("Manage / assign →", "Kezelés / kiosztás →")}</Btn>
         </div>
       ))}
       {open && <ComplaintThread complaint={open} role="admin" close={() => { setOpen(null); adminFetchComplaints(); }} onChange={adminFetchComplaints} />}
@@ -6639,7 +6669,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
         <button onClick={close} style={{ border: "none", background: C.card, borderRadius: 99, width: 34, height: 34, fontSize: 15, color: C.inkSoft, cursor: "pointer" }}>✕</button>
       </div>
       <div style={{ padding: "0 18px calc(30px + env(safe-area-inset-bottom))" }}>
-        {!d ? <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div> : (
+        {!d ? <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div> : (
           <>
             <Sec t={L("Account", "Fiók")}>
               <Row k={L("Name", "Név")} v={d.user?.full_name} /><Row k={L("Email", "E-mail")} v={d.user?.email} />
@@ -6729,7 +6759,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
               {!(d.reviews || []).length && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint }}>{L("None.", "Nincs.")}</div>}
               {(d.reviews || []).map((r) => (
                 <div key={r.id} style={{ padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
-                  <div style={{ color: C.amber, fontSize: 12 }}>{stars(r.stars ?? r.rating)}{r.removed_at ? <span style={{ color: C.red, fontFamily: B, fontSize: 10.5, fontWeight: 700 }}> · REMOVED</span> : null}</div>
+                  <div style={{ color: C.amber, fontSize: 12 }}>{stars(r.stars ?? r.rating)}{r.removed_at ? <span style={{ color: C.red, fontFamily: B, fontSize: 10.5, fontWeight: 700 }}> {L("· REMOVED", "· ELTÁVOLÍTVA")}</span> : null}</div>
                   {(r.body || r.comment) && <div style={{ fontFamily: B, fontSize: 11.5, color: C.ink, marginTop: 2 }}>“{r.body || r.comment}”</div>}
                 </div>
               ))}
@@ -6765,7 +6795,7 @@ function AdminUsers() {
     if (!adminAllUsers) adminFetchUsers().finally(() => setBusy(false));
   }, []);
 
-  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
+  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>;
 
   const filtered = (adminAllUsers || []).filter((u) =>
     (isCeo || u.role !== "admin") &&
@@ -6906,7 +6936,7 @@ function AdminBookings() {
     if (!adminAllBookings) adminFetchAllBookings().finally(() => setBusy(false));
   }, []);
 
-  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>Loading…</div>;
+  if (busy) return <div style={{ textAlign: "center", padding: 60, fontFamily: B, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>;
 
   const all = adminAllBookings || [];
   const shown = filter === "all" ? all : filter === "active" ? all.filter((b) => b.status > 0 && b.status < 4) : filter === "done" ? all.filter((b) => b.status === 4) : all.filter((b) => b.status === 9 || b.status === 8);
@@ -7204,25 +7234,29 @@ function AdminPanel({ tab }) {
   const { logout, session } = useStore();
   const isCeo = session?.isSuper === true;
   const [acct, setAcct] = useState(false);
+  const [editMe, setEditMe] = useState(false);
   return (
     <div className="cl-fade" style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
       <div style={{ background: `radial-gradient(140% 100% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(22px + env(safe-area-inset-top)) 20px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* THIS was the empty box: a 46px tile holding nothing but an
-              orphaned variation selector the emoji sweep left behind. */}
-          <Octo size={40} />
+          {/* The mark IS the way into your account — tap it to edit details
+              or sign out. (It replaced a 46px tile that held nothing but an
+              orphaned variation selector the emoji sweep left behind.) */}
+          <button onClick={() => setAcct(true)} aria-label={L("Account", "Fiók")}
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <Octo size={40} />
+          </button>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{L("Admin panel", "Admin felület")}</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? L("CEO admin · Cleano Hungary", "CEO admin · Cleano Magyarország") : L("Company review team", "Cégellenőrző csapat")}</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? L("CEO admin · Cleano Hungary", "CEO admin · Cleano Magyarország")
+                : fill(L("{0} · admin", "{0} · admin"), session?.name || L("Admin", "Admin"))}</div>
           </div>
-          {/* Same shape as the customer header: your initials, top right,
-              open your account. "Log out" was hardcoded English here too. */}
-          <button onClick={() => setAcct(true)} aria-label={L("Account", "Fiók")}
-            style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,.14)", border: "1.5px solid rgba(255,255,255,.28)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: "#fff", cursor: "pointer", flexShrink: 0 }}>
-            {String(session?.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-          </button>
+
         </div>
       </div>
+      {/* The same profile sheet every other role gets — an admin had no way
+          to reach their own details at all before this. */}
+      {editMe && <ProfileSheet close={() => setEditMe(false)} />}
       {acct && (
         <Sheet close={() => setAcct(false)} title={L("Account", "Fiók")}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
@@ -7235,6 +7269,10 @@ function AdminPanel({ tab }) {
               </div>
             </div>
           </div>
+          <Btn full ghost onClick={() => { setAcct(false); setEditMe(true); }}>
+            {L("Edit my details", "Adataim szerkesztése")}
+          </Btn>
+          <div style={{ height: 9 }} />
           <Btn full danger onClick={logout}>{L("Log out", "Kijelentkezés")}</Btn>
         </Sheet>
       )}
@@ -7384,10 +7422,10 @@ function Shell() {
             <select value={role} onChange={(e) => { demoSwitchRole(e.target.value); setTab("home"); }}
               title={L("Demo — switch role", "Demó — szerepváltás")}
               style={{ background: "rgba(94,230,168,.14)", color: C.mint, border: `1px solid ${C.mint}55`, borderRadius: R.sm, fontFamily: B, fontSize: 10.5, fontWeight: 700, padding: "4px 6px", cursor: "pointer", outline: "none" }}>
-              <option value="customer" style={{ color: "#111" }}>⇄ Customer</option>
-              <option value="employee" style={{ color: "#111" }}>⇄ Cleaner</option>
-              <option value="company" style={{ color: "#111" }}>⇄ Company</option>
-              <option value="admin" style={{ color: "#111" }}>⇄ Admin</option>
+              <option value="customer" style={{ color: "#111" }}>{L("Customer", "Ügyfél")}</option>
+              <option value="employee" style={{ color: "#111" }}>{L("Cleaner", "Takarító")}</option>
+              <option value="company" style={{ color: "#111" }}>{L("Company", "Cég")}</option>
+              <option value="admin" style={{ color: "#111" }}>{L("Admin", "Admin")}</option>
             </select>
           </div>
         )}

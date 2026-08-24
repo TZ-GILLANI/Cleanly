@@ -258,5 +258,72 @@ ok("the webhook accepts either signing secret",
 ok("and still verifies the signature against both", /const secrets = \[process\.env\.STRIPE_WEBHOOK_SECRET, process\.env\.STRIPE_CONNECT_WEBHOOK_SECRET\]/.test(paySrcW));
 ok("Connect events carry the partner's account through", /const connectAcct = event\.account/.test(paySrcW));
 
+
+/* ── Logging in used to also try to REGISTER you ──────────────────
+   AuthScreen.submit() had no `else` after the login branch, so every login
+   fell through into a signup and `res` ended up holding the SIGNUP result.
+   A wrong password showed whatever registration complained about instead of
+   "Invalid email or password", and a successful login fired a silent
+   account-creation request at the server every single time. */
+{
+  const app = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+  const i = app.indexOf("const submit = async () => {");
+  const body = app.slice(i, i + 1600);
+  const loginAt = body.indexOf("store.login(f)");
+  const signupAt = body.indexOf("store.signupCustomer");
+  const elseAt = body.indexOf("} else {");
+  ok("the login branch is closed off with an else", elseAt > 0 && loginAt > 0);
+  ok("signup sits inside that else, not after the login",
+     loginAt < elseAt && elseAt < signupAt, `login@${loginAt} else@${elseAt} signup@${signupAt}`);
+}
+
+/* ── "Booking cancelled" used to be a lie ─────────────────────────
+   The confirm dialog called cancelBooking() WITHOUT awaiting it and toasted
+   success immediately. When the server refused — cancelling inside the 48-hour
+   window is a 400 — you got a success message and an error banner at once. */
+{
+  const app = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+  const store = (await import("fs")).readFileSync("src/store.jsx", "utf8");
+  const fn = store.slice(store.indexOf("const cancelBooking"), store.indexOf("const cancelBooking") + 700);
+  ok("cancelBooking reports its outcome instead of swallowing it", fn.includes("return { error: e.message };"), fn.slice(0, 200));
+  /* Anchor on the cancel dialog specifically — indexOf on the generic
+     "onConfirm={async" landed on the delete-account dialog instead, and my
+     first run of this check failed for that reason rather than a real one. */
+  const at = app.indexOf("const r = await cancelBooking(id);");
+  ok("the cancel confirm dialog is findable", at > 0);
+  const site = app.slice(Math.max(0, at - 260), at + 340);
+  ok("the confirm dialog awaits the cancel", site.includes("await cancelBooking("), site.slice(0, 220));
+  ok("and only toasts success when it succeeded", site.includes("if (!r?.error) toast("), site.slice(0, 220));
+}
+
+/* ── The admin header had no way to reach your own account ──────── */
+{
+  const app = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+  const at = app.indexOf("function AdminPanel(");
+  const panel = app.slice(at, at + 3500);
+  ok("the logo opens the account sheet", /setAcct\(true\)[\s\S]{0,340}<Octo/.test(panel));
+  ok("the avatar circle on the right is gone", !panel.includes("toUpperCase()"), "still there");
+  ok("an admin can edit their own details", panel.includes("<ProfileSheet close={() => setEditMe(false)} />"));
+  ok("a non-CEO admin is greeted by name, not as CEO", panel.includes('fill(L("{0} · admin"'));
+  ok("logging out lives in that sheet", /setAcct[\s\S]{0,2200}onClick=\{logout\}/.test(panel));
+}
+
+/* ── The octopus was clipped by the screen edge ─────────────────── */
+{
+  const app = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+  const at = app.indexOf("octopus-hello.png");
+  const tag = app.slice(at - 260, at + 280);
+  ok("the mascot is not dragged left out of frame", !tag.includes("marginLeft: -"), tag.slice(0, 200));
+  const w = Number((tag.match(/width=\{(\d+)\}/) || [])[1]);
+  const h = Number((tag.match(/height=\{(\d+)\}/) || [])[1]);
+  ok("it is sized to the artwork, not forced square", w > 0 && h > 0 && w !== h, `${w}x${h}`);
+  const { execSync } = await import("child_process");
+  const dims = execSync("python3 -c \"from PIL import Image; im=Image.open('public/octopus-hello.png'); print(im.width, im.height, im.mode)\"").toString().trim().split(" ");
+  ok("the asset itself is transparent", dims[2] === "RGBA", dims.join(" "));
+  const ratio = Number(dims[1]) / Number(dims[0]);
+  ok("and the rendered box matches its ratio within a pixel", Math.abs(h / w - ratio) < 0.02,
+     `render ${(h / w).toFixed(3)} vs asset ${ratio.toFixed(3)}`);
+}
+
 console.log(`\n════ REGRESSIONS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

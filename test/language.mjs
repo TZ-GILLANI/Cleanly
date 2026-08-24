@@ -207,5 +207,47 @@ ok("the sweep catches a one-word label sitting after an emoji (canary)",
 ok("and the long string on the same line, which quote-mispairing used to hide",
    /Uni email verification/.test(baitSweep));
 
+
+/* ── The checker used to be blind to half the app ────────────────
+   untranslated.mjs only ever scanned double-quoted STRING LITERALS. But a
+   React file is full of text that is not a literal:
+
+       <div style={{...}}>Services & prices</div>
+
+   No quote goes anywhere near it, so the scanner walked past. ~45 strings on
+   the company, cleaner and admin screens sat in plain English while the script
+   printed "0 untranslated strings" — Musa found them by reading his own app.
+
+   This plants a bare JSX text node and demands the checker catch it. A checker
+   that cannot fail is not a checker. */
+{
+  const fs = await import("fs");
+  const path = "src/__canary.jsx";
+  fs.writeFileSync(path, [
+    "function CompanyCanaryScreen() {",
+    "  return <div><span>Totally untranslated sentence here</span></div>;",
+    "}",
+    "export default CompanyCanaryScreen;",
+  ].join("\n"));
+  let out = "";
+  try {
+    const { execSync } = await import("child_process");
+    try { out = execSync("node scripts/untranslated.mjs", { encoding: "utf8" }); }
+    catch (e) { out = String(e.stdout || "") + String(e.stderr || ""); }
+  } finally { fs.unlinkSync(path); }
+  const n = Number((out.match(/════ (\d+) untranslated/) || [])[1]);
+  ok("the untranslated checker CAN fail — it catches a bare JSX text node", n >= 1, `reported ${n}\n${out}`);
+  ok("and it blames the right interface", /company\s+[1-9]/.test(out), out);
+}
+
+/* And with the canary removed, the real app is clean. */
+{
+  const { execSync } = await import("child_process");
+  let out = "";
+  try { out = execSync("node scripts/untranslated.mjs", { encoding: "utf8" }); }
+  catch (e) { out = String(e.stdout || ""); }
+  ok("the app itself reports zero", /════ 0 untranslated/.test(out), out.slice(-200));
+}
+
 console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

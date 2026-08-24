@@ -501,9 +501,17 @@ export function StoreProvider({ children }) {
     return true;
   };
 
+  /* Returns whether it actually cancelled, so the caller can stop claiming it
+     did. It used to swallow the outcome: the confirm dialog fired the request
+     without awaiting it and toasted "Booking cancelled" straight away, so a
+     refusal from the server produced a success message AND an error banner. */
   const cancelBooking = async (id) => {
-    if (isApiMode) { try { await api("/bookings/" + id + "/status", { method: "PUT", body: { status: 9 } }); } catch (e) { setError(e.message); return; } }
+    if (isApiMode) {
+      try { await api("/bookings/" + id + "/status", { method: "PUT", body: { status: 9 } }); }
+      catch (e) { setError(e.message); return { error: e.message }; }
+    }
     patchBooking(id, { status: 9 });
+    return {};
   };
 
   const addReview = async ({ bookingId, companyId, stars, body }) => {

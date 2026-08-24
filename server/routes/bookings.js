@@ -534,7 +534,13 @@ router.put("/:id/status", requireAuth, async (req, res) => {
          collected_at = CASE WHEN $1 = 5 AND collected_at IS NULL THEN NOW() ELSE collected_at END,
          returned_at  = CASE WHEN $1 = 4 AND fulfilment = 'collection' AND returned_at IS NULL THEN NOW() ELSE returned_at END
        WHERE id = $3 RETURNING *`,
-      [status, status === 8 ? (declineReason || "Not available for this time") : b.decline_reason, req.params.id]
+      /* An empty reason is stored as NULL, not as an English sentence.
+
+         Whatever goes in this column is shown verbatim to the CUSTOMER, who
+         may not read the language the company was using — so a default typed
+         here freezes one person's language into another person's screen. NULL
+         lets the app render the fallback in whatever language the reader has. */
+      [status, status === 8 ? (String(declineReason || "").trim() || null) : b.decline_reason, req.params.id]
     );
     const updated = result.rows[0];
 
