@@ -277,8 +277,18 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
   }
 
   try {
-    const result = await query(
-      `UPDATE companies SET
+    /* Optional columns that arrived in 7.1.
+
+       If schema.sql has not been run — or was run before the later of the two
+       was added — writing them fails and the partner cannot save ANYTHING:
+       name, billing address, phone, all of it, behind one error reading
+       "Failed to update company". A column that is not there yet should cost
+       the feature that needs it, not every other field on the form.
+
+       So: attempt the whole write; if the database says a column is missing,
+       strip that column's assignment and save the rest. The log names the
+       migration, and /api/health reports the same state. */
+    const SQL = `UPDATE companies SET
         name = COALESCE($1, name),
         emoji = COALESCE($2, emoji),
         tagline = COALESCE($3, tagline),
@@ -308,8 +318,8 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         service_cities = CASE WHEN $28::text IS NULL THEN service_cities ELSE $28::jsonb END,
         service_areas   = CASE WHEN $29::text IS NULL THEN service_areas   ELSE $29::jsonb END,
         eu_vat = COALESCE($30, eu_vat)
-      WHERE id = $14 RETURNING *`,
-      [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber ? formatRegNumber(regNumber) : null, contactPhone,
+      WHERE id = $14 RETURNING *`;
+    const PARAMS = [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber ? formatRegNumber(regNumber) : null, contactPhone,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id, promoJson === undefined ? null : promoJson, availJson === undefined ? null : availJson,
        country ? String(country).toUpperCase().slice(0, 2) : null,
        serviceLat != null && !Number.isNaN(Number(serviceLat)) ? Number(serviceLat) : null,
@@ -353,8 +363,26 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
          }).filter(Boolean);
          return JSON.stringify(clean);
        })(),
-       euVat !== undefined ? (normalizeVat(euVat) || null) : null]
-    );
+       euVat !== undefined ? (normalizeVat(euVat) || null) : null];
+    const RECENT = ["service_areas", "eu_vat"];
+    const runUpdate = (skip) => {
+      if (!skip.length) return query(SQL, PARAMS);
+      let sql = SQL;
+      for (const col of skip)
+        sql = sql.replace(new RegExp("\\n\\s*" + col + "\\s*=\\s*(?:COALESCE\\([^)]*\\)|CASE[\\s\\S]*?END),?"), "");
+      sql = sql.replace(/,(\s*)WHERE/, "$1WHERE");
+      return query(sql, PARAMS);
+    };
+    let result;
+    try {
+      result = await runUpdate([]);
+    } catch (e) {
+      const msg = e.message || "";
+      const miss = RECENT.filter((c) => msg.includes(c));
+      if (!/does not exist|undefined column/i.test(msg) || !miss.length) throw e;
+      console.error("companies: " + miss.join(", ") + " not in the database — run schema.sql. Saving everything else.");
+      result = await runUpdate(miss);
+    }
     const saved = result.rows[0];
 
     /* ── 5.2 Translate what they typed, in the background. Never make the save

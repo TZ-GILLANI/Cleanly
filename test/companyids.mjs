@@ -144,8 +144,11 @@ console.log("\n── the screens that make this usable ──");
   ok("the calendar has an editing mode", /function MonthCalendar\(\{ days, value, onPick, isClosed, isFull, manage/.test(app));
   ok("in that mode nothing is disabled except the past",
      /const off = manage \? past : \(!d \|\| closed \|\| full\)/.test(app));
+  /* The selected day is a filled control, so it moved onto C.accent with every
+     other filled control. What matters here is unchanged: closed reads as grey,
+     not as absent. */
   ok("a closed day is greyed rather than hidden",
-     /background: on \? C\.navy : closed && manage \? C\.line/.test(app));
+     /background: on \? C\.accent : closed && manage \? C\.line/.test(app));
   ok("…and says so when you touch it",
      /Closed all day — tap to reopen/.test(app));
   ok("partly blocked days carry a dot", /const dot = manage && !closed && hasDot/.test(app));

@@ -167,5 +167,39 @@ console.log("\n── you can tell which code is live ──");
      `health=${health} client=${client} package=${pkg.version}`);
 }
 
+
+console.log("\n── hooks that can be skipped ──");
+{
+  /* AdminDashboard called useStore() INSIDE its JSX, after two early returns.
+     First render (loading) React counted four hooks; second render (data in)
+     it counted five. A hook count that changes between renders is the one
+     thing React cannot recover from — it throws, the boundary catches it, and
+     the admin gets a crash screen. It had been printing as a warning in the
+     render suite for a while, and a warning nobody reads is not a test. */
+  /* Blank out comments FIRST, keeping line numbers, then scan.
+
+     A per-line "does it start with //" test cannot see the middle of a block
+     comment — and the paragraph I wrote explaining this very bug quotes the
+     broken line, so the check kept flagging its own documentation. */
+  const stripped = app
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+    .replace(/\/\/[^\n]*/g, (m) => " ".repeat(m.length));
+  const lines = stripped.split("\n");
+  let fn = null, returned = false;
+  const bad = [];
+  lines.forEach((ln, i) => {
+    const m = /^function ([A-Z]\w+)\s*\(/.exec(ln) || /^const ([A-Z]\w+) = \(/.exec(ln);
+    if (m) { fn = m[1]; returned = false; return; }
+    if (!fn) return;
+    if (/^  (if \([^)]*\)\s*)?return\b/.test(ln)) returned = true;
+    const hook = /\buseStore\(\)|\bReact\.use[A-Z]\w*\(|\buseState\(|\buseEffect\(|\buseMemo\(|\buseCallback\(|\buseRef\(/.test(ln);
+    if (!hook) return;
+    const inJsx = /^\s*[{<]/.test(ln) || /\{\s*use[A-Z]/.test(ln);
+    if (returned || inJsx) bad.push(`${i + 1} ${fn}: ${ln.trim().slice(0, 70)}`);
+  });
+  ok("no hook is called after an early return or inside JSX", bad.length === 0, bad.join(" | "));
+  ok("and the scan walked the whole component tree", lines.length > 5000, `${lines.length} lines`);
+}
+
 console.log(`\n════ WIRED: ${pass} passed, ${fail} failed ════\n`);
 process.exit(fail ? 1 : 0);

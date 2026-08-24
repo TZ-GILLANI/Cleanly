@@ -306,6 +306,12 @@ const verLt = (a, b) => {
    navy plus two status colours, so a screen no longer has gold, coral, amber
    and mint all shouting at once. The blue is the original. */
 const LIGHT = {
+  /* accent — the colour of anything filled and pressable: primary buttons, the
+     active nav pill, a selected chip. Deliberately the SAME hex in both
+     themes, because that is what "make day match night" means. #4A5BBF gives
+     5.9:1 against white text, so it stays readable on either background.
+     navy stays what it was and is still used for text and outlines. */
+  accent: "#4A5BBF",
   navy: "#1B2A6B", navyDeep: "#10194A", navyMid: "#27379B", navySoft: "#4A5BBF",
   mint: "#5EE6A8", mintSoft: "#DCFAEC",
   bg: "#F4F6FC", card: "#FFFFFF", ink: "#141C3A", inkSoft: "#69718F", inkFaint: "#9AA2C0",
@@ -315,6 +321,7 @@ const LIGHT = {
   shell: "#E7EBF6", navBg: "rgba(255,255,255,.9)",
 };
 const DARK = {
+  accent: "#4A5BBF",
   navy: "#4A5BBF", navyDeep: "#0B1128", navyMid: "#27379B", navySoft: "#8E9CE8",
   mint: "#5EE6A8", mintSoft: "rgba(94,230,168,.16)",
   bg: "#111832", card: "#1B2444", ink: "#EDF0FF", inkSoft: "#A6AFD6", inkFaint: "#7079A6",
@@ -632,7 +639,7 @@ function Calendar({ selected, onSelect, minISO, marks = {}, initialMonth }) {
   return (
     <div style={{ background: C.card, borderRadius: R.lg, padding: "12px 12px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.06)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <button onClick={() => canPrev && setView(new Date(y, m - 1, 1))} disabled={!canPrev} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.bg, color: canPrev ? C.navy : C.inkFaint, fontSize: 15, fontWeight: 700, cursor: canPrev ? "pointer" : "default" }}>‹</button>
+        <button onClick={() => canPrev && setView(new Date(y, m - 1, 1))} disabled={!canPrev} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.bg, color: canPrev ? C.accent : C.inkFaint, fontSize: 15, fontWeight: 700, cursor: canPrev ? "pointer" : "default" }}>‹</button>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{monthLabel}</div>
         <button onClick={() => setView(new Date(y, m + 1, 1))} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.bg, color: C.navy, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>›</button>
       </div>
@@ -652,7 +659,7 @@ function Calendar({ selected, onSelect, minISO, marks = {}, initialMonth }) {
             <button key={iso} onClick={() => !disabled && onSelect(iso)} disabled={disabled} style={{
               position: "relative", aspectRatio: "1", borderRadius: R.sm, border: "none", cursor: disabled ? "default" : "pointer",
               fontFamily: F, fontWeight: 700, fontSize: 12.5,
-              background: isSel ? C.navy : "transparent",
+              background: isSel ? C.accent : "transparent",
               color: isSel ? "#fff" : disabled ? C.inkFaint : C.ink,
             }}>
               {n}
@@ -1083,7 +1090,7 @@ const Btn = ({ children, onClick, full, ghost, mint, small, disabled, danger, st
     fontFamily: F, fontWeight: 700, fontSize: small ? 13 : 15.5,
     padding: small ? "9px 16px" : "15px 22px", borderRadius: R.lg,
     border: ghost ? `1.5px solid ${danger ? C.coral + "55" : C.navy + "33"}` : "none",
-    background: disabled ? C.line : ghost ? (danger ? C.coralSoft : C.navyChip) : mint ? C.mint : danger ? C.coral : C.navy,
+    background: disabled ? C.line : ghost ? (danger ? C.coralSoft : C.navyChip) : mint ? C.mint : danger ? C.coral : C.accent,
     color: disabled ? C.inkFaint : ghost ? (danger ? C.coral : C.navy) : mint ? C.navyDeep : "#fff",
     width: full ? "100%" : "auto", cursor: disabled ? "default" : "pointer",
     boxShadow: disabled || ghost ? "none" : mint ? "0 6px 18px rgba(94,230,168,.4)" : danger ? "0 6px 18px rgba(255,122,107,.35)" : "0 6px 18px rgba(27,42,107,.28)",
@@ -1290,7 +1297,7 @@ function TrackSheet({ bookingId, close, booking }) {
         <>
           <LiveMap lat={loc.lat} lng={loc.lng} destLat={dest?.lat} destLng={dest?.lng} />
           <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
-            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: C.navy, border: `2px solid ${C.mint}`, marginRight: 5 }} />{L("Cleaner", "Takarító")}</span>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: C.accent, border: `2px solid ${C.mint}`, marginRight: 5 }} />{L("Cleaner", "Takarító")}</span>
             <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: C.mint, marginRight: 5 }} />{L("Destination", "Cél")}</span>
             <span>{L("Updated", "Frissítve")} {ago(loc.at)}</span>
           </div>
@@ -1839,7 +1846,7 @@ function AddressPicker({ value, onChange }) {
             {[L("Home", "Otthon"), L("Office", "Iroda")].map((lbl) => (
               <button key={lbl} onClick={() => setSaveAs(saveAs === lbl ? "" : lbl)}
                 style={{ border: saveAs === lbl ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`, background: C.card, color: C.ink, borderRadius: 99, padding: "7px 14px", fontFamily: F, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                <Ic name={labelIcon(lbl)} size={14} sw={1.8} color={saveAs === lbl ? C.navy : C.inkSoft} style={{ marginRight: 5, verticalAlign: "-2px" }} />{lbl}
+                <Ic name={labelIcon(lbl)} size={14} sw={1.8} color={saveAs === lbl ? C.accent : C.inkSoft} style={{ marginRight: 5, verticalAlign: "-2px" }} />{lbl}
               </button>
             ))}
             <input value={/^(Home|Otthon|Office|Iroda)$/.test(saveAs) ? "" : saveAs} onChange={(e) => setSaveAs(e.target.value)} placeholder={L("Custom…", "Egyéni…")}
@@ -2272,7 +2279,7 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
         {!verified && (
           <button onClick={send} disabled={!enough || busy}
             style={{ border: "none", borderRadius: R.md, padding: "0 14px", cursor: enough && !busy ? "pointer" : "default",
-                     background: enough && !busy ? C.navy : C.bg, color: enough && !busy ? "#fff" : C.inkFaint,
+                     background: enough && !busy ? C.accent : C.bg, color: enough && !busy ? "#fff" : C.inkFaint,
                      fontFamily: B, fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>
             {busy ? "…" : sent ? L("Resend", "Újraküldés") : L("Send code", "Kód kérése")}
           </button>
@@ -2502,7 +2509,7 @@ function Auth() {
           <img src="/octopus-hello.png" alt="" width={132} height={121}
             style={{ display: "block", objectFit: "contain", maxWidth: "100%" }} />
         ) : (
-          <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: R.lg, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>
+          <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: R.lg, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>
             <Ic name={role === "company" ? "building" : "sparkle"} size={30} sw={1.7} color="#fff" />
           </div>
         )}
@@ -2522,7 +2529,7 @@ function Auth() {
                 {[{ id: "student", icon: "cap", t: L("Student", "Diák"), s: L("Uni email verification · save up to 20%", "Egyetemi e-mail igazolás · akár 20% kedvezmény") },
                   { id: "resident", icon: "house", t: L("Resident", "Lakos"), s: L("Standard pricing, full service", "Normál árazás, teljes szolgáltatás") }].map((o) => (
                   <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{ flex: 1, textAlign: "left", padding: 14, borderRadius: R.lg, cursor: "pointer", border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)" }}>
-                    <Ic name={o.icon} size={22} sw={1.7} color={f.custType === o.id ? C.navy : C.inkSoft} />
+                    <Ic name={o.icon} size={22} sw={1.7} color={f.custType === o.id ? C.accent : C.inkSoft} />
                     <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginTop: 6 }}>{o.t}</div>
                     <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 4, lineHeight: 1.45 }}>{o.s}</div>
                   </button>
@@ -2782,7 +2789,7 @@ function CustomerHome({ openBooking, openProfile }) {
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{t("home.companiesNearYou")}</div>
           <div style={{ display: "flex", gap: 6 }}>
             {[{ id: "rating", label: t("home.sort.rating") }, { id: "price", label: t("home.sort.price") }, ...(isStudent ? [{ id: "discount", label: t("home.sort.discount") }] : [])].map((s) => (
-              <button key={s.id} onClick={() => setSort(s.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "5px 10px", borderRadius: 99, border: "none", cursor: "pointer", background: sort === s.id ? C.navy : C.card, color: sort === s.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.08)" }}>
+              <button key={s.id} onClick={() => setSort(s.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "5px 10px", borderRadius: 99, border: "none", cursor: "pointer", background: sort === s.id ? C.accent : C.card, color: sort === s.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.08)" }}>
                 {s.label}
               </button>
             ))}
@@ -2944,8 +2951,8 @@ function BookingFlow({ company, close, onBooked }) {
             {labels.map((l, i) => (
               <React.Fragment key={l}>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                  <div style={{ width: 25, height: 25, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, fontWeight: 700, fontSize: 11, transition: "all .3s", background: step > i ? C.mint : step === i ? C.navy : C.card, color: step > i ? C.navyDeep : step === i ? "#fff" : C.inkFaint, border: step >= i ? "none" : `1.5px solid ${C.line}` }}>{step > i ? "✓" : i + 1}</div>
-                  <span style={{ fontFamily: B, fontSize: 9, fontWeight: 700, color: step === i ? C.navy : C.inkFaint }}>{l}</span>
+                  <div style={{ width: 25, height: 25, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, fontWeight: 700, fontSize: 11, transition: "all .3s", background: step > i ? C.mint : step === i ? C.accent : C.card, color: step > i ? C.navyDeep : step === i ? "#fff" : C.inkFaint, border: step >= i ? "none" : `1.5px solid ${C.line}` }}>{step > i ? "✓" : i + 1}</div>
+                  <span style={{ fontFamily: B, fontSize: 9, fontWeight: 700, color: step === i ? C.accent : C.inkFaint }}>{l}</span>
                 </div>
                 {i < 3 && <div style={{ flex: 1, height: 2, margin: "0 4px 14px", borderRadius: R.sm, background: step > i ? C.mint : C.line }} />}
               </React.Fragment>
@@ -3082,7 +3089,7 @@ function BookingFlow({ company, close, onBooked }) {
                   </div>
                 )}
                 {(day ? openSlots(availOf(company), day.iso, svc?.id) : []).map((s) => (
-                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: R.md, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.navy : C.card, color: slot === s ? "#fff" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(27,42,107,.28)" : "0 1px 5px rgba(20,28,58,.06)" }}>
+                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: R.md, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.accent : C.card, color: slot === s ? "#fff" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(27,42,107,.28)" : "0 1px 5px rgba(20,28,58,.06)" }}>
                     {s}
                   </button>
                 ))}
@@ -3551,7 +3558,7 @@ function EmployeeJobs({ openProfile }) {
       <div style={{ padding: "8px 20px 30px" }}>
         {/* ── 5.6 What you're doing today, before anything else ── */}
         {todays.length > 0 && (
-          <div style={{ background: C.navy, borderRadius: R.lg, padding: 18, marginBottom: 16, boxShadow: "0 6px 20px rgba(27,42,107,.22)" }}>
+          <div style={{ background: C.accent, borderRadius: R.lg, padding: 18, marginBottom: 16, boxShadow: "0 6px 20px rgba(27,42,107,.22)" }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: "#fff" }}>
               {L("Today", "Ma")} · {todays.length} {todays.length === 1 ? L("job", "munka") : L("jobs", "munka")}
             </div>
@@ -3574,7 +3581,7 @@ function EmployeeJobs({ openProfile }) {
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
               {calDays.map((d) => (
                 <div key={d.iso} style={{ flex: "0 0 auto", width: 44, textAlign: "center", borderRadius: R.md, padding: "8px 0",
-                  background: d.isToday ? C.navy : d.jobs.length ? C.navyChip : C.bg }}>
+                  background: d.isToday ? C.accent : d.jobs.length ? C.navyChip : C.bg }}>
                   <div style={{ fontFamily: B, fontSize: 9.5, fontWeight: 700, color: d.isToday ? "#9FB0E8" : C.inkFaint }}>{d.dow}</div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: d.isToday ? "#fff" : C.ink, marginTop: 1 }}>{d.dom}</div>
                   <div style={{ height: 5, marginTop: 4, display: "flex", gap: 2, justifyContent: "center" }}>
@@ -3885,7 +3892,7 @@ function CompanyJobs({ openProfile }) {
           { id: "today", label: `${L("Today", "Ma")} (${open.filter(isToday).length})` },
           { id: "subs", label: `${L("Plans", "Bérletek")} (${subs.length})` },
         ].filter((f) => !f.hide).map((f) => (
-          <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.navy : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.accent : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
         ))}
       </div>
       {shownOpen.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 36, background: C.card, borderRadius: R.lg, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{open.length === 0 ? L("No open jobs right now. New customer bookings will appear here.", "Most nincs nyitott munka. Az új foglalások itt jelennek meg.") : L("Nothing matches this filter.", "Semmi nem felel meg ennek a szűrőnek.")}</div>}
@@ -3946,7 +3953,7 @@ function CompanyJobs({ openProfile }) {
             <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.inkFaint }}>{L("ASSIGN:", "KIOSZTÁS:")}</span>
               {employees.filter((e) => e.is_active !== false).map((m) => (
-                <button key={m.id} onClick={() => { assignBooking(b.id, m.id); toast(`Assigned to ${m.full_name.split(" ")[0]}`); }} style={{ fontFamily: B, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 99, border: "none", cursor: "pointer", background: b.assigned_to === m.id ? C.navy : C.bg, color: b.assigned_to === m.id ? "#fff" : C.navySoft }}>
+                <button key={m.id} onClick={() => { assignBooking(b.id, m.id); toast(`Assigned to ${m.full_name.split(" ")[0]}`); }} style={{ fontFamily: B, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 99, border: "none", cursor: "pointer", background: b.assigned_to === m.id ? C.accent : C.bg, color: b.assigned_to === m.id ? "#fff" : C.navySoft }}>
                   {b.assigned_to === m.id ? "✓ " : ""}{m.full_name.split(" ")[0]}
                 </button>
               ))}
@@ -4238,7 +4245,7 @@ function CompanyServices() {
               ["collection", "", L("We collect and bring it back", "Elvisszük és visszahozzuk")]].map(([id, ic, lbl]) => (
               <button key={id} onClick={() => setF({ ...f, fulfilment: id })}
                 style={{ flex: 1, border: "none", cursor: "pointer", borderRadius: R.md, padding: "11px 9px", textAlign: "left",
-                  background: (f.fulfilment || "onsite") === id ? C.navy : C.bg, color: (f.fulfilment || "onsite") === id ? "#fff" : C.inkSoft }}>
+                  background: (f.fulfilment || "onsite") === id ? C.accent : C.bg, color: (f.fulfilment || "onsite") === id ? "#fff" : C.inkSoft }}>
                 <div style={{ fontSize: 16 }}>{ic}</div>
                 <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, marginTop: 3, lineHeight: 1.35 }}>{lbl}</div>
               </button>
@@ -4266,7 +4273,7 @@ function CompanyServices() {
             {[{ id: "flat", t: L("Flat", "Fix"), icon: "tag" }, { id: "hourly", t: L("Hourly", "Óradíj"), icon: "clock" },
               { id: "unit", t: L("Per unit", "Egységár"), icon: "box" }, { id: "subscription", t: L("Plan", "Bérlet"), icon: "" }].map((o) => (
               <button key={o.id} onClick={() => setF({ ...f, pricing_type: o.id })} style={{ flex: 1, padding: "10px 4px", borderRadius: R.md, cursor: "pointer", border: (f.pricing_type || "flat") === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", textAlign: "center" }}>
-                <Ic name={o.icon} size={19} sw={1.7} color={f.pricing_type === o.id ? C.navy : C.inkSoft} />
+                <Ic name={o.icon} size={19} sw={1.7} color={f.pricing_type === o.id ? C.accent : C.inkSoft} />
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.ink, marginTop: 3 }}>{o.t}</div>
               </button>
             ))}
@@ -4292,7 +4299,7 @@ function CompanyServices() {
                   [L("piece", "darab"), L("piece — ironing, curtains", "darab — vasalás, függöny")]].map(([u, hint]) => (
                   <button key={u} title={hint} onClick={() => setF({ ...f, unit_label: u })}
                     style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99,
-                      background: f.unit_label === u ? C.navy : C.bg, color: f.unit_label === u ? "#fff" : C.inkSoft }}>{u}</button>
+                      background: f.unit_label === u ? C.accent : C.bg, color: f.unit_label === u ? "#fff" : C.inkSoft }}>{u}</button>
                 ))}
               </div>
               <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: -4, marginBottom: 10, lineHeight: 1.5 }}>
@@ -4968,7 +4975,7 @@ function ReportCustomerBox({ booking }) {
               {CATS.map(([id, lbl]) => (
                 <button key={id} onClick={() => setCat(id)}
                   style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99,
-                    background: cat === id ? C.navy : C.bg, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
+                    background: cat === id ? C.accent : C.bg, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
               ))}
             </div>
             <textarea rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={2000}
@@ -5238,7 +5245,7 @@ function MonthCalendar({ days, value, onPick, isClosed, isFull, manage, hasDot, 
                        border: on ? "none" : closed && manage ? `1.5px solid ${C.line}` : "none",
                        cursor: off ? "not-allowed" : "pointer",
                        opacity: off ? .28 : closed && manage ? .95 : 1,
-                       background: on ? C.navy : closed && manage ? C.line : "transparent",
+                       background: on ? C.accent : closed && manage ? C.line : "transparent",
                        color: on ? "#fff" : closed && manage ? C.inkFaint : C.ink,
                        textDecoration: closed && manage && !on ? "line-through" : "none",
                        fontFamily: F, fontWeight: 700, fontSize: 13, position: "relative",
@@ -5786,7 +5793,7 @@ function CompanySettings({ openProfile }) {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-        <label style={{ flex: 1, textAlign: "center", fontFamily: F, fontWeight: 700, fontSize: 13, padding: "12px 0", borderRadius: R.md, background: C.navy, color: "#fff", cursor: "pointer", boxShadow: "0 6px 18px rgba(27,42,107,.28)" }}>
+        <label style={{ flex: 1, textAlign: "center", fontFamily: F, fontWeight: 700, fontSize: 13, padding: "12px 0", borderRadius: R.md, background: C.accent, color: "#fff", cursor: "pointer", boxShadow: "0 6px 18px rgba(27,42,107,.28)" }}>
          ️ Upload your logo (PNG)
           <input type="file" accept="image/png,image/*" onChange={onLogoFile} style={{ display: "none" }} />
         </label>
@@ -5986,7 +5993,7 @@ function CompanySettings({ openProfile }) {
                       return (
                         <button key={h} onClick={() => toggleHour(h)}
                           style={{ padding: "7px 0", borderRadius: R.sm, border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11,
-                            background: on ? C.navy : C.bg, color: on ? "#fff" : C.inkFaint }}>
+                            background: on ? C.accent : C.bg, color: on ? "#fff" : C.inkFaint }}>
                           {h.slice(0, 2)}
                         </button>
                       );
@@ -6083,13 +6090,13 @@ function CompanySettings({ openProfile }) {
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 9 }}>
                         <button onClick={() => setBusySvc("")}
                           style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            background: busySvc === "" ? C.navy : C.card, color: busySvc === "" ? "#fff" : C.inkSoft }}>
+                            background: busySvc === "" ? C.accent : C.card, color: busySvc === "" ? "#fff" : C.inkSoft }}>
                           {L("All services", "Minden szolgáltatás")}
                         </button>
                         {myServices.map((sv) => (
                           <button key={sv.id} onClick={() => setBusySvc(sv.id)}
                             style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                              background: busySvc === sv.id ? C.navy : C.card, color: busySvc === sv.id ? "#fff" : C.inkSoft }}>
+                              background: busySvc === sv.id ? C.accent : C.card, color: busySvc === sv.id ? "#fff" : C.inkSoft }}>
                             {sv.name}
                           </button>
                         ))}
@@ -6120,7 +6127,7 @@ function CompanySettings({ openProfile }) {
                             }}
                             style={{ padding: "9px 2px", borderRadius: R.md, border: "none", minWidth: 0, overflow: "hidden",
                               cursor: booked ? "not-allowed" : "pointer", fontFamily: B, fontWeight: 700, fontSize: 11,
-                              background: booked ? C.navyChip : isBusy ? C.coral : C.card, color: booked ? C.navy : isBusy ? "#fff" : C.inkSoft }}>
+                              background: booked ? C.navyChip : isBusy ? C.coral : C.card, color: booked ? C.accent : isBusy ? "#fff" : C.inkSoft }}>
                             {sl}
                           </button>
                         );
@@ -6234,7 +6241,7 @@ function AnnouncementComposer() {
           {/* who */}
           <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", opacity: person ? .4 : 1, pointerEvents: person ? "none" : "auto" }}>
             {AUDS.map(([id, label]) => (
-              <button key={id} onClick={() => setAud(id)} style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, background: aud === id ? C.navy : C.bg, color: aud === id ? "#fff" : C.inkSoft }}>{label}</button>
+              <button key={id} onClick={() => setAud(id)} style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, background: aud === id ? C.accent : C.bg, color: aud === id ? "#fff" : C.inkSoft }}>{label}</button>
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 10, opacity: person ? .4 : 1, pointerEvents: person ? "none" : "auto" }}>
@@ -6294,7 +6301,15 @@ function AnnouncementComposer() {
 }
 
 function AdminDashboard() {
-  const { adminStats, adminFetchStats, adminRevenue, adminFetchRevenue } = useStore();
+  /* session comes from the SAME useStore() call as everything else.
+
+     It used to be fetched inline in the JSX below — `{useStore().session?.…}`
+     — which sits after two early returns. So on the first render (busy) React
+     saw four hooks, and on the second (data arrived) it saw five. A hook count
+     that changes between renders is the one thing React cannot recover from:
+     it throws, the error boundary catches it, and the admin gets a crash
+     screen. It is why the admin dashboard was reporting itself by email. */
+  const { adminStats, adminFetchStats, adminRevenue, adminFetchRevenue, session } = useStore();
   const [busy, setBusy] = useState(false);
   const [tries, setTries] = useState(0);
 
@@ -6327,7 +6342,7 @@ function AdminDashboard() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("Platform dashboard", "Platform áttekintés")}</div>
-      {useStore().session?.isSuper === true && <AnnouncementComposer />}
+      {session?.isSuper === true && <AnnouncementComposer />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
         {kpis.map((k) => (
@@ -6651,7 +6666,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
                 else { setHandledBy(id); toast(id === "company" ? L("Handed to the company", "Átadva a cégnek") : L("Cleano is handling it", "A Cleano intézi")); onChange && onChange(); }
               }} style={{ flex: 1, fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "9px 10px", borderRadius: R.md, cursor: "pointer",
                 border: handledBy === id ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`,
-                background: handledBy === id ? C.navyChip : C.bg, color: handledBy === id ? C.navy : C.inkSoft }}>{label}</button>
+                background: handledBy === id ? C.navyChip : C.bg, color: handledBy === id ? C.accent : C.inkSoft }}>{label}</button>
             ))}
           </div>
           {handledBy === "company" && !assigned && (
@@ -7271,7 +7286,7 @@ function AdminUsers() {
               </div>
             </div>
             {u.role === "admin"
-              ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.navy : C.navyChip}>{u.is_super ? "CEO" : L("Admin", "Adminisztrátor")}</Pill>
+              ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.accent : C.navyChip}>{u.is_super ? "CEO" : L("Admin", "Adminisztrátor")}</Pill>
               : <Pill color={roleColor[u.role] || C.navySoft} bg={roleColor[u.role] + "18" || C.navyChip} style={{ textTransform: "capitalize" }}>{u.role}</Pill>}
           </div>
           {u.company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, marginLeft: 48 }}>{u.company_name}</div>}
@@ -7390,7 +7405,7 @@ function AdminBookings() {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
         {[{ id: "all", label: L("All", "Összes") }, { id: "active", label: L("Active", "Aktív") },
           { id: "done", label: L("Done", "Kész") }, { id: "cancelled", label: L("Cancelled / Declined", "Lemondva / Elutasítva") }].map((f) => (
-          <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 13px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.navy : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 13px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.accent : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
         ))}
       </div>
       {people.map(([key, p]) => {
@@ -7576,7 +7591,7 @@ function BillingList() {
       <div style={{ display: "flex", gap: 6, margin: "10px 0 12px", flexWrap: "wrap" }}>
         {[{ id: false, label: L("To invoice", "Kiszámlázandó") }, { id: true, label: L("Done", "Kész") }].map((f) => (
           <button key={String(f.id)} onClick={() => setSettled(f.id)}
-            style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: settled === f.id ? C.navy : C.card, color: settled === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
+            style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: settled === f.id ? C.accent : C.card, color: settled === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
             {f.label}
           </button>
         ))}
@@ -7928,7 +7943,7 @@ function Shell() {
                   setTab(tb.id); setBookingCo(null);
                   try { e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {}
                 }}
-                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: R.xl, padding: "11px 8px", position: "relative", background: active ? C.navyMid : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
+                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: R.xl, padding: "11px 8px", position: "relative", background: active ? C.accent : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
                 <Ic name={tb.icon} size={19} sw={active ? 2 : 1.7} color={active ? "#fff" : C.inkSoft} style={{ opacity: active ? 1 : .8 }} />
                 {active && <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap" }}>{tb.label}</span>}
                 {tb.badge > 0 && <span style={{ position: "absolute", top: 4, right: active ? 8 : "50%", marginRight: active ? 0 : -18, width: 16, height: 16, borderRadius: "50%", background: C.coral, color: "#fff", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: B }}>{tb.badge}</span>}
