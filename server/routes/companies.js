@@ -117,43 +117,69 @@ export function areaSummary(co) {
 
 router.get("/", async (req, res) => {
   try {
-    const result = await query(
-      "SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_areas, service_cities, eu_vat, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
-    );
+    /* Two column lists, and the second one is the point.
+
+       This endpoint asks for service_areas and eu_vat. If schema.sql has not
+       been run yet — a new deploy, a migration done later in the evening — the
+       SELECT fails, this returns 500, and because the app loads the company
+       list while signing in, NOBODY CAN LOG IN. A missing optional column
+       should cost you a feature, not the whole product.
+
+       So: try the full list, and if the database says a column is missing,
+       fall back to the columns that have always existed. The area rules then
+       fall back to the legacy ones, which is exactly what they did yesterday. */
+    const FULL = "id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_areas, service_cities, eu_vat, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at";
+    const BASE = "id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_cities, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at";
+    const listQ = (cols) =>
+      query(`SELECT ${cols} FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC`);
+    let result;
+    try {
+      result = await listQ(FULL);
+    } catch (e) {
+      if (!/column .* does not exist|undefined column/i.test(e.message || "")) throw e;
+      console.error("companies: falling back, schema.sql has not been run —", e.message);
+      result = await listQ(BASE);
+    }
     let rows = result.rows;
 
     /* ── 4.6 Service areas. If the caller passes ?near=<address> we geocode it
        once (cached forever) and keep only companies whose circle contains it,
        annotating each with distance. Companies without coordinates are never
        hidden — they fall back to the old city match. ── */
-    const near = String(req.query.near || "").trim();
-    /* The caller's city, when they know it. `near` is a whole address, so the
-       city is whatever they told us separately — not something to guess out of
-       a free-text string. */
-    const myCity = String(req.query.city || "").trim();
-    if (near) {
-      const me = await geocode(near);
-      if (me) {
-        rows = rows
-          .map((c) => {
-            let d = null;
-            for (const a of serviceAreasOf(c)) {
-              if (a.lat == null || a.lng == null) continue;
-              const km = distanceKm(me.lat, me.lng, Number(a.lat), Number(a.lng));
-              if (km != null && (d == null || km < d)) d = km;
-            }
-            return { ...c, distance_km: d };
-          })
-          /* A named city beats a measured distance. A company that says it
-             serves Nyíregyháza serves it whether that is 4 km or 50 km from
-             the pin they dropped, and no radius expresses "these three towns,
-             not the villages between them". */
-          /* The SAME function the booking endpoint calls. If it says yes here
-             and no there, a customer sees a company and then gets refused. */
-          .filter((c) => areaCovers(c, { city: myCity, lat: me.lat, lng: me.lng }).covered
-                      || (!myCity && addressNamesCity(c, near)))
-          .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
+    try {
+      const near = String(req.query.near || "").trim();
+      /* The caller's city, when they know it. `near` is a whole address, so the
+         city is whatever they told us separately — not something to guess out of
+         a free-text string. */
+      const myCity = String(req.query.city || "").trim();
+      if (near) {
+        const me = await geocode(near);
+        if (me) {
+          rows = rows
+            .map((c) => {
+              let d = null;
+              for (const a of serviceAreasOf(c)) {
+                if (a.lat == null || a.lng == null) continue;
+                const km = distanceKm(me.lat, me.lng, Number(a.lat), Number(a.lng));
+                if (km != null && (d == null || km < d)) d = km;
+              }
+              return { ...c, distance_km: d };
+            })
+            /* A named city beats a measured distance. A company that says it
+               serves Nyíregyháza serves it whether that is 4 km or 50 km from
+               the pin they dropped, and no radius expresses "these three towns,
+               not the villages between them". */
+            /* The SAME function the booking endpoint calls. If it says yes here
+               and no there, a customer sees a company and then gets refused. */
+            .filter((c) => areaCovers(c, { city: myCity, lat: me.lat, lng: me.lng }).covered
+                        || (!myCity && addressNamesCity(c, near)))
+            .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
+        }
       }
+    } catch (e) {
+      /* Narrowing the list to your area is a convenience. Failing to narrow it
+         is not a reason to show you nothing. */
+      console.error("companies: area filter failed, returning the unfiltered list —", e.message);
     }
     res.json({ companies: rows });
   } catch (err) {

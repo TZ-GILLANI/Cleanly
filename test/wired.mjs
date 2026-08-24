@@ -99,5 +99,73 @@ console.log("\n── nothing points at what was retired ──");
      !/"service_radius_km"/.test(fs.readFileSync(new URL("../server/routes/admin.js", import.meta.url), "utf8")));
 }
 
+
+console.log("\n── a migration you have not run yet must not brick the app ──");
+{
+  /* The real failure: /api/companies asks for service_areas and eu_vat. If
+     schema.sql has not been run, the SELECT fails, the endpoint 500s, and
+     because the app loads the company list WHILE SIGNING IN, nobody can log
+     in at all — not even to reach Profile and fix whatever upset it.
+
+     A missing optional column should cost a feature, not the product. */
+  const co = fs.readFileSync(new URL("../server/routes/companies.js", import.meta.url), "utf8");
+  ok("the listing has a fallback column set", /const BASE = "id, name/.test(co));
+  ok("it only falls back on a missing-column error, not on anything at all",
+     /column .\* does not exist\|undefined column/.test(co) || /does not exist\|undefined column/.test(co));
+  ok("and it says loudly which migration is missing",
+     /schema\.sql has not been run/.test(co));
+  ok("the area filter cannot take the whole list down",
+     /area filter failed, returning the unfiltered list/.test(co));
+
+  const st = fs.readFileSync(new URL("../src/store.jsx", import.meta.url), "utf8");
+  ok("signing in no longer throws the session away when a list fails",
+     !/setToken\(null\); return \{ error: L\("Could not load your data/.test(st));
+  const survivors = (st.match(/catch \(e\) \{ console\.error\("post-(login|signup) load failed/g) || []).length;
+  ok("…on every path that signs somebody in, not just one", survivors === 4, `${survivors} of 4`);
+}
+
+
+console.log("\n── one theme, not two half-themes ──");
+{
+  /* A fixed hex sitting in the same style object as a themed token is a colour
+     that was chosen for ONE of the two modes. It looks right in whichever mode
+     it was picked in and wrong in the other, which is why light mode kept
+     showing colours that belonged to the old palette. */
+  const lines = app.split("\n");
+  const bad = [];
+  lines.forEach((ln, i) => {
+    if (i < 300 || /^\s*(\/\/|\*|\/\*)/.test(ln)) return;
+    const hex = [...ln.matchAll(/#[0-9a-fA-F]{6}\b/g)].map((m) => m[0]).filter((h) => !/^#(fff|FFF|000)/.test(h));
+    if (!hex.length) return;
+    if (/C\.(card|bg|ink|line|coralSoft|amberSoft|mintSoft|navyChip|shell)\b/.test(ln))
+      bad.push(`${i + 1}: ${hex.join(",")}`);
+  });
+  ok("no fixed colour shares a style object with a themed one", bad.length === 0, bad.join(" | "));
+  ok("and the palettes still define the same set of tokens in both modes", (() => {
+    const grab = (n) => app.slice(app.indexOf(`const ${n} = {`), app.indexOf("};", app.indexOf(`const ${n} = {`)));
+    const keys = (b) => new Set([...b.matchAll(/(\w+):\s*"/g)].map((m) => m[1]));
+    const l = keys(grab("LIGHT")), d = keys(grab("DARK"));
+    return l.size === d.size && [...l].every((k) => d.has(k));
+  })());
+}
+
+
+console.log("\n── you can tell which code is live ──");
+{
+  const idx = fs.readFileSync(new URL("../server/index.js", import.meta.url), "utf8");
+  ok("/api/health reports the build version", /version: "7\.1\.0"/.test(idx));
+  ok("…and which migration the code expects", /schemaLevel: "service_areas\+eu_vat"/.test(idx));
+  ok("…and whether the database has caught up", /MIGRATION_PENDING/.test(idx));
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const health = /version: "([\d.]+)"/.exec(idx)[1];
+  const client = /const APP_VERSION = "([\d.]+)"/.exec(app)[1];
+  /* Three copies of one number. When they disagree, /api/health tells you a
+     version that is not what the app thinks it is, which defeats the whole
+     point of adding it. */
+  ok("server, client and package.json all report the same version",
+     health === pkg.version && client === pkg.version,
+     `health=${health} client=${client} package=${pkg.version}`);
+}
+
 console.log(`\n════ WIRED: ${pass} passed, ${fail} failed ════\n`);
 process.exit(fail ? 1 : 0);

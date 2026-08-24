@@ -289,7 +289,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.0.0";
+const APP_VERSION = "7.1.0";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -653,7 +653,7 @@ function Calendar({ selected, onSelect, minISO, marks = {}, initialMonth }) {
               position: "relative", aspectRatio: "1", borderRadius: R.sm, border: "none", cursor: disabled ? "default" : "pointer",
               fontFamily: F, fontWeight: 700, fontSize: 12.5,
               background: isSel ? C.navy : "transparent",
-              color: isSel ? "#fff" : disabled ? "#D5DAED" : C.ink,
+              color: isSel ? "#fff" : disabled ? C.inkFaint : C.ink,
             }}>
               {n}
               {mark > 0 && <span style={{ position: "absolute", bottom: 3, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 2 }}>
@@ -3358,7 +3358,7 @@ function CustomerBookings({ openBooking }) {
             )}
 
             {b.status === 8 && (
-              <div style={{ background: C.coralSoft, border: "1px solid #FFD8D1", borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.coralText, lineHeight: 1.55 }}>
+              <div style={{ background: C.coralSoft, border: `1px solid ${C.coral}44`, borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.coralText, lineHeight: 1.55 }}>
                 ✕ <b>{L("Declined by", "Elutasította:")} {co?.name || L("the company", "a cég")}.</b>{` ${b.decline_reason || L("Not available for this time", "Ebben az időpontban nem elérhető")}.`} {L("Try another time or company.", "Próbálj másik időpontot vagy céget.")}
               </div>
             )}
@@ -3981,7 +3981,7 @@ function CompanyJobs({ openProfile }) {
             )}
             {b.status <= 1 && (
               <div style={{ marginTop: 8 }}>
-                <button onClick={() => { setDeclining(b); setReason(""); }} style={{ fontFamily: B, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 99, border: "1.5px solid #FFD8D1", background: C.card, color: C.coral, cursor: "pointer" }}>
+                <button onClick={() => { setDeclining(b); setReason(""); }} style={{ fontFamily: B, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 99, border: "1.5px solid ${C.coral}44", background: C.card, color: C.coral, cursor: "pointer" }}>
                   ✕ Decline — not available for this time
                 </button>
               </div>
@@ -6546,7 +6546,7 @@ function AdminCompanies() {
             <Pill bg={co.is_approved ? C.mintSoft : C.coralSoft} color={co.is_approved ? C.green : C.coral}>
               {co.is_approved ? L("Approved", "Jóváhagyva") : L("Suspended", "Felfüggesztve")}
             </Pill>
-            <Pill bg={co.is_listed ? C.navyChip : "#F5F5F5"} color={co.is_listed ? C.navySoft : C.inkFaint}>
+            <Pill bg={co.is_listed ? C.navyChip : C.line} color={co.is_listed ? C.navySoft : C.inkFaint}>
               {co.is_listed ? L("Listed", "Listázva") : L("Unlisted", "Nem listázva")}
             </Pill>
             <button onClick={async () => {

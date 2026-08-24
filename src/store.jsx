@@ -345,7 +345,15 @@ export function StoreProvider({ children }) {
       const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
+      /* Signing in and loading the browse list are two different things.
+
+         This used to throw the login away if the list failed: setToken(null),
+         back to the login screen, "Could not load your data". So one failing
+         endpoint locked you out of your own account — you could not even reach
+         Profile to fix an address that was upsetting it. Sign in; if the list
+         did not come, the app shows an empty list and refreshes on its own. */
+      try { await loadAllData(sess); }
+      catch (e) { console.error("post-login load failed, continuing anyway:", e?.message); }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -358,7 +366,8 @@ export function StoreProvider({ children }) {
       const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
+      try { await loadAllData(sess); }
+      catch (e) { console.error("post-signup load failed, continuing anyway:", e?.message); }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -376,7 +385,8 @@ export function StoreProvider({ children }) {
       const { token, user } = resp;
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
+      try { await loadAllData(sess); }
+      catch (e) { console.error("post-signup load failed, continuing anyway:", e?.message); }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };
@@ -387,7 +397,8 @@ export function StoreProvider({ children }) {
       const { token, user } = await api("/auth/login", { method: "POST", body: { email, password } });
       setToken(token);
       const sess = buildSession(user);
-      try { await loadAllData(sess); } catch (e) { setToken(null); return { error: L("Could not load your data — ", "Nem sikerült betölteni az adataidat — ") + e.message }; }
+      try { await loadAllData(sess); }
+      catch (e) { console.error("post-signup load failed, continuing anyway:", e?.message); }
       setSession(sess); return {};
     } catch (e) { return { error: e.message }; }
   };

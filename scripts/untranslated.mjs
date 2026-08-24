@@ -178,6 +178,11 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
   if (inside(m.index) || inComment(m.index)) continue;
   /* Errors thrown for our own logs are not shown to anyone. */
   if (/new Error\($/.test(before)) continue;
+  /* console.log/warn/error never reaches a person. Flagging its arguments as
+     untranslated copy taught nothing and pushed the real findings down the
+     list — the first version of this check reported four developer log lines
+     as user-facing text on the customer's interface. */
+  if (/console\.(log|warn|error|info|debug)\([^)]{0,200}$/.test(before)) continue;
   const line = src.slice(0, m.index).split("\n").length - 1;
   const o = owner(line);
   if (!o) continue;

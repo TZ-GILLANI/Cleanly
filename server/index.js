@@ -2,6 +2,7 @@ import "dotenv/config";
 import { startReminders } from "./lib/reminders.js";
 import { wire as wireAlerts, alert } from "./lib/alerts.js";
 import { startSubscriptions } from "./lib/subscriptions.js";
+import { query } from "./db.js";
 import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "url";
@@ -99,7 +100,25 @@ app.post("/api/client-error", async (req, res) => {
   } catch { /* a failure here must never surface anywhere */ }
 });
 
-app.get("/api/health", (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+/* Health, and — more usefully — WHICH CODE IS RUNNING.
+
+   We spent a long evening on a login failure whose whole cause was that the
+   server was not running the commit that had been pushed. Nothing on the
+   outside said so; the only way to tell was to notice a missing field in an
+   unrelated response. `schemaLevel` names the last migration the code expects,
+   so /api/health answers "did my deploy land, and has the database caught up?"
+   in one request. */
+const BUILD = { version: "7.1.0", schemaLevel: "service_areas+eu_vat" };
+app.get("/api/health", async (req, res) => {
+  let schema = "unknown";
+  try {
+    await query("SELECT service_areas, eu_vat FROM companies LIMIT 0");
+    schema = "ready";
+  } catch (e) {
+    schema = /does not exist|undefined column/i.test(e.message || "") ? "MIGRATION_PENDING" : "unknown";
+  }
+  res.json({ ok: true, ts: new Date().toISOString(), ...BUILD, schema });
+});
 
 /* ── 2.1 minimum supported app version. Old builds show a blocking update
       screen. Raise MIN_APP_VERSION only after the force-update screen has
