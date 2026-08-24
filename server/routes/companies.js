@@ -3,7 +3,7 @@ import { query } from "../db.js";
 import { geocode, distanceKm } from "../lib/geocode.js";
 import { translateAll, translateList, sourceChanged } from "../lib/translate.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { huTaxIdValid, huRegNumberValid, formatTaxId } from "../lib/validate.js";
+import { huTaxIdValid, huRegNumberValid, formatTaxId, formatRegNumber, euVatCheck, normalizeVat } from "../lib/validate.js";
 
 const router = Router();
 
@@ -44,10 +44,81 @@ export function addressNamesCity(co, addressRaw) {
   });
 }
 
+/* ── Service areas ────────────────────────────────────────────────
+
+   One list, one matching function, used by the company listing AND by booking
+   validation. Before this they were separate code paths that could disagree:
+   a company could appear in your list and then refuse your booking.
+
+   An area is a named place:
+     { city: "Debrecen", mode: "all" }
+     { city: "Budapest", mode: "radius", lat, lng, radiusKm: 8, label: "Belváros" }
+
+   An address is covered if ANY area covers it. Nothing else. */
+
+export function serviceAreasOf(co) {
+  let a = co?.service_areas;
+  if (typeof a === "string") { try { a = JSON.parse(a); } catch { a = null; } }
+  if (Array.isArray(a) && a.length) return a.filter((x) => x && x.city);
+
+  /* Nothing migrated yet — build the equivalent from the old columns so a
+     company that has not touched their settings keeps exactly the coverage
+     they had. This is what makes the change safe to deploy. */
+  const out = [];
+  for (const c of cityList(co)) out.push({ city: c, mode: "all" });
+  if (co?.service_lat != null && co?.service_lng != null && Number(co?.service_radius_km) > 0) {
+    out.push({ city: co.city || "", mode: "radius", lat: Number(co.service_lat),
+               lng: Number(co.service_lng), radiusKm: Number(co.service_radius_km) });
+  }
+  return out;
+}
+
+const sameCity = (a, b) =>
+  String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase() && String(a || "").trim() !== "";
+
+/* `where` is { city, lat, lng } — any of them may be missing.
+   Returns { covered, km } so callers can tell the customer HOW far out they are. */
+export function areaCovers(co, where) {
+  const areas = serviceAreasOf(co);
+  if (!areas.length) return { covered: true, km: null };   // no areas set = no limit, as before
+  let best = null;
+  for (const a of areas) {
+    if (a.mode === "all") {
+      if (sameCity(a.city, where?.city)) return { covered: true, km: null };
+      continue;
+    }
+    if (a.lat == null || a.lng == null) continue;
+    if (where?.lat == null || where?.lng == null) {
+      /* No coordinates for the address: fall back to the city the area is
+         anchored in. Better to let a booking through than to refuse someone
+         because our geocoder was having a quiet day. */
+      if (sameCity(a.city, where?.city)) return { covered: true, km: null };
+      continue;
+    }
+    const km = distanceKm(Number(a.lat), Number(a.lng), where.lat, where.lng);
+    if (km == null) continue;
+    if (best == null || km < best) best = km;
+    /* A little slack, applied HERE so the listing and the booking guard agree
+       to the metre. A pin is dropped by hand and a geocoded house number is
+       not a survey marker; refusing someone 200 m over would be precision the
+       data does not have. Proportional, because 1 km of slop on a 60 km radius
+       is not the same tolerance as 1 km on a 3 km one. */
+    if (km <= Number(a.radiusKm || 10) * 1.1 + 1) return { covered: true, km };
+  }
+  return { covered: false, km: best };
+}
+
+/* A short human summary for the company card: "Debrecen · Budapest +1" */
+export function areaSummary(co) {
+  const names = [...new Set(serviceAreasOf(co).map((a) => String(a.label || a.city || "").trim()).filter(Boolean))];
+  if (!names.length) return "";
+  return names.length <= 2 ? names.join(" · ") : `${names.slice(0, 2).join(" · ")} +${names.length - 2}`;
+}
+
 router.get("/", async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_cities, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
+      "SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_areas, service_cities, eu_vat, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE is_listed = true AND is_approved = true ORDER BY rating DESC, review_count DESC"
     );
     let rows = result.rows;
 
@@ -65,17 +136,22 @@ router.get("/", async (req, res) => {
       if (me) {
         rows = rows
           .map((c) => {
-            const d = (c.service_lat != null && c.service_lng != null)
-              ? distanceKm(me.lat, me.lng, c.service_lat, c.service_lng) : null;
+            let d = null;
+            for (const a of serviceAreasOf(c)) {
+              if (a.lat == null || a.lng == null) continue;
+              const km = distanceKm(me.lat, me.lng, Number(a.lat), Number(a.lng));
+              if (km != null && (d == null || km < d)) d = km;
+            }
             return { ...c, distance_km: d };
           })
           /* A named city beats a measured distance. A company that says it
              serves Nyíregyháza serves it whether that is 4 km or 50 km from
              the pin they dropped, and no radius expresses "these three towns,
              not the villages between them". */
-          .filter((c) => servesCity(c, myCity) || (!myCity && addressNamesCity(c, near))
-                      || c.distance_km == null
-                      || c.distance_km <= (Number(c.service_radius_km) || 10))
+          /* The SAME function the booking endpoint calls. If it says yes here
+             and no there, a customer sees a company and then gets refused. */
+          .filter((c) => areaCovers(c, { city: myCity, lat: me.lat, lng: me.lng }).covered
+                      || (!myCity && addressNamesCity(c, near)))
           .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
       }
     }
@@ -88,7 +164,7 @@ router.get("/", async (req, res) => {
 /* GET /api/companies/:id — public */
 router.get("/:id", async (req, res) => {
   try {
-    const result = await query("SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_cities, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE id = $1", [req.params.id]);
+    const result = await query("SELECT id, name, emoji, tagline, area, city, country, service_lat, service_lng, service_radius_km, service_areas, service_cities, eu_vat, currency, requirements, tagline_i18n, requirements_i18n, google_place_id, student_discount, promo, availability, rating, review_count, cover, logo_url, is_listed, is_approved, created_at FROM companies WHERE id = $1", [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Company not found" });
     res.json({ company: result.rows[0] });
   } catch (err) {
@@ -98,7 +174,7 @@ router.get("/:id", async (req, res) => {
 
 /* PUT /api/companies/:id — company owner only */
 router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
-  const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId, promo, availability, country, serviceLat, serviceLng, serviceRadiusKm, currency, requirements, billingName, billingZip, billingCity, billingAddress, billingEmail, serviceCities } = req.body;
+  const { name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId, regNumber, contactPhone, documents, city, googlePlaceId, promo, availability, country, serviceLat, serviceLng, serviceRadiusKm, serviceAreas, currency, requirements, euVat, billingName, billingZip, billingCity, billingAddress, billingEmail, serviceCities } = req.body;
   let availJson;
   if (availability === null) {
     availJson = "null";          // explicit clear → no restrictions
@@ -162,6 +238,18 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
   if (taxId && !huTaxIdValid(taxId)) return res.status(400).json({ error: "Invalid Hungarian tax number (adószám). Format: 12345678-1-42." });
   if (regNumber && !huRegNumberValid(regNumber)) return res.status(400).json({ error: "Invalid registration number (cégjegyzékszám). Format: 09-09-123456." });
 
+  const vatVerdict = euVatCheck(euVat, country, taxId);
+  if (!vatVerdict.ok) {
+    const why = {
+      no_country: "An EU VAT number starts with the two-letter country code, e.g. HU12345678.",
+      not_eu: "That country code is not in the EU VAT system.",
+      shape: "That does not match the format used by that country.",
+      country_mismatch: "The VAT number's country does not match your company's country.",
+      tax_mismatch: "A Hungarian EU VAT number is HU plus the first 8 digits of your adoszam — these do not match.",
+    }[vatVerdict.reason] || "That EU VAT number does not look right.";
+    return res.status(400).json({ error: why });
+  }
+
   try {
     const result = await query(
       `UPDATE companies SET
@@ -191,9 +279,11 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
         billing_city = COALESCE($25, billing_city),
         billing_address = COALESCE($26, billing_address),
         billing_email = COALESCE($27, billing_email),
-        service_cities = CASE WHEN $28::text IS NULL THEN service_cities ELSE $28::jsonb END
+        service_cities = CASE WHEN $28::text IS NULL THEN service_cities ELSE $28::jsonb END,
+        service_areas   = CASE WHEN $29::text IS NULL THEN service_areas   ELSE $29::jsonb END,
+        eu_vat = COALESCE($30, eu_vat)
       WHERE id = $14 RETURNING *`,
-      [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber, contactPhone,
+      [name, emoji, tagline, area, studentDiscount, cover, logoUrl, taxId ? formatTaxId(taxId) : null, regNumber ? formatRegNumber(regNumber) : null, contactPhone,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, city || null, googlePlaceId !== undefined ? String(googlePlaceId).slice(0, 100) : null, req.params.id, promoJson === undefined ? null : promoJson, availJson === undefined ? null : availJson,
        country ? String(country).toUpperCase().slice(0, 2) : null,
        serviceLat != null && !Number.isNaN(Number(serviceLat)) ? Number(serviceLat) : null,
@@ -216,7 +306,28 @@ router.put("/:id", requireAuth, requireRole("company"), async (req, res) => {
              .map((x) => String(x || "").trim().slice(0, 80))
              .filter(Boolean)
              .map((x) => [x.toLowerCase(), x])).values()].slice(0, 40))
-         : null]
+         : null,
+       /* Sanitised hard: a city name, a mode, and — only for a radius — a real
+          point inside a sane range. Anything else is dropped rather than
+          stored, because this list decides who can book you. */
+       (() => {
+         if (!Array.isArray(serviceAreas)) return null;
+         const clean = serviceAreas.slice(0, 40).map((a) => {
+           const city = String(a?.city || "").trim().slice(0, 80);
+           if (!city) return null;
+           const label = String(a?.label || "").trim().slice(0, 80) || undefined;
+           if (a?.mode === "radius") {
+             const lat = Number(a.lat), lng = Number(a.lng);
+             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+             if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+             const radiusKm = Math.min(Math.max(parseInt(a.radiusKm, 10) || 10, 1), 200);
+             return { city, mode: "radius", lat, lng, radiusKm, ...(label ? { label } : {}) };
+           }
+           return { city, mode: "all", ...(label ? { label } : {}) };
+         }).filter(Boolean);
+         return JSON.stringify(clean);
+       })(),
+       euVat !== undefined ? (normalizeVat(euVat) || null) : null]
     );
     const saved = result.rows[0];
 

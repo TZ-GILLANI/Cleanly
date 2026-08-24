@@ -249,5 +249,39 @@ ok("and the long string on the same line, which quote-mispairing used to hide",
   ok("the app itself reports zero", /════ 0 untranslated/.test(out), out.slice(-200));
 }
 
+
+/* ── A shadowed key is a lie in the file ──────────────────────────
+   translations.js is one object literal per language. A key that appears twice
+   is legal JavaScript — the LATER one silently wins — so the copy you read at
+   the top of the block can be the copy that never runs. Editing it does
+   nothing, and nothing tells you.
+
+   172 of these had accumulated. They changed no behaviour, because the winner
+   was deterministic, but a file where editing the visible line has no effect
+   is a trap set for whoever edits it next. */
+{
+  const fs = await import("fs");
+  const src = fs.readFileSync(new URL("../src/lib/translations.js", import.meta.url), "utf8");
+  const lines = src.split("\n");
+  let lang = null; const seen = {}; const dupes = [];
+  for (const ln of lines) {
+    const h = /^  ([a-z]{2}): \{\s*$/.exec(ln);
+    if (h) { lang = h[1]; seen[lang] = new Set(); continue; }
+    if (/^  \},?\s*$/.test(ln)) { lang = null; continue; }
+    if (!lang) continue;
+    const k = /^\s*"((?:[^"\\]|\\.)*)"\s*:/.exec(ln);
+    if (!k) continue;
+    if (seen[lang].has(k[1])) dupes.push(`${lang}: ${k[1].slice(0, 50)}`);
+    else seen[lang].add(k[1]);
+  }
+  ok("no language block defines the same key twice", dupes.length === 0,
+     `${dupes.length}: ${dupes.slice(0, 6).join(" | ")}`);
+  ok("and the scan actually walked every language block",
+     Object.keys(seen).length === 10, Object.keys(seen).join(","));
+  ok("each language still carries a full dictionary",
+     Object.values(seen).every((s2) => s2.size > 900),
+     Object.entries(seen).map(([l, s2]) => `${l}:${s2.size}`).join(" "));
+}
+
 console.log(`\n════ LANGUAGE: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

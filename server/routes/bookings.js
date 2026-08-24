@@ -133,36 +133,32 @@ router.post("/", requireAuth, async (req, res) => {
        because none would be right: 30 km covers four towns around a village and
        still clips the edge of a big one, and a company working Debrecen and
        Nyíregyháza is not a circle at all. */
-    const { servesCity } = await import("./companies.js");
-    /* The city comes out of the database, never off the request. Two reasons,
-       and the second is the one that matters: the token carries only id, role
-       and companyId — there is no city on it to read — and a city taken from
-       the body is a string the caller chose, so `city: "Nyiregyhaza"` would
-       walk straight past the area guard it is meant to satisfy. */
+    /* One function decides this, and the company listing calls the same one.
+       They used to be separate code paths, which meant a company could appear
+       in your list and then refuse your booking. */
+    const { areaCovers, areaSummary } = await import("./companies.js");
+
     let bookerCity = "";
     try {
       const meRow = await query("SELECT city FROM users WHERE id = $1", [req.user.id]);
       bookerCity = String(meRow.rows[0]?.city || "").trim();
-    } catch { /* no city on file — fall through to the distance check */ }
-    const cityCovered = servesCity(co, bookerCity);
+    } catch { /* no city on file — the coordinates below still decide */ }
 
-    if (!cityCovered && co.service_lat != null && co.service_lng != null && Number(co.service_radius_km) > 0) {
-      try {
-        const { geocode, distanceKm } = await import("../lib/geocode.js");
-        const here = await geocode(`${address}, ${co.city || ""}`.trim().replace(/,\s*$/, ""));
-        if (here) {
-          const km = distanceKm(Number(co.service_lat), Number(co.service_lng), here.lat, here.lng);
-          const limit = Number(co.service_radius_km);
-          /* A little slack: the pin is dropped by hand and a geocoded house
-             number is not a survey marker. Refusing someone 200 m over would be
-             precision the data does not have. */
-          if (km > limit * 1.1 + 1) {
-            return res.status(400).json({
-              error: `That address is outside this company's service area (about ${Math.round(km)} km away, they travel ${limit} km).`,
-            });
-          }
-        }
-      } catch (e) { console.error("service-area check:", e.message); }
+    let here = null;
+    try {
+      const { geocode } = await import("../lib/geocode.js");
+      here = await geocode(`${address}, ${bookerCity || co.city || ""}`.trim().replace(/,\s*$/, ""));
+    } catch (e) { console.error("service-area geocode:", e.message); }
+
+    /* areaCovers() already allows the slack a hand-dropped pin deserves, and
+       the listing calls the same function — so if it says no here, the company
+       was never in this customer's list either. */
+    const verdict = areaCovers(co, { city: bookerCity, lat: here?.lat, lng: here?.lng });
+    if (!verdict.covered) {
+      const how = verdict.km != null ? ` (about ${Math.round(verdict.km)} km away)` : "";
+      return res.status(400).json({
+        error: `That address is outside this company's service area${how}. They work in: ${areaSummary(co) || co.city || "their own area"}.`,
+      });
     }
 
     // ── Respect the company's availability (server-side, so a stale app can't

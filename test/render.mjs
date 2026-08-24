@@ -209,9 +209,12 @@ if (!jsdomOk) {
         ok("admin — the company dossier opens", body !== null && thrown.length === before,
            body === null ? "no Details button rendered" : thrown[thrown.length - 1]?.message || "");
         ok("admin — the dossier actually shows billing fields, not an empty sheet",
-           !!body && /Tax number/i.test(body) && /Invoice email/i.test(body)
-                  && /Cities served in full/i.test(body),
+           !!body && /Tax number/i.test(body) && /Invoice email/i.test(body),
            (body || "").slice(0, 120));
+        /* v7.1: "Cities served in full" and a radius row were two views of a
+           model that no longer exists. One row, showing the real list. */
+        ok("admin — and the coverage the customer is actually judged against",
+           !!body && /Areas served|Ellátott területek/i.test(body), (body || "").slice(0, 160));
       } else ok("admin — the Companies screen is reachable", false, "no tab rendered a company list");
     }
 
@@ -225,29 +228,28 @@ if (!jsdomOk) {
       if (!reached) {
         await clickText("Manage", 900);
         await clickText("Settings", 1400);
-        reached = /Cities you serve in full/i.test(w.document.getElementById("root").textContent || "");
+        reached = /Where you work/i.test(w.document.getElementById("root").textContent || "");
       }
       if (reached) {
         const body = w.document.getElementById("root").textContent || "";
-        ok("company — the cities-served section is on the settings screen",
-           /Cities you serve in full/i.test(body), body.slice(0, 120));
-        const after = await clickText("Serve the whole of", 1200);
-        ok("company — the one-tap whole-city button works without throwing",
-           after !== null && thrown.length === before,
+        /* v7.1: one list of named places replaced a free pin + a flat city
+           list. The anchor moved with it; the promise did not. */
+        ok("company — the service-area section is on the settings screen",
+           /Where you work/i.test(body), body.slice(0, 120));
+        ok("company — it explains that only people inside can book",
+           /Only customers inside these places can book you|Csak az ezeken bel/i.test(body), body.slice(0, 160));
+        const before2 = thrown.length;
+        const after = await clickText("Add a place", 1200);
+        ok("company — the add-a-place button opens without throwing",
+           after !== null && thrown.length === before2,
            after === null ? "button not rendered" : thrown[thrown.length - 1]?.message || "");
-        /* The setup screen has to tell a partner what is still missing.
-           Twenty-three fields in one scroll told them nothing. */
+        ok("company — it asks for a town first, so a pin cannot float free",
+           !!after && /Town or city|Település/i.test(after), (after || "").slice(0, 140));
+
         const setupTxt = w.document.getElementById("root").textContent || "";
         ok("company — the setup screen says what is still missing",
-           /things left before customers can book you|Everything is set up/i.test(setupTxt),
+           /things left before customers can book you|Everything is set up|Add a place/i.test(setupTxt),
            setupTxt.slice(0, 90));
-        ok("company — a whole week can be set from a preset",
-           /Weekdays 8|Start from a usual week/i.test(setupTxt));
-
-        ok("company — tapping it puts the city in the list",
-           !!after && /Cities you serve in full/i.test(after)
-                   && !/None yet/i.test(after.split("Cities you serve in full")[1] || ""),
-           "city chip did not appear");
       } else ok("company — the Settings screen is reachable", false, "no tab rendered the settings form");
     }
 

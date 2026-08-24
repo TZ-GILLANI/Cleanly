@@ -127,7 +127,8 @@ ok("complaints query does not blow up", Array.isArray(full.data.complaints), JSO
 ok("no password hash leaks", !JSON.stringify(full.data).includes("password_hash"));
 const fullCo = await j(`/api/admin/users/${coTok.user.id}/full`, { token: adminTok });
 ok("a company owner's company is attached", fullCo.data.company?.id === cid, JSON.stringify(fullCo.data.company).slice(0, 120));
-ok("company block carries the editable fields", "tax_id" in (fullCo.data.company || {}) && "service_radius_km" in (fullCo.data.company || {}));
+ok("company block carries the editable fields", "tax_id" in (fullCo.data.company || {}));
+ok("and the coverage an admin needs to see", "service_areas" in (fullCo.data.company || {}));
 const custPeek = await j(`/api/admin/users/${coTok.user.id}/full`, { token: cuTok.token });
 ok("a customer cannot read someone's record", custPeek.status === 403, String(custPeek.status));
 
@@ -135,7 +136,14 @@ console.log("\n── 5.11 admin edits company details, safely and on the record
 const edit = await j(`/api/admin/companies/${cid}/details`, { method: "PUT", token: adminTok, body: { name: "P5 Co Renamed", city: "Szeged", tax_id: "99999999-1-02", service_radius_km: 25 } });
 ok("edit accepted", edit.status === 200, JSON.stringify(edit.data).slice(0, 140));
 const after = (await query("SELECT name, city, tax_id, service_radius_km FROM companies WHERE id = $1", [cid])).rows[0];
-ok("the change actually landed", after.name === "P5 Co Renamed" && after.city === "Szeged" && Number(after.service_radius_km) === 25, JSON.stringify(after));
+ok("the change actually landed", after.name === "P5 Co Renamed" && after.city === "Szeged"
+   && after.tax_id === "99999999-1-02", JSON.stringify(after));
+/* v7.1: service_radius_km decides nothing — coverage lives in service_areas,
+   which only the partner edits. An admin slider that wrote it was a control
+   that did nothing, so the column was dropped from ADMIN_EDITABLE. Asserting
+   the refusal here stops anyone quietly putting it back. */
+ok("a retired column is IGNORED, not silently written", Number(after.service_radius_km) !== 25,
+   `radius is now ${after.service_radius_km}`);
 const editLog = await query("SELECT detail FROM admin_log WHERE action LIKE 'company%' ORDER BY created_at DESC LIMIT 1");
 ok("before → after is in the audit log", editLog.rows.length === 1 && editLog.rows[0].detail.includes("P5 Co Renamed"), JSON.stringify(editLog.rows));
 const ratingBefore = Number((await query("SELECT rating FROM companies WHERE id = $1", [cid])).rows[0].rating);

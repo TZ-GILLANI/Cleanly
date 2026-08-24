@@ -370,15 +370,6 @@ const COUNTRIES = [
 /* Code → the name we already show in the picker, so a country reads the same
    everywhere. Falls back to the raw code rather than blanking: an unexpected
    value is worth seeing, not hiding. */
-/* Client twin of servesCity() in server/routes/companies.js. Two copies of one
-   rule is a risk, so a test asserts they agree. */
-const servesCityClient = (co, cityRaw) => {
-  const city = String(cityRaw || "").trim().toLowerCase();
-  if (!city) return false;
-  let list = co?.service_cities;
-  if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = []; } }
-  return Array.isArray(list) && list.some((c) => String(c || "").trim().toLowerCase() === city);
-};
 
 /* Fill {0}, {1}… in a translated string.
 
@@ -424,6 +415,55 @@ const huTaxIdValid = (raw) => {
   const county = Number(d.slice(9, 11));
   return (county >= 2 && county <= 44) || county === 51;
 };
+/* Client twins of server/lib/validate.js. Formatting has to happen while the
+   partner types — the server can only tidy what it is finally sent. */
+const formatRegNumberC = (raw) => {
+  const d = String(raw || "").replace(/[^0-9]/g, "").slice(0, 10);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}-${d.slice(2)}`;
+  return `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
+};
+const formatTaxIdLiveC = (raw) => {
+  const d = String(raw || "").replace(/[^0-9]/g, "").slice(0, 11);
+  if (d.length <= 8) return d;
+  if (d.length === 9) return `${d.slice(0, 8)}-${d[8]}`;
+  return `${d.slice(0, 8)}-${d[8]}-${d.slice(9)}`;
+};
+const VAT_SHAPES_C = {
+  AT: /^ATU\d{8}$/, BE: /^BE0\d{9}$/, BG: /^BG\d{9,10}$/, HR: /^HR\d{11}$/,
+  CY: /^CY\d{8}[A-Z]$/, CZ: /^CZ\d{8,10}$/, DK: /^DK\d{8}$/, EE: /^EE\d{9}$/,
+  FI: /^FI\d{8}$/, FR: /^FR[A-Z0-9]{2}\d{9}$/, DE: /^DE\d{9}$/, GR: /^(EL|GR)\d{9}$/,
+  HU: /^HU\d{8}$/, IE: /^IE\d{7}[A-Z]{1,2}$/, IT: /^IT\d{11}$/, LV: /^LV\d{11}$/,
+  LT: /^LT(\d{9}|\d{12})$/, LU: /^LU\d{8}$/, MT: /^MT\d{8}$/, NL: /^NL\d{9}B\d{2}$/,
+  PL: /^PL\d{10}$/, PT: /^PT\d{9}$/, RO: /^RO\d{2,10}$/, SK: /^SK\d{10}$/,
+  SI: /^SI\d{8}$/, ES: /^ES[A-Z0-9]\d{7}[A-Z0-9]$/, SE: /^SE\d{12}$/,
+};
+const normalizeVatC = (raw) => String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const euVatCheckC = (raw, countryCode, taxId) => {
+  const v = normalizeVatC(raw);
+  if (!v) return { ok: true, reason: "empty" };
+  const prefix = v.slice(0, 2);
+  if (!/^[A-Z]{2}$/.test(prefix)) return { ok: false, reason: "no_country" };
+  const shape = VAT_SHAPES_C[prefix === "EL" ? "GR" : prefix];
+  if (!shape) return { ok: false, reason: "not_eu" };
+  if (!shape.test(v)) return { ok: false, reason: "shape" };
+  const co = String(countryCode || "").toUpperCase();
+  if (co && VAT_SHAPES_C[co] && prefix !== co && !(co === "GR" && prefix === "EL"))
+    return { ok: false, reason: "country_mismatch" };
+  if (prefix === "HU" && taxId) {
+    const base = String(taxId).replace(/[^0-9]/g, "").slice(0, 8);
+    if (base.length === 8 && base !== v.slice(2)) return { ok: false, reason: "tax_mismatch" };
+  }
+  return { ok: true, reason: "ok" };
+};
+const vatWhy = (r) => ({
+  no_country: L("Start with the two-letter country code, e.g. HU12345678.", "Kezdd a kétbetűs országkóddal, pl. HU12345678."),
+  not_eu: L("That country is not in the EU VAT system.", "Ez az ország nincs az EU áfa-rendszerében."),
+  shape: L("That is not the format that country uses.", "Ez nem az adott ország formátuma."),
+  country_mismatch: L("This belongs to a different country than your company.", "Ez más országhoz tartozik, mint a céged."),
+  tax_mismatch: L("A Hungarian EU VAT number is HU plus the first 8 digits of your adószám.", "A magyar közösségi adószám: HU és az adószámod első 8 számjegye."),
+}[r] || "");
+
 const huRegNumberValid = (raw) => String(raw || "").replace(/[^0-9]/g, "").length === 10;
 
 /* ── Phone prefix auto-detection (IP country → dial code) ── */
@@ -982,6 +1022,9 @@ const ICON_PATHS = {
   sparkle: "M12 3.5 13.9 9 19.5 11 13.9 13 12 18.5 10.1 13 4.5 11 10.1 9Z",
   /* Added when the emoji came out of the interface. Same 24-box, same 1.7
      stroke, so they sit with the ones the nav already used. */
+  search: "M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15ZM21 21l-5.2-5.2",
+  close: "M6 6l12 12M18 6L6 18",
+  chevronRight: "M9 5l7 7-7 7",
   pin: "M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
   card: "M3 7.5A1.5 1.5 0 0 1 4.5 6h15A1.5 1.5 0 0 1 21 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5Z M3 10h18",
   check: "M4.5 12.5 9.5 17.5 19.5 7",
@@ -1464,6 +1507,67 @@ async function suggestCities(q, country) {
   } catch { return []; }
 }
 
+/* Same search, but keeping the coordinates.
+
+   The old area editor dropped a pin on a bare map with nothing tying it to a
+   place, which is how a company ended up claiming to serve Debrecen from a
+   point 38 km outside it. A radius now starts at the centre of the city you
+   picked, so the worst case is a sensible circle rather than a field. */
+async function suggestPlaces(q, country) {
+  const t = String(q || "").trim();
+  if (t.length < 2) return [];
+  try {
+    const cc = String(country || getCountry() || "HU").toUpperCase();
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(t)}&limit=8&osm_tag=place:city&osm_tag=place:town&lang=${getLang() === "hu" ? "hu" : "en"}`,
+      { signal: AbortSignal.timeout(5000) });
+    const j = await r.json();
+    const seen = new Set();
+    return (j.features || [])
+      .filter((f) => f.properties?.countrycode === cc && f.properties?.name && Array.isArray(f.geometry?.coordinates))
+      .map((f) => ({ name: f.properties.name, lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] }))
+      .filter((x) => (seen.has(x.name) ? false : seen.add(x.name)))
+      .slice(0, 6);
+  } catch { return []; }
+}
+
+/* Reading the areas is the same job on both sides of the wire; this mirrors
+   serviceAreasOf() on the server, including the migration from the old
+   columns, so the app never shows coverage the server would not honour. */
+function areasOf(co) {
+  let a = co?.service_areas;
+  if (typeof a === "string") { try { a = JSON.parse(a); } catch { a = null; } }
+  if (Array.isArray(a) && a.length) return a.filter((x) => x && x.city);
+  const out = [];
+  let cities = co?.service_cities;
+  if (typeof cities === "string") { try { cities = JSON.parse(cities); } catch { cities = []; } }
+  for (const c of (Array.isArray(cities) ? cities : [])) if (String(c || "").trim()) out.push({ city: String(c).trim(), mode: "all" });
+  if (co?.service_lat != null && co?.service_lng != null && Number(co?.service_radius_km) > 0)
+    out.push({ city: co.city || "", mode: "radius", lat: Number(co.service_lat), lng: Number(co.service_lng), radiusKm: Number(co.service_radius_km) });
+  return out;
+}
+/* Client twin of areaCovers() for the home list, which has a city but no
+   coordinates. City-level only: the server does the precise distance work when
+   it filters and again when it takes the booking. Deliberately generous — the
+   worst case is showing a company the server will then decline, which is a
+   clear message; hiding one it would have accepted is silence. */
+/* Mirrors areaSummary() on the server: "Debrecen · Belváros +1". */
+const areaSummaryClient = (co) => {
+  const names = [...new Set(areasOf(co).map((a) => String(a.label || a.city || "").trim()).filter(Boolean))];
+  if (!names.length) return "";
+  return names.length <= 2 ? names.join(" · ") : `${names.slice(0, 2).join(" · ")} +${names.length - 2}`;
+};
+
+const coversCityClient = (co, cityRaw) => {
+  const city = String(cityRaw || "").trim().toLowerCase();
+  if (!city) return true;
+  const areas = areasOf(co);
+  if (!areas.length) return !co.city || String(co.city).toLowerCase() === city;
+  return areas.some((a) => String(a.city || "").trim().toLowerCase() === city)
+      || String(co.city || "").toLowerCase() === city;
+};
+
+const areaTitle = (a) => (a.label ? `${a.city} · ${a.label}` : a.city);
+
 async function suggestStreets(q, city, country) {
   try {
     const cc = String(country || getCountry() || "HU").toUpperCase();
@@ -1548,7 +1652,19 @@ function AddressPicker({ value, onChange }) {
     debounceRef.current = setTimeout(async () => setSugs(await suggestStreets(v.trim(), cityIn, country)), 350);
   };
 
-  const applyCityFrom = (addr) => { const c = cityFromAddress(addr); if (c) saveCity(c); };
+  /* Picking an address moves your city with it — on the server too.
+
+     This only ever called saveCity(), which writes localStorage. users.city
+     stayed on whatever was typed at signup, and /api/companies filters on
+     THAT, so someone who moved from Debrecen to Budapest kept being shown
+     Debrecen companies and refused when they booked one near the new flat. */
+  const applyCityFrom = (addr) => {
+    const c = cityFromAddress(addr);
+    if (!c) return;
+    saveCity(c);
+    if (session?.userId && String(session.city || "").toLowerCase() !== c.toLowerCase())
+      updateProfile({ city: c }).catch(() => {});   // best effort; the local city already moved
+  };
 
   const recent = useMemo(() => {
     const seen = new Set([session.address, ...saved.map((a) => a.address)].filter(Boolean).map((a) => a.trim()));
@@ -1873,6 +1989,7 @@ function ProfileSheet({ close }) {
       taxId: cf.tax_id, regNumber: cf.reg_number, googlePlaceId: cf.google_place_id,
       billingName: cf.billing_name, billingZip: cf.billing_zip, billingCity: cf.billing_city,
       billingAddress: cf.billing_address, billingEmail: cf.billing_email,
+      euVat: cf.eu_vat,
     });
     setCoBusy(false);
     if (res?.error) toast(res.error, "error");
@@ -2594,13 +2711,12 @@ function CustomerHome({ openBooking, openProfile }) {
 
   const list = useMemo(() => {
     let res = companies
-      /* Either the company is based in your city, or it has named your city as
-         one it serves in full. Without the second clause a Nyíregyháza-serving
-         Debrecen company is filtered out of the list before the server's own
-         area rules ever get a say. */
-      .filter((c) => !city || !c.city
-        || String(c.city).toLowerCase() === String(city).toLowerCase()
-        || servesCityClient(c, city))
+      /* The client used to judge this on the flat service_cities list alone,
+         which the areas model replaced. A company covering only PART of your
+         city has no "Budapest" entry in that list, so the phone hid it even
+         though the server would have shown it and taken the booking. Judge it
+         the same way the server does, or the list and the truth diverge. */
+      .filter((c) => !city || coversCityClient(c, city))
       .filter((c) => c.is_approved !== false && c.is_listed !== false)
       .filter((c) => matchesSearch(c, services, q).hit);
     if (sort === "rating") res = [...res].sort((a, b) => b.rating - a.rating);
@@ -2646,12 +2762,12 @@ function CustomerHome({ openBooking, openProfile }) {
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 23, color: "#fff", lineHeight: 1.3 }}>
             {t("home.whatSparkle")}
           </div>
-          <span style={{ flexShrink: 0, fontFamily: F, fontWeight: 700, fontSize: 12, color: "#C9D2F5", padding: "7px 4px" }}>
-            {city}
-          </span>
+          {/* The city sat here AND in the address line directly above it. One
+              of them had to go, and the address is the one that also tells you
+              which address the list is being filtered against. */}
         </div>
         <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: R.lg, padding: "12px 16px", boxShadow: "0 10px 30px rgba(0,0,0,.18)" }}>
-          <span style={{ fontSize: 15, opacity: .55 }}></span>
+          <Ic name="search" size={16} sw={1.9} color={C.inkFaint} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("home.search")}
             style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 14, color: C.ink, background: "transparent" }} />
           {q && <button onClick={() => setQ("")} style={{ border: "none", background: "none", color: C.inkFaint, cursor: "pointer", fontSize: 16 }}>✕</button>}
@@ -2723,7 +2839,9 @@ function CustomerHome({ openBooking, openProfile }) {
                 )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Star size={12} /> <b style={{ color: C.ink }}>{co.rating}</b> ({co.review_count})</span>
-                  <><span>·</span><span>{co.city || ""}{co.area ? ` · ${co.area}` : ""}{co.distance_km != null ? ` · ${co.distance_km} km` : ""}</span></>
+                  {/* `area` is a free-text blurb the partner types; it can say anything and
+                      often says nothing. The real coverage is the areas list. */}
+                  <><span>·</span><span>{areaSummaryClient(co) || co.city || ""}{co.distance_km != null ? ` · ${co.distance_km} km` : ""}</span></>
                   {minPrice != null && <><span>·</span><span style={{ fontWeight: 700, color: C.navy }}>{fill(L("from {0}", "{0}-tól"), huf(minPrice))}</span></>}
                 </div>
                 {(hasHourly || hasSub) && (
@@ -3144,9 +3262,9 @@ function CustomerBookings({ openBooking }) {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 18px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("My bookings", "Foglalásaim")}</div>
-        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>{L("My reports", "Bejelentéseim")}</button>
+        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>{L("Report", "Bejelentés")}</button>
       </div>
-      {showReports && <CustomerReports close={() => setShowReports(false)} />}
+      {showReports && <CustomerReports close={() => setShowReports(false)} bookings={mine} companies={companies} />}
       {trackId && <TrackSheet bookingId={trackId} booking={(bookings || []).find((x) => x.id === trackId)} close={() => setTrackId(null)} />}
 
       {/* ── 3.4 Recurring plans — the schedule itself, not just its bookings ── */}
@@ -3687,16 +3805,22 @@ function CompanyJobs({ openProfile }) {
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 4px" }}>
-        <div>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{co?.name || L("My company", "A cégem")}</div>
-          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
-            Admin · {new Date().toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "short" })}
-          </div>
-        </div>
-        <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label={L("Profile", "Profil")}>
+      {/* Logo first, then the name — the mark identifies the business, so it
+          reads as one unit instead of a name on the left and a badge stranded
+          on the right. ("Admin ·" was also hardcoded English here.) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 4px" }}>
+        <button onClick={openProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0, display: "flex" }}
+          aria-label={L("Profile", "Profil")}>
           <CompanyLogo co={co} size={42} radius={14} />
         </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {co?.name || L("My company", "A cégem")}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
+            {L("Admin", "Admin")} · {new Date().toLocaleDateString(LOC(), { weekday: "long", day: "numeric", month: "short" })}
+          </div>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "16px 0" }}>
@@ -5027,14 +5151,26 @@ function AddCityField({ onAdd, country }) {
    the bookable window, days the company is closed and days already full are
    drawn but not pressable, so the shape of the month stays intact rather than
    collapsing into a list of whatever is left. */
-function MonthCalendar({ days, value, onPick, isClosed, isFull }) {
-  const byIso = React.useMemo(() => Object.fromEntries(days.map((d) => [d.iso, d])), [days]);
-  const first = days[0], last = days[days.length - 1];
+/* `manage` turns this from a booking calendar into an editing one.
+
+   The company's time-off screen used the customer's calendar, which is bounded
+   by the booking window and DISABLES any day that is closed. So a partner could
+   close a day and then had no way to reopen it — the button they needed to tap
+   was the one that had just been switched off. And they could not touch
+   anything past two months, so a summer shutdown had to wait until summer.
+
+   In manage mode: every month in either direction, nothing is ever disabled,
+   and the day carries its state instead of hiding it — grey for closed, a dot
+   for partly blocked. */
+function MonthCalendar({ days, value, onPick, isClosed, isFull, manage, hasDot, minIso }) {
+  const list = days || [];
+  const byIso = React.useMemo(() => Object.fromEntries(list.map((d) => [d.iso, d])), [list]);
+  const first = list[0], last = list[list.length - 1];
   const [cursor, setCursor] = useState(() => {
     const d = new Date(value?.iso || first?.iso || Date.now());
     return { y: d.getFullYear(), m: d.getMonth() };
   });
-  if (!first) return null;
+  if (!first && !manage) return null;
 
   const firstOf = new Date(cursor.y, cursor.m, 1);
   const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();
@@ -5050,8 +5186,13 @@ function MonthCalendar({ days, value, onPick, isClosed, isFull }) {
     const d = new Date(c.y, c.m + delta, 1);
     return { y: d.getFullYear(), m: d.getMonth() };
   });
-  const canBack = new Date(cursor.y, cursor.m, 1) > new Date(new Date(first.iso).getFullYear(), new Date(first.iso).getMonth(), 1);
-  const canFwd = new Date(cursor.y, cursor.m, 1) < new Date(new Date(last.iso).getFullYear(), new Date(last.iso).getMonth(), 1);
+  /* Manage mode roams freely forward, and back only as far as this month —
+     there is no point closing a day that has already happened. */
+  const floorIso = manage ? (minIso || localISO(new Date())) : first.iso;
+  const canBack = new Date(cursor.y, cursor.m, 1) > new Date(new Date(floorIso).getFullYear(), new Date(floorIso).getMonth(), 1);
+  const canFwd = manage
+    ? cursor.y < new Date().getFullYear() + 5
+    : new Date(cursor.y, cursor.m, 1) < new Date(new Date(last.iso).getFullYear(), new Date(last.iso).getMonth(), 1);
 
   const Nav = ({ dir, on, label }) => (
     <button onClick={() => on && step(dir)} disabled={!on} aria-label={label}
@@ -5079,19 +5220,32 @@ function MonthCalendar({ days, value, onPick, isClosed, isFull }) {
         {Array.from({ length: lead }).map((_, i) => <div key={"p" + i} />)}
         {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((n) => {
           const iso = isoOf(n);
-          const d = byIso[iso];
-          const off = !d || isClosed(iso) || isFull(iso);
+          const d = byIso[iso] || (manage ? { iso } : null);
+          const closed = isClosed(iso);
+          const full = isFull(iso);
+          const past = manage && iso < floorIso;
+          /* Editing: a closed day must stay tappable, because tapping it is how
+             you reopen it. Booking: a closed day is simply not on offer. */
+          const off = manage ? past : (!d || closed || full);
           const on = value?.iso === iso;
+          const dot = manage && !closed && hasDot && hasDot(iso);
           return (
-            <button key={iso} disabled={off} onClick={() => d && onPick(d)}
-              title={d && isFull(iso) ? L("Fully booked", "Teljesen betelt") : undefined}
-              style={{ aspectRatio: "1 / 1", borderRadius: R.sm, border: "none",
-                       cursor: off ? "not-allowed" : "pointer", opacity: off ? .28 : 1,
-                       background: on ? C.navy : "transparent",
-                       color: on ? "#fff" : C.ink, fontFamily: F, fontWeight: 700, fontSize: 13,
+            <button key={iso} disabled={off} onClick={() => d && !off && onPick(d)}
+              title={manage
+                ? (closed ? L("Closed all day — tap to reopen", "Egész nap zárva — koppints a megnyitáshoz") : undefined)
+                : (d && full ? L("Fully booked", "Teljesen betelt") : undefined)}
+              style={{ aspectRatio: "1 / 1", borderRadius: R.sm,
+                       border: on ? "none" : closed && manage ? `1.5px solid ${C.line}` : "none",
+                       cursor: off ? "not-allowed" : "pointer",
+                       opacity: off ? .28 : closed && manage ? .95 : 1,
+                       background: on ? C.navy : closed && manage ? C.line : "transparent",
+                       color: on ? "#fff" : closed && manage ? C.inkFaint : C.ink,
+                       textDecoration: closed && manage && !on ? "line-through" : "none",
+                       fontFamily: F, fontWeight: 700, fontSize: 13, position: "relative",
                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
               {n}
-              {d?.label && !on && <span style={{ fontSize: 7.5, fontFamily: B, color: C.navySoft }}>{d.label}</span>}
+              {dot && <span style={{ position: "absolute", bottom: 5, width: 5, height: 5, borderRadius: "50%", background: on ? "#fff" : C.amber }} />}
+              {d?.label && !on && !manage && <span style={{ fontSize: 7.5, fontFamily: B, color: C.navySoft }}>{d.label}</span>}
             </button>
           );
         })}
@@ -5101,6 +5255,196 @@ function MonthCalendar({ days, value, onPick, isClosed, isFull }) {
 }
 
 /* A city field that suggests as you type, scoped to a country. */
+/* ── Where you work ───────────────────────────────────────────────
+
+   The old editor was two controls that could not express what a real cleaning
+   company covers. One pin with a radius, floating free of any city — drag it
+   anywhere, including a field 38 km from the town on your profile. Plus a flat
+   list of whole cities, all or nothing. So you could say "within 15 km of this
+   dot" or "all of Debrecen and all of Budapest", but not "all of Debrecen, and
+   only the middle of Budapest" — which is the normal case for anyone working
+   more than one town.
+
+   Now it is a list. Each entry is a place with a name, and each is either the
+   whole city or a circle anchored inside it. You add as many as you cover. The
+   server matches an address against the same list with the same function. */
+
+function AddAreaSheet({ country, existing, close, onAdd }) {
+  const [q, setQ] = useState("");
+  const [sugs, setSugs] = useState([]);
+  const [picked, setPicked] = useState(null);      // { name, lat, lng }
+  const [mode, setMode] = useState("all");
+  const [radiusKm, setRadiusKm] = useState(8);
+  const [pt, setPt] = useState(null);
+  const [label, setLabel] = useState("");
+  const timer = React.useRef(null);
+
+  const type = (v) => {
+    setQ(v); setPicked(null);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => setSugs(await suggestPlaces(v, country)), 300);
+  };
+  const choose = (c) => {
+    setPicked(c); setQ(c.name); setSugs([]);
+    setPt({ lat: c.lat, lng: c.lng });   // the circle starts on the city, never nowhere
+  };
+  const dupe = picked && (existing || []).some(
+    (a) => a.city.toLowerCase() === picked.name.toLowerCase() && a.mode === mode && mode === "all");
+
+  return (
+    <Sheet close={close} title={L("Add a place you work in", "Új terület hozzáadása")}>
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>
+          {L("Town or city", "Település")}
+        </div>
+        <input value={q} placeholder="Debrecen" onChange={(e) => type(e.target.value)}
+          style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: R.md,
+                   border: `1.5px solid ${picked ? C.green + "88" : C.line}`, fontFamily: B, fontSize: 14, background: C.bg, color: C.ink }} />
+        {sugs.length > 0 && !picked && (
+          <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card,
+                        borderRadius: R.md, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
+            {sugs.map((c) => (
+              <button key={c.name} onMouseDown={() => choose(c)}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none",
+                         background: "none", cursor: "pointer", fontFamily: B, fontSize: 13, color: C.ink }}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {picked && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[{ id: "all", t: L("The whole town", "Az egész település"), d: L("Anyone here can book you", "Bárki foglalhat innen") },
+              { id: "radius", t: L("Only part of it", "Csak egy része"), d: L("A circle you set", "Egy általad megadott kör") }].map((o) => (
+              <button key={o.id} onClick={() => setMode(o.id)}
+                style={{ flex: 1, textAlign: "left", padding: "12px 13px", borderRadius: R.md, cursor: "pointer",
+                         border: mode === o.id ? `2px solid ${C.navy}` : `2px solid ${C.line}`,
+                         background: mode === o.id ? C.navyChip : C.card }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{o.t}</div>
+                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.4 }}>{o.d}</div>
+              </button>
+            ))}
+          </div>
+
+          {mode === "radius" && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+                {fill(L("Drag the pin to the part of {0} you cover, then set how far around it you travel.",
+                        "Húzd a jelölőt {0} azon részére, ahol dolgozol, majd állítsd be a távolságot."), picked.name)}
+              </div>
+              <AreaMap lat={pt?.lat} lng={pt?.lng} radiusKm={radiusKm} height={190}
+                onChange={({ lat, lng }) => setPt({ lat, lng })} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                <input type="range" min="1" max="60" value={radiusKm}
+                  onChange={(e) => setRadiusKm(Number(e.target.value))} style={{ flex: 1, accentColor: C.navy }} />
+                <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, minWidth: 58, textAlign: "right" }}>{radiusKm} km</span>
+              </div>
+              <input value={label} onChange={(e) => setLabel(e.target.value)}
+                placeholder={L("Name this area (optional) — e.g. Belváros", "Nevezd el (nem kötelező) — pl. Belváros")}
+                style={{ width: "100%", boxSizing: "border-box", marginTop: 10, padding: "11px 13px", borderRadius: R.md,
+                         border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 13, background: C.bg, color: C.ink }} />
+            </div>
+          )}
+
+          {dupe && (
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.amber, marginBottom: 10 }}>
+              {L("You already cover this whole town.", "Ezt a települést már teljesen lefeded.")}
+            </div>
+          )}
+          <Btn full disabled={!!dupe} onClick={() => {
+            onAdd(mode === "radius"
+              ? { city: picked.name, mode: "radius", lat: pt?.lat ?? picked.lat, lng: pt?.lng ?? picked.lng,
+                  radiusKm, ...(label.trim() ? { label: label.trim() } : {}) }
+              : { city: picked.name, mode: "all" });
+            close();
+          }}>{L("Add this place", "Terület hozzáadása")}</Btn>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function ServiceAreasEditor({ areas, country, onChange }) {
+  const [adding, setAdding] = useState(false);
+  const [openIdx, setOpenIdx] = useState(-1);
+  const list = Array.isArray(areas) ? areas : [];
+  const patch = (i, p) => onChange(list.map((a, j) => (j === i ? { ...a, ...p } : a)));
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>
+        {L("Where you work", "Hol dolgozol")}
+      </div>
+      <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+        {L("Add every town you cover. For each one, say whether you take the whole town or just a part of it. Only customers inside these places can book you.",
+           "Add meg minden települést, ahol dolgozol. Mindegyiknél jelöld, hogy az egészet vállalod-e vagy csak egy részét. Csak az ezeken belüli ügyfelek tudnak foglalni.")}
+      </div>
+
+      {list.length === 0 && (
+        <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "12px 14px", marginBottom: 10 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 3 }}>
+            {L("No areas set — nobody can find you", "Nincs megadva terület — így nem találnak meg")}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.amber, lineHeight: 1.5 }}>
+            {L("Add at least the town you are based in.", "Add hozzá legalább azt a települést, ahol működsz.")}
+          </div>
+        </div>
+      )}
+
+      {list.map((a, i) => (
+        <div key={i} style={{ background: C.card, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "11px 13px", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Ic name={a.mode === "radius" ? "pin" : "house"} size={16} sw={1.8} color={C.navySoft} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {areaTitle(a)}
+              </div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>
+                {a.mode === "radius"
+                  ? fill(L("Within {0} km", "{0} km-en belül"), a.radiusKm || 10)
+                  : L("The whole town", "Az egész település")}
+              </div>
+            </div>
+            {a.mode === "radius" && (
+              <button onClick={() => setOpenIdx(openIdx === i ? -1 : i)}
+                style={{ background: C.navyChip, border: `1.5px solid ${C.navy}33`, borderRadius: R.sm, padding: "6px 11px",
+                         cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 11, color: C.navy, whiteSpace: "nowrap" }}>
+                {openIdx === i ? L("Close", "Bezár") : L("Adjust", "Módosít")}
+              </button>
+            )}
+            <button onClick={() => { setOpenIdx(-1); onChange(list.filter((_, j) => j !== i)); }}
+              aria-label={L("Remove", "Eltávolítás")}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }}>
+              <Ic name="close" size={15} sw={2} color={C.inkFaint} />
+            </button>
+          </div>
+
+          {openIdx === i && a.mode === "radius" && (
+            <div style={{ marginTop: 10 }}>
+              <AreaMap lat={a.lat} lng={a.lng} radiusKm={a.radiusKm || 10} height={170}
+                onChange={({ lat, lng }) => patch(i, { lat, lng })} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                <input type="range" min="1" max="60" value={a.radiusKm || 10}
+                  onChange={(e) => patch(i, { radiusKm: Number(e.target.value) })} style={{ flex: 1, accentColor: C.navy }} />
+                <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, minWidth: 54, textAlign: "right" }}>{a.radiusKm || 10} km</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      <Btn full ghost small onClick={() => setAdding(true)}>{L("Add a place", "Terület hozzáadása")}</Btn>
+      {adding && (
+        <AddAreaSheet country={country} existing={list} close={() => setAdding(false)}
+          onAdd={(a) => onChange([...list, a])} />
+      )}
+    </div>
+  );
+}
+
 function CitySuggestField({ label, value, onChange, country }) {
   const [sugs, setSugs] = useState([]);
   const [open, setOpen] = useState(false);
@@ -5168,10 +5512,12 @@ const COMPANY_FIELDS = [
     label: () => L("Contact phone", "Kapcsolattartó telefonszám") },
 
   // ── the legal and money side ────────────────────────────────────────────
-  { id: "tax_id",          screen: "profile", group: "billing", req: true,
+  { id: "tax_id",          screen: "profile", group: "billing", req: true, fmt: "tax",
     label: () => L("Tax number (adószám)", "Adószám"), placeholder: "12345678-1-42" },
-  { id: "reg_number",      screen: "profile", group: "billing",
+  { id: "reg_number",      screen: "profile", group: "billing", fmt: "reg",
     label: () => L("Company registration no.", "Cégjegyzékszám"), placeholder: "09-09-123456" },
+  { id: "eu_vat",          screen: "profile", group: "billing", fmt: "vat",
+    label: () => L("EU VAT number (optional)", "Közösségi adószám (nem kötelező)"), placeholder: "HU12345678" },
   { id: "billing_name",    screen: "profile", group: "billing",
     label: () => L("Billing name, if different", "Számlázási név, ha eltér") },
   { id: "billing_zip",     screen: "profile", group: "billing", half: true,
@@ -5200,15 +5546,47 @@ const fieldsFor = (screen, group) =>
 /* Renders whatever the registry says belongs here. Both screens use it, so a
    field looks and saves the same wherever it is shown. */
 function CompanyFields({ screen, group, f, setF }) {
+  const { session } = useStore();
   const rows = fieldsFor(screen, group);
   const out = [];
   for (let i = 0; i < rows.length; i++) {
     const x = rows[i];
     const val = (v) => (typeof v === "function" ? v() : v);
+    /* Some fields shape themselves as you type. Nobody remembers where the
+       dashes go in a cégjegyzékszám, and a field that silently rejects what
+       you typed teaches you nothing. */
+    const shape = (v) => x.fmt === "reg" ? formatRegNumberC(v)
+                       : x.fmt === "tax" ? formatTaxIdLiveC(v)
+                       : x.fmt === "vat" ? normalizeVatC(v) : v;
+    const vat = x.fmt === "vat" && f[x.id] ? euVatCheckC(f[x.id], f.country, f.tax_id) : null;
+    const hint = x.fmt === "vat" && vat
+      ? (vat.ok ? L("Valid", "Érvényes") : vatWhy(vat.reason))
+      : x.fmt === "tax" && String(f[x.id] || "").replace(/[^0-9]/g, "").length === 11
+        ? (huTaxIdValid(f[x.id]) ? L("Valid", "Érvényes") : L("The checksum does not match — check the digits.", "Az ellenőrzőszám nem stimmel — nézd meg a számjegyeket."))
+        : x.fmt === "reg" && String(f[x.id] || "").replace(/[^0-9]/g, "").length > 0 && !huRegNumberValid(f[x.id])
+          ? L("A cégjegyzékszám has 10 digits.", "A cégjegyzékszám 10 számjegyű.")
+          : undefined;
+    /* The company's contact number is the owner's verified number.
+
+       The registry has said type:"phone" since this was written, and nothing
+       read it — so this rendered a plain text box that accepted anything, on
+       the one screen where the number is what a customer rings when the
+       cleaner has not arrived. It now goes through the same prove-it-with-a-
+       code flow as customers and cleaners, and the company row is kept in step
+       with the account row rather than being a second, unverified copy. */
+    if (x.type === "phone") {
+      out.push(
+        <PhoneRow key={x.id} label={val(x.label)} value={session?.phone || f[x.id] || ""}
+          verified={session?.phoneVerified}
+          onChange={(v) => setF((p) => ({ ...p, [x.id]: v }))} />
+      );
+      continue;
+    }
     const node = (
       <Field key={x.id} label={val(x.label)} placeholder={val(x.placeholder)}
         type={x.type === "number" ? "number" : undefined}
-        value={f[x.id] ?? ""} onChange={(e) => setF((p) => ({ ...p, [x.id]: e.target.value }))} />
+        hint={hint}
+        value={f[x.id] ?? ""} onChange={(e) => setF((p) => ({ ...p, [x.id]: shape(e.target.value) }))} />
     );
     /* Two short fields share a row when the registry says so — a postcode does
        not need the width of a street name. */
@@ -5257,7 +5635,10 @@ function SetupSection({ title, sub, done, open, onToggle, children }) {
 function SetupChecklist({ f, avail, services, onJump }) {
   const items = [
     { k: "name", ok: !!String(f.name || "").trim(), label: L("Company name", "Cégnév"), to: "identity" },
-    { k: "where", ok: !!String(f.city || "").trim(), label: L("Where you work", "Hol dolgozol"), to: "area" },
+    /* This asked only whether a city name had been typed, so a company with no
+       coverage at all was told "Everything is set up — customers can find and
+       book you." They could not. */
+    { k: "where", ok: (f.service_areas || []).length > 0, label: L("Where you work", "Hol dolgozol"), to: "area" },
     { k: "hours", ok: Object.values(avail?.days || {}).some((d) => d?.on && (d.slots || []).length),
       label: L("Opening hours", "Nyitvatartás"), to: "hours" },
     { k: "services", ok: (services || []).length > 0, label: L("At least one service", "Legalább egy szolgáltatás"), to: null },
@@ -5292,7 +5673,7 @@ function SetupChecklist({ f, avail, services, onJump }) {
   );
 }
 
-function CompanySettings() {
+function CompanySettings({ openProfile }) {
   const { session, companies, updateCompany, bookings, services } = useStore();
   const toast = useToast();
   const co = companies.find((c) => c.id === session.companyId);
@@ -5303,9 +5684,10 @@ function CompanySettings() {
     name: co?.name || "", tagline: co?.tagline || "", area: co?.area || "", city: co?.city || "",
     country: co?.country || "HU",
     service_lat: co?.service_lat ?? null, service_lng: co?.service_lng ?? null,
-    service_radius_km: co?.service_radius_km || 10,
-    service_cities: Array.isArray(co?.service_cities) ? co.service_cities
-                  : (() => { try { return JSON.parse(co?.service_cities || "[]"); } catch { return []; } })(),
+
+    /* Migrated on read, so a company that has never opened this screen sees
+       exactly the coverage they already had, as editable rows. */
+    service_areas: areasOf(co),
     emoji: co?.emoji || "", student_discount: co?.student_discount ?? 10,
     promo_on: !!promoOf(co), promo_pct: promoOf(co)?.pct ?? 10, promo_label: promoOf(co)?.label || "", promo_until: promoOf(co)?.until || "",
     cover: co?.cover || COVER_PRESETS[0], logo_url: co?.logo_url || null,
@@ -5321,8 +5703,11 @@ function CompanySettings() {
     if (!a) return { ...JSON.parse(JSON.stringify(DEFAULT_AVAIL)), busy: {}, busyServices: {} };
     return { paused: !!a.paused, days: { ...DEFAULT_AVAIL.days, ...(a.days || {}) }, closed: Array.isArray(a.closed) ? a.closed : [], busy: a.busy && typeof a.busy === "object" ? a.busy : {}, busyServices: a.busyServices && typeof a.busyServices === "object" ? a.busyServices : {} };
   });
-  /* The month grid for time off spans the same window customers can book in,
-     so a company can never block a day nobody could have booked anyway. */
+  /* Only used for the "Today"/"Tomorrow" labels inside the booking window. The
+     grid itself roams free now: a company can close Christmas in March, and by
+     the time that date comes into the customer's two-month view it is already
+     shut. Waiting for a date to become bookable before you can block it is not
+     a rule, it is a missing feature. */
   const offDays = React.useMemo(() => nextDays(), []);
   const [busyDate, setBusyDate] = React.useState("");
   const [busySvc, setBusySvc] = React.useState("");   // "" = blocks every service
@@ -5348,6 +5733,9 @@ function CompanySettings() {
                      L("Saturday", "Szombat")];
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  /* What the profile card reports, computed from the same two facts the
+     setup checklist uses — so they can never say different things. */
+  const billingDone = !!String(f.billing_address || "").trim() && !!String(f.tax_id || "").trim();
 
   const onLogoFile = (e) => {
     const file = e.target.files?.[0];
@@ -5369,8 +5757,17 @@ function CompanySettings() {
       billingName: f.billing_name.trim(), billingZip: f.billing_zip.trim(), billingCity: f.billing_city.trim(),
       billingAddress: f.billing_address.trim(), billingEmail: f.billing_email.trim(),
       city: (f.city || "").trim(), requirements: (f.requirements || []).map((x) => String(x).trim()).filter(Boolean).slice(0, 12),
-      country: f.country, serviceLat: f.service_lat, serviceLng: f.service_lng, serviceRadiusKm: f.service_radius_km,
-      serviceCities: f.service_cities });
+      country: f.country,
+      serviceAreas: f.service_areas,
+      /* The retired columns are DERIVED from the one real list, never edited
+         beside it. Builds already on people's phones still read them, so they
+         have to stay truthful until everyone has updated — but there is only
+         one place a partner can change coverage. */
+      serviceCities: (f.service_areas || []).filter((a) => a.mode === "all").map((a) => a.city),
+      ...(() => {
+        const first = (f.service_areas || []).find((a) => a.mode === "radius" && a.lat != null);
+        return first ? { serviceLat: first.lat, serviceLng: first.lng, serviceRadiusKm: first.radiusKm } : {};
+      })() });
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else toast(L("Company profile updated ✓", "Cégprofil frissítve ✓"));
@@ -5412,96 +5809,18 @@ function CompanySettings() {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Country", "Ország")}</div>
       <select value={f.country || "HU"} onChange={(e) => setF({ ...f, country: e.target.value })}
         style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: R.md, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
-        {DIAL_CODES.map((x) => <option key={x.c} value={x.c}>{x.f} {x.n}</option>)}
+        {/* This read {x.f} {x.n} — but a DIAL_CODES entry is {c, d, f}. There
+            is no `n`, so every option rendered as a flag followed by an empty
+            string and you had to know the flags by sight. */}
+        {dialCodesFor(getLang()).map((x) => <option key={x.c} value={x.c}>{x.f}  {regionNamer(getLang())(x.c)}</option>)}
       </select>
       <Field label={L("Tagline", "Szlogen")} placeholder={L("What makes you different?", "Miben vagytok mások?")} value={f.tagline} onChange={set("tagline")} />
       <Field label={L("Service area (shown on your card)", "Ellátott terület (a kártyádon látszik)")} placeholder={L("e.g. Belváros · Nagyerdő", "pl. Belváros · Nagyerdő")} value={f.area} onChange={set("area")} />
 
-      {/* ── 4.6 the circle that actually decides who can book you ── */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("Where you work", "Hol dolgozol")}</div>
-        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
-          {L("Drag the pin to your base and set how far you travel. Only customers inside the circle can book you.", "Húzd a jelölőt a bázisodhoz, és állítsd be, milyen messzire mész el. Csak a körön belüli ügyfelek tudnak foglalni.")}
-        </div>
-        <AreaMap lat={f.service_lat} lng={f.service_lng} radiusKm={f.service_radius_km || 10}
-          onChange={({ lat, lng }) => setF((p) => ({ ...p, service_lat: lat, service_lng: lng }))} />
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <input type="range" min="1" max="50" value={f.service_radius_km || 10}
-            onChange={(e) => setF((p) => ({ ...p, service_radius_km: Number(e.target.value) }))}
-            style={{ flex: 1, accentColor: C.navy }} />
-          <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, minWidth: 62, textAlign: "right" }}>
-            {`${f.service_radius_km || 10} km`}
-          </span>
-        </div>
-
-        {/* Most companies do not think in kilometres — they think "we cover
-            Debrecen". Dragging a slider to the number that happens to contain a
-            whole city is guesswork, and guessing low quietly hides you from
-            customers you would happily have driven to. */}
-        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          {[{ km: 5, label: L("Just nearby", "Csak a közelben") },
-            { km: 15, label: L("Wider area", "Tágabb környék") },
-            { km: 30, label: L("Far out", "Messzire is") }].map((o) => {
-            const on = Number(f.service_radius_km || 10) === o.km;
-            return (
-              <button key={o.km} onClick={() => setF((p) => ({ ...p, service_radius_km: o.km }))}
-                style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: "none", cursor: "pointer",
-                         background: on ? C.navy : C.bg, color: on ? "#fff" : C.navySoft }}>
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Whole cities ───────────────────────────────────────────────────
-          The radius above answers "how far will you drive from your base".
-          This answers "which places do you cover", which is a different
-          question and the one companies actually think in. A city named here
-          is served in full no matter what the circle says — so a small town
-          is not cut in half by a 5 km radius, a large one is not clipped by
-          30, and a company working three towns is not forced to draw one
-          enormous circle that swallows everything in between. */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>
-          {L("Cities you serve in full", "Városok, amelyeket teljesen kiszolgálsz")}
-        </div>
-        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.5 }}>
-          {L("Anyone in these cities can book you, however far they are from the pin above. Add as many as you cover.",
-             "Ezekben a városokban bárki foglalhat nálad, akármilyen messze van a fenti ponttól. Annyit adj hozzá, amennyit lefedsz.")}
-        </div>
-
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
-          {(f.service_cities || []).map((cty) => (
-            <span key={cty} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.navyChip,
-                                     color: C.navySoft, borderRadius: 99, padding: "6px 8px 6px 12px",
-                                     fontFamily: B, fontWeight: 700, fontSize: 11.5 }}>
-              {cty}
-              <button aria-label={L("Remove", "Eltávolítás")}
-                onClick={() => setF((p) => ({ ...p, service_cities: (p.service_cities || []).filter((x) => x !== cty) }))}
-                style={{ border: "none", background: "transparent", color: C.navySoft, cursor: "pointer",
-                         fontSize: 15, lineHeight: 1, padding: "0 2px" }}>×</button>
-            </span>
-          ))}
-          {!(f.service_cities || []).length && (
-            <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint }}>
-              {L("None yet — only the radius above applies.", "Még egy sincs — csak a fenti sugár érvényes.")}
-            </span>
-          )}
-        </div>
-
-        {f.city && !(f.service_cities || []).some((x) => x.toLowerCase() === String(f.city).toLowerCase()) && (
-          <button onClick={() => setF((p) => ({ ...p, service_cities: [...(p.service_cities || []), String(p.city).trim()] }))}
-            style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "8px 13px", borderRadius: 99, border: "none",
-                     background: C.navy, color: "#fff", cursor: "pointer", marginBottom: 10 }}>
-            {fill(L("Serve the whole of {0}", "{0} egészének kiszolgálása"), f.city)}
-          </button>
-        )}
-
-        <AddCityField country={f.country || "HU"}
-          onAdd={(cty) => setF((p) => (p.service_cities || []).some((x) => x.toLowerCase() === cty.toLowerCase())
-            ? p : { ...p, service_cities: [...(p.service_cities || []), cty] })} />
-      </div>
+      {/* One list of named places, replacing a free-floating pin plus a flat
+          list of whole cities that could not be combined with it. */}
+      <ServiceAreasEditor areas={f.service_areas} country={f.country || "HU"}
+        onChange={(v) => setF((p) => ({ ...p, service_areas: v }))} />
 
       {/* ── 5.4 What you need the customer to have ready ── */}
       <div style={{ marginBottom: 14 }}>
@@ -5515,28 +5834,32 @@ function CompanySettings() {
           style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", lineHeight: 1.7 }} />
       </div>
 
-      {/* ── Billing address. Cleano invoices you the platform fee, and a Hungarian
-             invoice is not valid without a postcode, town and street. ── */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 3 }}>{L("Billing address", "Számlázási cím")}</div>
-        <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
-          {L("Cleano invoices you for the platform fee, so we need your billing details exactly as they should appear on an invoice.", "A Cleano a platformdíjról számlát állít ki neked, ezért pontosan úgy kérjük az adataidat, ahogy a számlán szerepelniük kell.")}
+      {/* Billing address, tax number and registration number used to be here
+          AND on the profile, filled from the same columns by two forms. Two
+          places to change one fact is two places to get it wrong, and the
+          partner has no way to tell which one won. They live on the profile —
+          it is where "who you are" belongs — and this points at it. */}
+      <button onClick={() => openProfile && openProfile()}
+        style={{ width: "100%", textAlign: "left", background: C.navyChip, border: `1.5px solid ${C.navy}33`,
+                 borderRadius: R.md, padding: "13px 15px", marginBottom: 14, cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Ic name="card" size={17} sw={1.7} color={C.navy} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+              {L("Billing and business details", "Számlázási és céges adatok")}
+            </div>
+            <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2, lineHeight: 1.45 }}>
+              {billingDone
+                ? L("Complete — edit them in your profile.", "Kész — a profilodban szerkesztheted.")
+                : L("Not finished yet — we cannot invoice you without them.", "Még nincs kész — enélkül nem tudunk számlázni.")}
+            </div>
+          </div>
+          <Ic name="chevronRight" size={16} sw={2} color={C.navySoft} />
         </div>
-        <Field label={L("Billing name (if different from the company name)", "Számlázási név (ha eltér a cégnévtől)")} value={f.billing_name} onChange={set("billing_name")} />
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ width: 110 }}><Field label={L("Postcode", "Irányítószám")} value={f.billing_zip} onChange={set("billing_zip")} placeholder="4032" /></div>
-          <div style={{ flex: 1 }}><Field label={L("Town", "Település")} value={f.billing_city} onChange={set("billing_city")} placeholder="Debrecen" /></div>
-        </div>
-        <Field label={L("Street and number", "Utca, házszám")} value={f.billing_address} onChange={set("billing_address")} placeholder={L("Bolyai utca 11.", "Bolyai utca 11.")} />
-        <Field label={L("Where should we send invoices?", "Hová küldjük a számlákat?")} value={f.billing_email} onChange={set("billing_email")} placeholder="szamla@ceged.hu" />
-      </div>
+      </button>
 
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>{L("Business details (for verification & invoicing)", "Céges adatok (ellenőrzéshez és számlázáshoz)")}</div>
-      <Field label={L("Tax number (adószám)", "Adószám")} placeholder="12345678-1-42"
-        hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? L("Valid", "Érvényes") : L("Invalid format — 12345678-1-42", "Hibás formátum — 12345678-1-42")) : undefined}
-        value={f.tax_id} onChange={set("tax_id")} />
-      <Field label={L("Company registration no.", "Cégjegyzékszám")} placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
-      <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contact_phone} onChange={(v) => setF((p) => ({ ...p, contact_phone: v }))} />
+      {/* Moved to the profile, under the verified-change flow — this was a
+          second place to type a business number nobody had proved. */}
       <JobHistory />
       <PayoutSetup />
       <Field label={L("Google Place ID (optional)", "Google Place ID (nem kötelező)")} hint={L("Happy customers get a one-tap 'Review on Google' button. Search 'Google Place ID finder' to get yours.", "Az elégedett ügyfelek egy gombbal értékelhetnek Google-ön. Keresd: 'Google Place ID finder'.")} placeholder="ChIJ…" value={f.google_place_id || ""} onChange={set("google_place_id")} />
@@ -5706,16 +6029,27 @@ function CompanySettings() {
           </div>
 
           <MonthCalendar
+            manage
             days={offDays}
-            value={offDays.find((d) => d.iso === busyDate) || null}
+            value={busyDate ? { iso: busyDate } : null}
             onPick={(d) => setBusyDate(d.iso === busyDate ? "" : d.iso)}
-            isClosed={(d) => (avail.closed || []).includes(d.iso)}
-            isFull={(d) => {
-              const hrs = daySlots(avail, d.iso);
-              const blocked = avail.busy?.[d.iso] || [];
-              return hrs.length > 0 && blocked.length >= hrs.length;
+            isClosed={(iso) => (avail.closed || []).includes(iso)}
+            isFull={() => false}
+            hasDot={(iso) => {
+              if ((avail.busy?.[iso] || []).length) return true;
+              return Object.values(avail.busyServices || {}).some((m) => (m?.[iso] || []).length);
             }}
           />
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 9, fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: C.line, border: `1.5px solid ${C.line}` }} />
+              {L("Closed all day", "Egész nap zárva")}
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }} />
+              {L("Some hours blocked", "Néhány óra letiltva")}
+            </span>
+          </div>
 
           {busyDate && (() => {
             const allDayOff = (avail.closed || []).includes(busyDate);
@@ -6058,8 +6392,6 @@ function AdminDashboard() {
 function CompanyDossier({ co, close }) {
   const toast = useToast();
   const hasBilling = !!(co.billing_address || co.billing_city || co.billing_zip || co.billing_name);
-  const cityList = Array.isArray(co.service_cities) ? co.service_cities
-    : (() => { try { return JSON.parse(co.service_cities || "[]"); } catch { return []; } })();
 
   const billLines = [
     co.billing_name || co.name,
@@ -6126,10 +6458,15 @@ function CompanyDossier({ co, close }) {
       <Head>{L("Where they operate", "Hol dolgoznak")}</Head>
       <Row k={L("Registered city", "Bejegyzett város")} v={co.city || dash} />
       <Row k={L("Country", "Ország")} v={co.country ? countryName(co.country) : dash} />
-      <Row k={L("Cities served in full", "Teljesen kiszolgált városok")}
-           v={cityList.length ? cityList.join(", ") : L("None — radius only", "Egy sem — csak sugár")} />
-      <Row k={L("Service radius", "Szolgáltatási sugár")}
-           v={Number(co.service_radius_km) > 0 ? `${co.service_radius_km} km` : L("Not limited", "Nincs korlátozva")} />
+      {/* The two rows here used to read the old columns, so after v7.1 an
+          admin was looking at settings that no longer decide anything. */}
+      <Row k={L("Areas served", "Ellátott területek")}
+           v={areasOf(co).length
+              ? areasOf(co).map((a) => a.mode === "radius"
+                  ? `${areaTitle(a)} (${a.radiusKm || 10} km)`
+                  : `${a.city} (${L("whole town", "egész település")})`).join(", ")
+              : L("None set — nobody can book them", "Nincs megadva — így nem tudnak náluk foglalni")}
+           warn={!areasOf(co).length} />
       <Row k={L("Currency", "Pénznem")} v={co.currency || "HUF"} />
 
       <Head>{L("Account", "Fiók")}</Head>
@@ -6414,26 +6751,124 @@ function CompanyComplaints() {
   );
 }
 
-function CustomerReports({ close }) {
-  const { myComplaints, fetchMyComplaints } = useStore();
+/* ── Report ───────────────────────────────────────────────────────
+   One place instead of three. Reporting a problem used to live on a booking
+   card, the history behind a "My reports" button, and the conversation with
+   the company inside a thread you could only reach from that history. So the
+   customer had to already know where each piece was.
+
+   Now: open Report, pick the booking, say what happened. Anything already
+   filed is underneath, and opening one is the live thread with whoever is
+   handling it — the company if it was assigned to them, otherwise us. */
+function CustomerReports({ close, bookings, companies }) {
+  const { myComplaints, fetchMyComplaints, submitComplaint } = useStore();
+  const toast = useToast();
   const [open, setOpen] = React.useState(null);
+  const [picking, setPicking] = React.useState(false);
+  const [booking, setBooking] = React.useState(null);
+  const [subject, setSubject] = React.useState("");
+  const [body, setBody] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
   React.useEffect(() => { fetchMyComplaints(); }, []);
   const list = myComplaints || [];
   const stat = { open: L("Open", "Nyitott"), in_progress: L("In progress", "Folyamatban"), resolved: L("Resolved", "Megoldva") };
+  const mine = (bookings || []).filter((b) => b.status !== 9);
+  const coName = (b) => (companies || []).find((c) => c.id === b.company_id)?.name || "";
+
+  const send = async () => {
+    if (!booking || !subject.trim()) return;
+    setBusy(true);
+    const r = await submitComplaint({ bookingId: booking.id, subject: subject.trim(), body: body.trim() });
+    setBusy(false);
+    if (r?.error) return toast(r.error, "error");
+    toast(L("Report sent — we'll be in touch", "Bejelentés elküldve — jelentkezünk"));
+    setBooking(null); setSubject(""); setBody("");
+    fetchMyComplaints();
+  };
+
   return (
-    <Sheet title={`${L("My reports", "Bejelentéseim")}`} close={close}>
-      {list.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("You haven't filed any reports.", "Még nem küldtél be bejelentést.")}</div>}
+    <Sheet title={L("Report", "Bejelentés")} close={close}>
+      {/* 1 — what happened */}
+      <div style={{ background: C.card, borderRadius: R.md, padding: 13, marginBottom: 14, border: `1.5px solid ${C.line}` }}>
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 8 }}>
+          {L("Report a problem", "Probléma bejelentése")}
+        </div>
+        <button onClick={() => setPicking(true)}
+          style={{ width: "100%", textAlign: "left", background: C.bg, border: `1.5px solid ${booking ? C.navy + "55" : C.line}`,
+                   borderRadius: R.md, padding: "11px 13px", cursor: "pointer", marginBottom: 9 }}>
+          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint }}>{L("Which booking?", "Melyik foglalás?")}</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: booking ? C.ink : C.inkFaint, marginTop: 2,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {booking
+              ? `${booking.service_snapshot?.name || L("Booking", "Foglalás")} · ${String(booking.scheduled_date).slice(0, 10)}`
+              : L("Choose a booking", "Válassz foglalást")}
+          </div>
+        </button>
+        {booking && (
+          <>
+            <Field label={L("What went wrong?", "Mi történt?")} value={subject}
+              onChange={(e) => setSubject(e.target.value.slice(0, 120))}
+              placeholder={L("e.g. The cleaner did not arrive", "pl. A takarító nem érkezett meg")} />
+            <Field area label={L("Anything else we should know?", "Bármi más, amit tudnunk kell?")} value={body}
+              onChange={(e) => setBody(e.target.value.slice(0, 1200))} />
+            <Btn full disabled={!subject.trim() || busy} onClick={send}>
+              {busy ? L("Sending…", "Küldés…") : L("Send report", "Bejelentés küldése")}
+            </Btn>
+          </>
+        )}
+      </div>
+
+      {/* 2 — everything already filed, and the conversation inside each */}
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>
+        {L("Your reports", "Bejelentéseid")}
+      </div>
+      {list.length === 0 && (
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 18 }}>
+          {L("Nothing reported yet.", "Még nincs bejelentés.")}
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {list.map((c) => (
-          <button key={c.id} onClick={() => setOpen(c)} style={{ textAlign: "left", border: "none", cursor: "pointer", background: C.card, borderRadius: R.md, padding: "11px 13px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+          <button key={c.id} onClick={() => setOpen(c)}
+            style={{ textAlign: "left", border: "none", cursor: "pointer", background: C.card, borderRadius: R.md, padding: "12px 14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{c.subject}</span>
-              <span style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, whiteSpace: "nowrap" }}>{stat[c.status] || c.status}</span>
+              <span style={{ fontFamily: B, fontSize: 10.5, color: c.status === "resolved" ? C.green : C.amber, whiteSpace: "nowrap" }}>
+                {stat[c.status] || c.status}
+              </span>
             </div>
-            {c.assigned_company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.navySoft, marginTop: 3 }}>{c.assigned_company_name}</div>}
+            <div style={{ fontFamily: B, fontSize: 10.5, color: C.navySoft, marginTop: 3 }}>
+              {c.assigned_company_name
+                ? fill(L("Handled by {0}", "Kezeli: {0}"), c.assigned_company_name)
+                : L("Handled by Cleano", "Kezeli: a Cleano")}
+              {" · "}{L("Tap to open the chat", "Koppints a beszélgetéshez")}
+            </div>
           </button>
         ))}
       </div>
+
+      {picking && (
+        <Sheet close={() => setPicking(false)} title={L("Choose a booking", "Válassz foglalást")}>
+          {mine.length === 0 && (
+            <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 18 }}>
+              {L("You have no bookings to report.", "Nincs bejelenthető foglalásod.")}
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {mine.map((b) => (
+              <button key={b.id} onClick={() => { setBooking(b); setPicking(false); }}
+                style={{ textAlign: "left", border: `1.5px solid ${C.line}`, cursor: "pointer", background: C.card, borderRadius: R.md, padding: "11px 13px" }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>
+                  {b.service_snapshot?.name || L("Booking", "Foglalás")}
+                </div>
+                <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
+                  {coName(b)}{coName(b) ? " · " : ""}{String(b.scheduled_date).slice(0, 10)} · {b.scheduled_slot}
+                </div>
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
       {open && <ComplaintThread complaint={open} role="customer" close={() => { setOpen(null); fetchMyComplaints(); }} />}
     </Sheet>
   );
@@ -6632,7 +7067,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
     const c = d.company || {};
     setF({ name: c.name || "", tagline: c.tagline || "", area: c.area || "", city: c.city || "",
       country: c.country || "HU", contact_phone: c.contact_phone || "", tax_id: c.tax_id || "",
-      reg_number: c.reg_number || "", service_radius_km: c.service_radius_km || 10,
+      reg_number: c.reg_number || "",
       is_listed: c.is_listed !== false, is_approved: c.is_approved === true });
     setEditing(true);
   };
@@ -6690,7 +7125,7 @@ function AdminUserDetail({ userId, close, onChanged }) {
                     <Row k={L("Area", "Terület")} v={d.company.area} /><Row k={L("City", "Város")} v={d.company.city} />
                     <Row k={L("Country", "Ország")} v={d.company.country} /><Row k={L("Phone", "Telefon")} v={d.company.contact_phone} />
                     <Row k={L("Tax ID", "Adószám")} v={d.company.tax_id} /><Row k={L("Reg. number", "Cégjegyzékszám")} v={d.company.reg_number} />
-                    <Row k={L("Radius", "Sugár")} v={d.company.service_radius_km ? d.company.service_radius_km + " km" : null} />
+                    <Row k={L("Areas served", "Ellátott területek")} v={areaSummaryClient(d.company) || null} />
                     <Row k={L("Currency", "Pénznem")} v={d.company.currency} />
                     <Row k={L("Rating", "Értékelés")} v={d.company.rating ? `${d.company.rating} (${d.company.review_count || 0})` : "—"} />
                     <Row k={L("Listed", "Listázva")} v={d.company.is_listed === false ? "no" : "yes"} />
@@ -6715,11 +7150,10 @@ function AdminUserDetail({ userId, close, onChanged }) {
                       <input value={f.tax_id} onChange={(e) => setF({ ...f, tax_id: e.target.value })} placeholder={L("Tax ID", "Adószám")} style={{ ...inputS, flex: 1 }} />
                       <input value={f.reg_number} onChange={(e) => setF({ ...f, reg_number: e.target.value })} placeholder={L("Reg. number", "Cégjegyzékszám")} style={{ ...inputS, flex: 1 }} />
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "3px 0 9px" }}>
-                      <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>{L("Radius", "Sugár")}</span>
-                      <input type="range" min="1" max="200" value={f.service_radius_km} onChange={(e) => setF({ ...f, service_radius_km: Number(e.target.value) })} style={{ flex: 1, accentColor: C.navy }} />
-                      <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, minWidth: 48, textAlign: "right" }}>{f.service_radius_km} km</span>
-                    </div>
+                    {/* A radius slider used to sit here writing service_radius_km.
+                        Since v7.1 that column decides nothing, so dragging it did
+                        nothing — a control that lies is worse than no control.
+                        Coverage is edited by the partner, in their own settings. */}
                     {[["is_approved", L("Approved", "Jóváhagyva")], ["is_listed", L("Listed publicly", "Nyilvánosan listázva")]].map(([k, label]) => (
                       <label key={k} style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 0", cursor: "pointer" }}>
                         <input type="checkbox" checked={!!f[k]} onChange={(e) => setF({ ...f, [k]: e.target.checked })} style={{ width: 17, height: 17, accentColor: C.navy }} />
@@ -7441,7 +7875,7 @@ function Shell() {
             tab === "team" ? <CompanyTeam /> :
             tab === "reviews" ? <CompanyReviews /> :
             tab === "issues" ? <CompanyComplaints /> :
-            tab === "settings" ? <CompanySettings /> :
+            tab === "settings" ? <CompanySettings openProfile={() => setShowProfile(true)} /> :
             <CompanyJobs openProfile={() => setShowProfile(true)} />
           )}
           {role === "admin" && <AdminPanel tab={tab} />}
@@ -7476,7 +7910,11 @@ function Shell() {
         <PhoneVerifyGate />
 
         <NotificationBanner />
-        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: dark ? "rgba(23,30,58,.55)" : "rgba(255,255,255,.55)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: R.xl, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
+        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, /* navyMid is one of the three tokens that is IDENTICAL in both themes,
+     so the active pill now has the same weight in day and night mode
+     instead of being a near-black slab on white and a soft glow on
+     navy. Same for the bar behind it. */
+    background: dark ? "rgba(23,30,58,.55)" : "rgba(248,250,255,.72)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: R.xl, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
           {NAVS[role].map((tb) => {
             /* Manage stays lit while any of the screens behind it is open, so the
                partner can see where they are rather than which button they last
@@ -7490,7 +7928,7 @@ function Shell() {
                   setTab(tb.id); setBookingCo(null);
                   try { e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {}
                 }}
-                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: R.xl, padding: "11px 8px", position: "relative", background: active ? `${C.navy}` : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
+                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: R.xl, padding: "11px 8px", position: "relative", background: active ? C.navyMid : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
                 <Ic name={tb.icon} size={19} sw={active ? 2 : 1.7} color={active ? "#fff" : C.inkSoft} style={{ opacity: active ? 1 : .8 }} />
                 {active && <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap" }}>{tb.label}</span>}
                 {tb.badge > 0 && <span style={{ position: "absolute", top: 4, right: active ? 8 : "50%", marginRight: active ? 0 : -18, width: 16, height: 16, borderRadius: "50%", background: C.coral, color: "#fff", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: B }}>{tb.badge}</span>}

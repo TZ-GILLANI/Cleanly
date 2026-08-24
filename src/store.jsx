@@ -404,10 +404,10 @@ export function StoreProvider({ children }) {
 
   /* ════════════ PROFILE ════════════ */
 
-  const updateProfile = async ({ full_name, phone, customer_type, address, payment_method, lang, documents, saved_addresses } = {}) => {
+  const updateProfile = async ({ full_name, phone, customer_type, address, payment_method, lang, documents, saved_addresses, city } = {}) => {
     if (isApiMode) {
       try {
-        const { user } = await api("/auth/profile", { method: "PUT", body: { fullName: full_name, phone, customerType: customer_type, address, paymentMethod: payment_method, lang, documents, savedAddresses: saved_addresses } });
+        const { user } = await api("/auth/profile", { method: "PUT", body: { fullName: full_name, phone, customerType: customer_type, address, paymentMethod: payment_method, lang, documents, savedAddresses: saved_addresses, city } });
         setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", city: user.city || s.city || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [], savedAddresses: Array.isArray(user.saved_addresses) ? user.saved_addresses : [] }));
         if (session?.role === "employee") {
           setDb(d => ({ ...d, employees: d.employees.map(e => e.id === session.userId ? { ...e, full_name: user.full_name, phone: user.phone } : e) }));
@@ -440,7 +440,7 @@ export function StoreProvider({ children }) {
   const updateCompany = async (fields) => {
     if (isApiMode) {
       try {
-        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability, country: fields.country, serviceLat: fields.serviceLat, serviceLng: fields.serviceLng, serviceRadiusKm: fields.serviceRadiusKm, currency: fields.currency, requirements: fields.requirements, billingName: fields.billingName, billingZip: fields.billingZip, billingCity: fields.billingCity, billingAddress: fields.billingAddress, billingEmail: fields.billingEmail, serviceCities: fields.serviceCities } });
+        const { company } = await api("/companies/" + session.companyId, { method: "PUT", body: { name: fields.name, emoji: fields.emoji, tagline: fields.tagline, area: fields.area, studentDiscount: fields.student_discount, cover: fields.cover, logoUrl: fields.logo_url, taxId: fields.tax_id, regNumber: fields.reg_number, contactPhone: fields.contact_phone, city: fields.city, googlePlaceId: fields.google_place_id, promo: fields.promo, documents: fields.documents, availability: fields.availability, country: fields.country, serviceLat: fields.serviceLat, serviceLng: fields.serviceLng, serviceRadiusKm: fields.serviceRadiusKm, currency: fields.currency, requirements: fields.requirements, billingName: fields.billingName, billingZip: fields.billingZip, billingCity: fields.billingCity, billingAddress: fields.billingAddress, billingEmail: fields.billingEmail, serviceCities: fields.serviceCities, serviceAreas: fields.serviceAreas, euVat: fields.euVat} });
         setDb(d => ({ ...d, companies: d.companies.map(c => c.id === session.companyId ? company : c) }));
         return {};
       } catch (e) { return { error: e.message }; }

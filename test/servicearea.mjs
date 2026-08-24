@@ -115,9 +115,13 @@ const reg2 = await j("/api/auth/register", { method: "POST", body: {
   phone: "+36301112244", termsAccepted: true } });
 const cid2 = (await query("SELECT id FROM companies WHERE name = $1", ["Faraway Kft"])).rows[0]?.id;
 if (cid2) {
+  /* A SMALL radius on purpose. My first version reused the 39 km one, and the
+     university is 40.0 km out — inside the 10%-plus-1 slack a hand-dropped pin
+     is allowed, so this passed or failed on the tolerance rather than on the
+     filter it is meant to test. */
   await query(
     `UPDATE companies SET is_listed = true, is_approved = true,
-       service_lat = $1, service_lng = $2, service_radius_km = 39, service_cities = $3 WHERE id = $4`,
+       service_lat = $1, service_lng = $2, service_radius_km = 5, service_cities = $3 WHERE id = $4`,
     [PIN[0], PIN[1], JSON.stringify(["Szeged"]), cid2]);
   const r = await j(`/api/companies?near=${encodeURIComponent(uniAddr)}`);
   const has2 = (r.data.companies || []).some((c) => c.id === cid2);

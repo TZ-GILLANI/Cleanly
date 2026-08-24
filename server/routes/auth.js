@@ -228,7 +228,7 @@ router.get("/me", requireAuth, async (req, res) => {
 
 /* PUT /api/auth/profile */
 router.put("/profile", requireAuth, async (req, res) => {
-  const { fullName, phone, customerType, address, paymentMethod, lang, documents, savedAddresses } = req.body;
+  const { fullName, phone, customerType, address, paymentMethod, lang, documents, savedAddresses, city } = req.body;
   // SECURITY: nobody self-upgrades to the student discount. Switching to
   // student stores the card + flags the account for admin review instead.
   let custTypeParam = customerType;
@@ -270,6 +270,17 @@ router.put("/profile", requireAuth, async (req, res) => {
         phoneParam = np;
       }
     }
+    /* The city moves with the address.
+
+       users.city was written once at signup and never again, while
+       /api/companies filters on it, so a customer who moved from Debrecen to
+       Budapest kept being shown Debrecen companies and was refused when they
+       booked one near the new flat.
+
+       This prose lives OUT here, in JavaScript. I first wrote it as a block
+       comment inside the SQL string, where the em dash broke pg-mem's lexer
+       and every profile save returned 500 — the same mistake, in the same
+       shape, as the one that took down company settings earlier. */
     const result = await query(
       `UPDATE users SET
         full_name = COALESCE($1, full_name),
@@ -279,11 +290,13 @@ router.put("/profile", requireAuth, async (req, res) => {
         payment_method = COALESCE($5, payment_method),
         lang = COALESCE($6, lang),
         documents = COALESCE($7, documents),
-        saved_addresses = COALESCE($9, saved_addresses)
+        saved_addresses = COALESCE($9, saved_addresses),
+        city = COALESCE($10, city)
       WHERE id = $8 RETURNING *`,
       [fullName, phoneParam, custTypeParam, address, paymentMethod, lang,
        Array.isArray(documents) ? JSON.stringify(documents.slice(0, 6)) : null, req.user.id,
-       Array.isArray(savedAddresses) ? JSON.stringify(savedAddresses.slice(0, 12)) : null]
+       Array.isArray(savedAddresses) ? JSON.stringify(savedAddresses.slice(0, 12)) : null,
+       city !== undefined && String(city || "").trim() ? String(city).trim().slice(0, 80) : null]
     );
     if (upgradeRequested) await query("UPDATE users SET student_upgrade = true WHERE id = $1", [req.user.id]);
     if (customerType === "resident") await query("UPDATE users SET student_upgrade = false WHERE id = $1", [req.user.id]);

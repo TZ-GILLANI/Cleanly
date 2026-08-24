@@ -301,7 +301,8 @@ router.get("/users/:id/full", ...guard, async (req, res) => {
               WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [req.params.id]).catch(() => ({ rows: [] })),
       // company-role users own their company via owner_id; company_id may be unset
       query(`SELECT id, name, tagline, area, city, country, contact_phone, tax_id, reg_number,
-                    service_radius_km, service_lat, service_lng, currency, rating, review_count,
+                    service_radius_km, service_lat, service_lng, service_cities, service_areas,
+                    currency, rating, review_count,
                     emoji, is_approved, is_listed, created_at,
                     (stripe_account_id IS NOT NULL) AS stripe_ready
                FROM companies WHERE id = $1 OR owner_id = $2 LIMIT 1`,
@@ -324,9 +325,12 @@ router.get("/users/:id/full", ...guard, async (req, res) => {
       account id (would redirect their money), their password, and their
       prices/services (their business decision — unlist instead). Every
       change is logged field-by-field with before → after. ── */
+/* service_radius_km / service_lat / service_lng were editable here. Since v7.1
+   they decide nothing — coverage lives in service_areas — so leaving them
+   writable gave an admin a control that silently did nothing. Coverage is the
+   partner's to set, in their own settings, where the map and the town list are. */
 const ADMIN_EDITABLE = ["name", "tagline", "area", "city", "country", "contact_phone",
-  "tax_id", "reg_number", "emoji", "logo_url", "cover", "service_radius_km",
-  "service_lat", "service_lng", "is_listed", "is_approved"];
+  "tax_id", "reg_number", "emoji", "logo_url", "cover", "is_listed", "is_approved"];
 
 router.put("/companies/:id/details", ...guard, async (req, res) => {
   try {

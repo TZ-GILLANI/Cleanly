@@ -198,14 +198,21 @@ const appR = (await import("fs")).readFileSync("src/App.jsx", "utf8");
 /* The button is clicked for real in test/render.mjs. What matters here is that
    the city is a placeholder rather than baked into the key — spelled the old
    way it could only ever exist in English and Hungarian. */
-ok("there is a one-tap way to serve the whole of your own city",
-   /L\("Serve the whole of \{0\}"/.test(appR));
-ok("and it is worded so it can be translated, not interpolated into the key",
-   /fill\(L\("Serve the whole of \{0\}"/.test(appR));
+/* Rewritten for v7.1. "Serve the whole of {0}" was one button beside a free-
+   floating pin; whole-town coverage is now one of two modes on every area you
+   add, which is the same promise expressed once instead of twice. */
+ok("adding a town lets you take the whole of it",
+   /L\("The whole town"/.test(appR) && /mode: "all"/.test(appR));
+ok("or only a part of it, in the same place",
+   /L\("Only part of it"/.test(appR) && /mode: "radius"/.test(appR));
 ok("the km slider no longer pretends a number means a city",
    !/CITY_WIDE_KM/.test(appR));
-ok("cities are named, and more than one can be named",
-   /Cities you serve in full/.test(appR) && /AddCityField/.test(appR));
+ok("towns are named, and more than one can be named",
+   /<ServiceAreasEditor /.test(appR) && /onAdd=\{\(a\) => onChange\(\[\.\.\.list, a\]\)\}/.test(appR));
+ok("and each one carries its own rule, so towns can differ",
+   /a\.mode === "radius"[\s\S]{0,400}L\("Within \{0\} km"/.test(appR));
+ok("a pin can no longer be dropped outside the town it claims",
+   /setPt\(\{ lat: c\.lat, lng: c\.lng \}\)/.test(appR));
 ok("a large radius is still accepted by the server",
    (await j(`/api/companies/${cid}`, { method: "PUT", token: CO.token, body: { serviceRadiusKm: 30 } })).status === 200);
 
@@ -284,7 +291,7 @@ ok("the field stays editable until it is verified", /readOnly=\{verified\}/.test
 ok("and locks afterwards, because the proof is bound to that exact value",
    /if \(verified\) return;/.test(appV) && /readOnly=\{verified\}/.test(appV));
 ok("the country code is its own control, not something to type by hand",
-   /isPhone && !verified && \(\s*<select/.test(appV) && /DIAL_CODES\.map/.test(appV));
+   /isPhone && !verified && \(\s*<select/.test(appV) && /dialCodesFor\(/.test(appV));
 ok("and it disappears once the number is verified, like the number itself",
    /\{isPhone && !verified && \(/.test(appV));
 ok("the number sent for verification is the parsed one, not the raw box",
@@ -355,9 +362,9 @@ ok("an address inside the radius books normally", inside.status < 300, `${inside
 await seedGeo("Andrassy ut 60, Debrecen", 47.5050, 19.0640);
 const far = await book("Andrassy ut 60", CU.token, 22);
 ok("an address 190 km away is refused", far.status === 400, `got ${far.status}`);
-ok("and the refusal says how far and how far they travel",
+ok("and the refusal says how far out they are, and where the company DOES work",
    /outside this company's service area/i.test(far.data.error || "") &&
-   /\d+ km away/.test(far.data.error || "") && /travel 10 km/.test(far.data.error || ""),
+   /\d+ km away/.test(far.data.error || "") && /They work in:/.test(far.data.error || ""),
    far.data.error);
 
 /* The slack. The pin is dropped by hand and a geocoded house number is not a
@@ -400,8 +407,14 @@ ok("the area check runs before the booking row is written", iArea > 0 && iIns > 
 /* The listing filter and the booking guard must agree on the radius column,
    or a company is listed by one rule and refused by the other. */
 const coSrc = (await import("fs")).readFileSync("server/routes/companies.js", "utf8");
-ok("the listing filter uses the same radius column the booking guard does",
-   /service_radius_km/.test(coSrc) && /service_radius_km/.test(bkSrc));
+/* Stronger than the old check, which only asked that both files mentioned the
+   same COLUMN. They now call the same FUNCTION, so they cannot drift: a
+   company that shows up in your list can always be booked. */
+ok("the listing and the booking guard call the same matcher",
+   /export function areaCovers/.test(coSrc) && /areaCovers\(c, \{ city: myCity/.test(coSrc)
+   && /areaCovers\(co, \{ city: bookerCity/.test(bkSrc));
+ok("and there is only one place that decides coverage",
+   (coSrc.match(/function areaCovers/g) || []).length === 1);
 
 /* ── CITIES SERVED IN FULL ────────────────────────────────────────────────
    Three questions that turned out to be one:
@@ -475,40 +488,43 @@ ok("and still drops it for a city it does not serve and cannot reach",
 
 /* One rule, written twice — once on the server, once in the client filter.
    Two copies drift; a test is the cheapest thing that notices. */
-/* Client and server each decide whether a company serves your city, and they
+/* Client and server each decide whether a company covers your city, and they
    must never disagree — one saying yes and the other no is a company that
    appears in the list and then refuses the booking.
 
-   This used to compare the two function bodies as TEXT, which broke the moment
-   I refactored the server's into a helper even though the behaviour was
-   identical. Compare what they DO instead: same inputs, same answers. */
+   v7.1 moved both onto the areas model, so this compares the pair that now
+   matters: coversCityClient() against areaCovers(). Behaviour, not source
+   text — comparing the two function bodies as strings broke the moment either
+   was refactored, even when they still agreed. */
 const appSrc2 = (await import("fs")).readFileSync("src/App.jsx", "utf8");
-const { servesCity: svFn } = await import("../server/routes/companies.js");
+const { areaCovers } = await import("../server/routes/companies.js");
 const clFn = (() => {
-  const m = appSrc2.match(/const servesCityClient = \(co, cityRaw\) => \{[\s\S]*?\n\};/);
+  const m = appSrc2.match(/const coversCityClient = \(co, cityRaw\) => \{[\s\S]*?\n\};/);
   if (!m) return null;
-  return eval("(" + m[0].replace("const servesCityClient = ", "") .replace(/;$/, "") + ")");
+  const areasOfSrc = appSrc2.match(/function areasOf\(co\) \{[\s\S]*?\n\}/)[0];
+  return eval(`(() => { ${areasOfSrc}; return ${m[0].replace("const coversCityClient = ", "").replace(/;$/, "")}; })()`);
 })();
-ok("the client's servesCity is still findable", typeof clFn === "function");
+ok("the client's coverage check is still findable", typeof clFn === "function");
 const CASES = [
-  [{ service_cities: ["Debrecen"] }, "Debrecen"],
-  [{ service_cities: ["Debrecen"] }, "debrecen"],
-  [{ service_cities: ["Debrecen"] }, "  DEBRECEN  "],
-  [{ service_cities: ["Debrecen"] }, "Budapest"],
-  [{ service_cities: ["Debrecen"] }, ""],
-  [{ service_cities: ["Debrecen"] }, undefined],
-  [{ service_cities: [" Szeged ", "Pécs"] }, "szeged"],
-  [{ service_cities: [] }, "Debrecen"],
-  [{ service_cities: null }, "Debrecen"],
-  [{ service_cities: '["Debrecen"]' }, "Debrecen"],
-  [{ service_cities: "not json" }, "Debrecen"],
+  [{ service_areas: [{ city: "Debrecen", mode: "all" }] }, "Debrecen"],
+  [{ service_areas: [{ city: "Debrecen", mode: "all" }] }, "debrecen"],
+  [{ service_areas: [{ city: "Debrecen", mode: "all" }] }, "  DEBRECEN  "],
+  [{ service_areas: [{ city: "Debrecen", mode: "all" }] }, "Budapest"],
+  [{ service_areas: [{ city: "Debrecen", mode: "all" }, { city: "Eger", mode: "all" }] }, "Eger"],
+  [{ service_areas: '[{"city":"Debrecen","mode":"all"}]' }, "Debrecen"],
+  [{ city: "Debrecen", service_cities: ["Debrecen"] }, "Debrecen"],
+  [{ city: "Debrecen", service_cities: ["Debrecen"] }, "Szeged"],
   [{}, "Debrecen"],
-  [{ service_cities: [null, "", "Eger"] }, "Eger"],
-  [{ service_cities: ["Pest"] }, "Budapest"],
 ];
-const disagreements = clFn ? CASES.filter(([co, c]) => svFn(co, c) !== clFn(co, c)) : [];
-ok("client and server give the same answer for every case", disagreements.length === 0,
-   JSON.stringify(disagreements.map(([co, c]) => ({ co, c, server: svFn(co, c), client: clFn(co, c) }))));
+/* The client has no coordinates on the home screen, so it answers at city
+   level only. It must never be STRICTER than the server — hiding a company the
+   server would have accepted is silence the customer cannot debug. */
+const stricter = clFn ? CASES.filter(([co, c]) =>
+  !clFn(co, c) && areaCovers(co, { city: c }).covered) : [];
+ok("the client never hides a company the server would accept", stricter.length === 0,
+   JSON.stringify(stricter.map(([co, c]) => ({ co, c }))));
+ok("and it does still filter — a city nobody serves is dropped",
+   clFn && !clFn({ service_areas: [{ city: "Debrecen", mode: "all" }] }, "Budapest"));
 
 /* And the field must survive the client's own whitelist — the failure this
    codebase repeats: a column added, a UI built, and the store dropping the
@@ -749,14 +765,41 @@ const bkSrcC = (await import("fs")).readFileSync("server/routes/bookings.js", "u
 ok("the company list includes work whose payment is still in flight",
    /payment_status IN \('paid','pending','scheduled','retry'\)/.test(bkSrcC));
 
-/* The comment that broke this endpoint outright lived INSIDE the SQL string:
-   an em dash in a SQL block comment is more than the parser will lex, and
-   every company got a 500. No prose inside a query, ever. */
-let sqlProse = 0;
-for (const m of bkSrcC.matchAll(/query\(\s*`([\s\S]*?)`/g))
-  if ([...m[1]].some((c) => c.charCodeAt(0) > 127)) sqlProse++;
-ok("no SQL string in this file contains non-ASCII text", sqlProse === 0,
-   `${sqlProse} queries carry characters the parser may reject`);
+/* The comment that broke an endpoint outright lived INSIDE the SQL string: an
+   em dash in a SQL block comment is more than the parser will lex, and every
+   company got a 500. No prose inside a query, ever.
+
+   This used to scan ONE file — bookings.js, where it first happened. So when I
+   made the identical mistake in auth.js months later, writing a paragraph about
+   users.city into the UPDATE, this sailed past and every profile save started
+   returning 500. A guard written for the instance instead of the class only
+   ever catches the bug you already fixed. Every server file now. */
+const fsMod = await import("fs");
+const serverFiles = [];
+(function walkSrv(d) {
+  for (const e of fsMod.readdirSync(d, { withFileTypes: true })) {
+    const f = d + "/" + e.name;
+    if (e.isDirectory()) walkSrv(f);
+    else if (/\.js$/.test(e.name)) serverFiles.push(f);
+  }
+})("server");
+const proseOffenders = [];
+for (const f of serverFiles) {
+  const src = fsMod.readFileSync(f, "utf8");
+  for (const m of src.matchAll(/query\(\s*`([\s\S]*?)`/g)) {
+    /* A Hungarian company name inside a quoted VALUE is fine — the lexer reads
+       string literals happily. What it chokes on is non-ASCII in the statement
+       structure, which in practice means a comment. So: drop the literals, then
+       look at what is left. My first version of this flagged the seed file's
+       'Ragyogó Kft.' and would have taught me to ignore it. */
+    const structure = m[1].replace(/'(?:[^']|'')*'/g, "''");
+    if ([...structure].some((c) => c.charCodeAt(0) > 127))
+      proseOffenders.push(f + ": " + structure.trim().slice(0, 70).replace(/\s+/g, " "));
+  }
+}
+ok("no SQL string anywhere on the server contains non-ASCII text", proseOffenders.length === 0,
+   proseOffenders.join(" | "));
+ok("and the sweep actually looked at more than one file", serverFiles.length > 5, `${serverFiles.length} files`);
 
 /* ── THE SAME TWO BUGS, EVERYWHERE ELSE THEY LIVED ────────────────────────
    Fixing the booking list and the checkout was not the end of either fault.
@@ -931,8 +974,16 @@ console.log("\n── the date picker is a calendar, not a rail ──");
 ok("a month grid replaced the horizontal strip",
    /function MonthCalendar/.test(appCap) && !/scrollSnapType: "x proximity"/.test(appCap));
 ok("weeks start on Monday", /\(firstOf\.getDay\(\) \+ 6\) % 7/.test(appCap));
-ok("closed and fully-booked days are shown but not pressable",
-   /isClosed\(iso\) \|\| isFull\(iso\)/.test(appCap));
+/* Two modes now, and they must differ in exactly one way. A CUSTOMER cannot
+   press a closed or fully-booked day. A COMPANY editing its time off must be
+   able to press a closed one — that press is how you reopen it. Before this,
+   both used the customer's rule, so closing a day was a one-way door. */
+ok("a customer cannot press a closed or fully-booked day",
+   /const off = manage \? past : \(!d \|\| closed \|\| full\)/.test(appCap));
+ok("a company editing time off can press a closed one, to reopen it",
+   /manage \? past :/.test(appCap) && /Closed all day — tap to reopen/.test(appCap));
+ok("and neither can touch a day that has already gone",
+   /const past = manage && iso < floorIso/.test(appCap));
 
 console.log("\n── the company's tabs are grouped ──");
 ok("the bar carries the daily work plus one Manage button",
