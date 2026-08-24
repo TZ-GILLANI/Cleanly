@@ -211,8 +211,13 @@ ok("towns are named, and more than one can be named",
    /<ServiceAreasEditor /.test(appR) && /onAdd=\{\(a\) => onChange\(\[\.\.\.list, a\]\)\}/.test(appR));
 ok("and each one carries its own rule, so towns can differ",
    /a\.mode === "radius"[\s\S]{0,400}L\("Within \{0\} km"/.test(appR));
-ok("a pin can no longer be dropped outside the town it claims",
-   /setPt\(\{ lat: c\.lat, lng: c\.lng \}\)/.test(appR));
+/* Stronger than before. The pin still starts on whatever you picked, and if
+   we could not locate that place at all the radius option is not offered —
+   rather than offering a circle with nowhere to centre it. */
+ok("a pin can no longer be dropped outside the place it claims",
+   /setPt\(c\.lat == null \? null : \{ lat: c\.lat, lng: c\.lng \}\)/.test(appR));
+ok("and a place with no coordinates cannot be given a radius at all",
+   /picked\.lat == null \? \[\] : \[\{ id: "radius"/.test(appR));
 ok("a large radius is still accepted by the server",
    (await j(`/api/companies/${cid}`, { method: "PUT", token: CO.token, body: { serviceRadiusKm: 30 } })).status === 200);
 

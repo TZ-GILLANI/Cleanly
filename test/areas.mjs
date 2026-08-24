@@ -173,8 +173,12 @@ console.log("\n── the client mirrors the server, or the list lies ──");
   ok("the client has its own migration that matches", /function areasOf\(co\)/.test(app));
   ok("the editor is wired into the company form", /<ServiceAreasEditor areas=\{f\.service_areas\}/.test(app));
   ok("the free-floating pin editor is gone", !/Cities you serve in full/.test(app));
-  ok("a radius always starts anchored on the chosen city",
-     /setPt\(\{ lat: c\.lat, lng: c\.lng \}\)/.test(app));
+  ok("a radius always starts anchored on the place you chose",
+     /setPt\(c\.lat == null \? null : \{ lat: c\.lat, lng: c\.lng \}\)/.test(app));
+  ok("picking a street opens on the radius, not the whole town",
+     /if \(!c\.isTown\) \{ setMode\("radius"\)/.test(app));
+  ok("a dead search still lets you add the town you typed",
+     /No suggestions right now/.test(app));
   const noComments = app.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   ok("the country dropdown no longer prints a flag and nothing",
      !/\{x\.f\} \{x\.n\}/.test(noComments), "x.n is undefined on a DIAL_CODES entry");

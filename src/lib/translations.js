@@ -6,6 +6,9 @@
 
 export const EXTRA = {
   de: {
+    /* area search fallback */
+    "Use “{0}”": "„{0}“ verwenden",
+    "No suggestions right now — you can still add it as a whole town.": "Gerade keine Vorschläge — du kannst ihn trotzdem als ganzen Ort hinzufügen.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Beginne mit dem zweistelligen Ländercode, z. B. HU12345678.",
     "That country is not in the EU VAT system.": "Dieses Land ist nicht im EU-Mehrwertsteuersystem.",
@@ -1111,6 +1114,9 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    /* area search fallback */
+    "Use “{0}”": "Folosește „{0}”",
+    "No suggestions right now — you can still add it as a whole town.": "Momentan fără sugestii — o poți adăuga oricum ca localitate întreagă.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Începe cu codul de țară din două litere, ex. HU12345678.",
     "That country is not in the EU VAT system.": "Această țară nu este în sistemul TVA al UE.",
@@ -2217,6 +2223,9 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    /* area search fallback */
+    "Use “{0}”": "Použiť „{0}“",
+    "No suggestions right now — you can still add it as a whole town.": "Teraz žiadne návrhy — aj tak ju môžeš pridať ako celú obec.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Začni dvojpísmenovým kódom krajiny, napr. HU12345678.",
     "That country is not in the EU VAT system.": "Táto krajina nie je v systéme DPH EÚ.",
@@ -3322,6 +3331,9 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    /* area search fallback */
+    "Use “{0}”": "Użyj „{0}”",
+    "No suggestions right now — you can still add it as a whole town.": "Brak podpowiedzi — i tak możesz dodać ją jako całą miejscowość.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Zacznij od dwuliterowego kodu kraju, np. HU12345678.",
     "That country is not in the EU VAT system.": "Ten kraj nie jest w unijnym systemie VAT.",
@@ -4427,6 +4439,9 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    /* area search fallback */
+    "Use “{0}”": "Використати «{0}»",
+    "No suggestions right now — you can still add it as a whole town.": "Наразі немає підказок — ви все одно можете додати це як усе місто.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Почніть із дволітерного коду країни, напр. HU12345678.",
     "That country is not in the EU VAT system.": "Ця країна не входить до системи ПДВ ЄС.",
@@ -5532,6 +5547,9 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    /* area search fallback */
+    "Use “{0}”": "Utiliser « {0} »",
+    "No suggestions right now — you can still add it as a whole town.": "Aucune suggestion pour l’instant — tu peux quand même l’ajouter comme commune entière.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Commence par le code pays à deux lettres, ex. HU12345678.",
     "That country is not in the EU VAT system.": "Ce pays n’est pas dans le système TVA de l’UE.",
@@ -6637,6 +6655,9 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    /* area search fallback */
+    "Use “{0}”": "Usar «{0}»",
+    "No suggestions right now — you can still add it as a whole town.": "Ahora no hay sugerencias — puedes añadirla igualmente como localidad entera.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Empieza con el código de país de dos letras, p. ej. HU12345678.",
     "That country is not in the EU VAT system.": "Ese país no está en el sistema de IVA de la UE.",
@@ -7742,6 +7763,9 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    /* area search fallback */
+    "Use “{0}”": "“{0}” kullan",
+    "No suggestions right now — you can still add it as a whole town.": "Şu an öneri yok — yine de tüm belde olarak ekleyebilirsin.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "İki harfli ülke koduyla başla, ör. HU12345678.",
     "That country is not in the EU VAT system.": "Bu ülke AB KDV sisteminde değil.",
@@ -8785,6 +8809,9 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    /* area search fallback */
+    "Use “{0}”": "使用“{0}”",
+    "No suggestions right now — you can still add it as a whole town.": "当前没有建议 — 你仍可以把它作为整个城镇添加。",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "请以两位国家代码开头，例如 HU12345678。",
     "That country is not in the EU VAT system.": "该国家不在欧盟增值税体系内。",
@@ -9828,6 +9855,9 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    /* area search fallback */
+    "Use “{0}”": "Usa «{0}»",
+    "No suggestions right now — you can still add it as a whole town.": "Nessun suggerimento al momento — puoi comunque aggiungerlo come comune intero.",
     /* company ids + time off */
     "Start with the two-letter country code, e.g. HU12345678.": "Inizia con il codice paese di due lettere, es. HU12345678.",
     "That country is not in the EU VAT system.": "Quel paese non è nel sistema IVA UE.",

@@ -1497,12 +1497,26 @@ function cityFromAddress(addr) {
    confirmation they had spelled it the way the rest of the system would. The
    customer's street field already worked this way; this brings the company's
    city field to the same standard, and follows whichever country is selected. */
+/* Photon speaks four languages: de, en, fr, it. Anything else is a 400.
+
+   Every request sent `lang=hu` for Hungarian users, so the address and city
+   autocomplete returned an error and silently showed nothing — in the one
+   market the app actually operates in. Every other language got `en`, which
+   worked, which is why this looked like "it only breaks in some languages".
+   Unsupported languages now send no lang at all and Photon uses local names,
+   which for a Hungarian street is what you want anyway. */
+const PHOTON_LANGS = new Set(["de", "en", "fr", "it"]);
+const photonLang = () => {
+  const l = String(getLang() || "en").slice(0, 2).toLowerCase();
+  return PHOTON_LANGS.has(l) ? `&lang=${l}` : "";
+};
+
 async function suggestCities(q, country) {
   const t = String(q || "").trim();
   if (t.length < 2) return [];
   try {
     const cc = String(country || getCountry() || "HU").toUpperCase();
-    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(t)}&limit=8&osm_tag=place:city&osm_tag=place:town&lang=${getLang() === "hu" ? "hu" : "en"}`,
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(t)}&limit=8&osm_tag=place:city&osm_tag=place:town${photonLang()}`,
       { signal: AbortSignal.timeout(5000) });
     const j = await r.json();
     const seen = new Set();
@@ -1525,15 +1539,37 @@ async function suggestPlaces(q, country) {
   if (t.length < 2) return [];
   try {
     const cc = String(country || getCountry() || "HU").toUpperCase();
-    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(t)}&limit=8&osm_tag=place:city&osm_tag=place:town&lang=${getLang() === "hu" ? "hu" : "en"}`,
-      { signal: AbortSignal.timeout(5000) });
+    /* NOT restricted to place:city/place:town any more.
+
+       A cleaning company does not think "I cover Budapest" — it thinks "I cover
+       Buda, around Móricz Zsigmond körtér". Restricting the search to whole
+       towns meant the only anchor you could pick was a city centre, which is
+       why a radius around a particular street was impossible to express. */
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(t)}&limit=10${photonLang()}`,
+      { signal: AbortSignal.timeout(6000) });
     const j = await r.json();
     const seen = new Set();
     return (j.features || [])
-      .filter((f) => f.properties?.countrycode === cc && f.properties?.name && Array.isArray(f.geometry?.coordinates))
-      .map((f) => ({ name: f.properties.name, lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] }))
-      .filter((x) => (seen.has(x.name) ? false : seen.add(x.name)))
-      .slice(0, 6);
+      .filter((f) => f.properties?.name && Array.isArray(f.geometry?.coordinates))
+      .filter((f) => !f.properties.countrycode || f.properties.countrycode === cc)
+      .map((f) => {
+        const pr = f.properties;
+        const town = pr.city || pr.town || pr.village || pr.county || "";
+        const isTown = !pr.street && (pr.type === "city" || pr.type === "district" || !town || town === pr.name);
+        return {
+          name: pr.name,
+          /* Which town this belongs to — an area is always anchored in a named
+             place, so the customer's city still decides "whole town" coverage. */
+          city: isTown ? pr.name : (town || pr.name),
+          label: isTown ? pr.name : `${pr.name}${town ? ", " + town : ""}`,
+          detail: isTown ? (pr.state || pr.country || "") : (pr.district || pr.state || ""),
+          isTown,
+          lng: f.geometry.coordinates[0],
+          lat: f.geometry.coordinates[1],
+        };
+      })
+      .filter((x) => (seen.has(x.label) ? false : seen.add(x.label)))
+      .slice(0, 8);
   } catch { return []; }
 }
 
@@ -1579,7 +1615,7 @@ async function suggestStreets(q, city, country) {
   try {
     const cc = String(country || getCountry() || "HU").toUpperCase();
     const query = city ? `${q}, ${city}` : q;
-    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=${getLang() === "hu" ? "hu" : "en"}`, { signal: AbortSignal.timeout(5000) });
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6${photonLang()}`, { signal: AbortSignal.timeout(5000) });
     const j = await r.json();
     const seen = new Set();
     return (j.features || [])
@@ -5292,8 +5328,12 @@ function AddAreaSheet({ country, existing, close, onAdd }) {
     timer.current = setTimeout(async () => setSugs(await suggestPlaces(v, country)), 300);
   };
   const choose = (c) => {
-    setPicked(c); setQ(c.name); setSugs([]);
-    setPt({ lat: c.lat, lng: c.lng });   // the circle starts on the city, never nowhere
+    setPicked(c); setQ(c.label || c.name); setSugs([]);
+    setPt(c.lat == null ? null : { lat: c.lat, lng: c.lng });   // anchored on what you picked, never nowhere
+    /* Picking a street means you meant "around here", so open on the radius
+       with a tight default. Picking a town means the whole town. */
+    if (!c.isTown) { setMode("radius"); setRadiusKm(5); setLabel(c.name); }
+    else { setMode("all"); setLabel(""); }
   };
   const dupe = picked && (existing || []).some(
     (a) => a.city.toLowerCase() === picked.name.toLowerCase() && a.mode === mode && mode === "all");
@@ -5309,15 +5349,35 @@ function AddAreaSheet({ country, existing, close, onAdd }) {
                    border: `1.5px solid ${picked ? C.green + "88" : C.line}`, fontFamily: B, fontSize: 14, background: C.bg, color: C.ink }} />
         {sugs.length > 0 && !picked && (
           <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card,
-                        borderRadius: R.md, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
+                        borderRadius: R.md, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
             {sugs.map((c) => (
-              <button key={c.name} onMouseDown={() => choose(c)}
-                style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none",
-                         background: "none", cursor: "pointer", fontFamily: B, fontSize: 13, color: C.ink }}>
-                {c.name}
+              <button key={c.label} onMouseDown={() => choose(c)}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none",
+                         background: "none", cursor: "pointer" }}>
+                <div style={{ fontFamily: B, fontSize: 13, color: C.ink }}>{c.label}</div>
+                {c.detail && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 1 }}>{c.detail}</div>}
               </button>
             ))}
           </div>
+        )}
+        {/* The search needs the network, and the network is not always there.
+
+            Without this, a partner whose autocomplete returned nothing — offline,
+            rate-limited, or the language bug that made it return nothing at all
+            for Hungarian — could not add a single area, and so could not be
+            found by anybody. Typing a town name has to be enough. */}
+        {!picked && q.trim().length >= 2 && sugs.length === 0 && (
+          <button onMouseDown={() => choose({ name: q.trim(), city: q.trim(), label: q.trim(), isTown: true, lat: null, lng: null })}
+            style={{ width: "100%", textAlign: "left", marginTop: 8, padding: "10px 13px", borderRadius: R.md,
+                     border: `1.5px dashed ${C.line}`, background: C.bg, cursor: "pointer" }}>
+            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+              {fill(L("Use “{0}”", "„{0}” használata"), q.trim())}
+            </div>
+            <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>
+              {L("No suggestions right now — you can still add it as a whole town.",
+                 "Most nincs javaslat — így is hozzáadhatod az egész településként.")}
+            </div>
+          </button>
         )}
       </div>
 
@@ -5325,7 +5385,12 @@ function AddAreaSheet({ country, existing, close, onAdd }) {
         <>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
             {[{ id: "all", t: L("The whole town", "Az egész település"), d: L("Anyone here can book you", "Bárki foglalhat innen") },
-              { id: "radius", t: L("Only part of it", "Csak egy része"), d: L("A circle you set", "Egy általad megadott kör") }].map((o) => (
+              /* You cannot draw a circle around a place we could not locate, so
+                 a typed-only town is offered as "whole town" and nothing else —
+                 better than a second option that leads to a disabled button
+                 with no explanation. */
+              ...(picked.lat == null ? [] : [{ id: "radius", t: L("Only part of it", "Csak egy része"), d: L("A circle you set", "Egy általad megadott kör") }]),
+            ].map((o) => (
               <button key={o.id} onClick={() => setMode(o.id)}
                 style={{ flex: 1, textAlign: "left", padding: "12px 13px", borderRadius: R.md, cursor: "pointer",
                          border: mode === o.id ? `2px solid ${C.navy}` : `2px solid ${C.line}`,
@@ -5361,7 +5426,7 @@ function AddAreaSheet({ country, existing, close, onAdd }) {
               {L("You already cover this whole town.", "Ezt a települést már teljesen lefeded.")}
             </div>
           )}
-          <Btn full disabled={!!dupe} onClick={() => {
+          <Btn full disabled={!!dupe || (mode === "radius" && !pt)} onClick={() => {
             onAdd(mode === "radius"
               ? { city: picked.name, mode: "radius", lat: pt?.lat ?? picked.lat, lng: pt?.lng ?? picked.lng,
                   radiusKm, ...(label.trim() ? { label: label.trim() } : {}) }

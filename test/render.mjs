@@ -246,6 +246,29 @@ if (!jsdomOk) {
         ok("company — it asks for a town first, so a pin cannot float free",
            !!after && /Town or city|Település/i.test(after), (after || "").slice(0, 140));
 
+        /* There is no network in here, so suggestPlaces() returns nothing —
+           which is exactly the state a Hungarian partner was permanently in
+           while the app sent Photon `lang=hu` (a 400). If the only way to add
+           an area is to pick a suggestion, that partner can never be found by
+           anyone. Type a town, get an escape hatch. */
+        /* The settings screen behind the sheet ALSO has a city box with this
+           placeholder. The sheet renders last, so take the last match — my
+           first version typed into the field underneath and nothing happened. */
+        const boxes = [...w.document.querySelectorAll("input")].filter((i) => /Debrecen/.test(i.placeholder || ""));
+        const box = boxes[boxes.length - 1];
+        ok("company — the add-area sheet has a town box", !!box);
+        if (box) {
+          const k = Object.keys(box).find((x) => x.startsWith("__reactProps$"));
+          /* This harness has no act() — it renders and then waits, like the
+             other clicks in this file do. */
+          if (k) box[k].onChange({ target: { value: "Debrecen" }, currentTarget: { value: "Debrecen" } });
+          await new Promise((r) => setTimeout(r, 900));
+          const t2 = w.document.getElementById("root").textContent || "";
+          ok("company — with no suggestions, you can still use what you typed",
+             /Use .Debrecen.|Debrecen.* haszn/i.test(t2) || /No suggestions right now|Most nincs javaslat/i.test(t2),
+             t2.slice(t2.indexOf("Town or city"), t2.indexOf("Town or city") + 200));
+        }
+
         const setupTxt = w.document.getElementById("root").textContent || "";
         ok("company — the setup screen says what is still missing",
            /things left before customers can book you|Everything is set up|Add a place/i.test(setupTxt),
