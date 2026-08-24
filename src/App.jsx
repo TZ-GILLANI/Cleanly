@@ -183,24 +183,45 @@ const verLt = (a, b) => {
 };
 
 /* ── Theme: follows the phone's light/dark mode automatically ── */
+/* ── Palette ──────────────────────────────────────────────────────────────
+   Narrowed on purpose. The old set carried five accent colours — navy, mint,
+   gold, coral and amber — plus a soft tint of each, which is how a screen ends
+   up looking like a template: every element gets its own hue and nothing reads
+   as more important than anything else.
+
+   What is left: one accent, a neutral grey ramp, and two status colours that
+   exist because they carry meaning a customer must not misread — money coming
+   back, and something going wrong. Everything else is grey.
+
+   The accent is a deep slate blue rather than the previous indigo: close
+   enough that the brand still reads as itself, far enough from the
+   purple-blue that generated apps default to. */
 const LIGHT = {
-  navy: "#1B2A6B", navyDeep: "#10194A", navyMid: "#27379B", navySoft: "#4A5BBF",
-  mint: "#5EE6A8", mintSoft: "#DCFAEC",
-  bg: "#F4F6FC", card: "#FFFFFF", ink: "#141C3A", inkSoft: "#69718F", inkFaint: "#9AA2C0",
-  line: "#E7EAF6", gold: "#FFC555", coral: "#FF7A6B",
-  green: "#118A5C", greenDeep: "#0F7A50", coralText: "#B33A2B", coralSoft: "#FFE9E5",
-  amber: "#D96A2B", amberSoft: "#FFF1E8", navyChip: "#EEF1FB",
-  shell: "#E7EBF6", navBg: "rgba(255,255,255,.9)",
+  navy: "#243B53", navyDeep: "#102A43", navyMid: "#334E68", navySoft: "#486581",
+  mint: "#2A9D6E", mintSoft: "#E6F4EE",
+  bg: "#F7F8FA", card: "#FFFFFF", ink: "#102A43", inkSoft: "#627D98", inkFaint: "#9FB3C8",
+  line: "#E4E9EF", gold: "#B98900", coral: "#C2410C",
+  green: "#2A9D6E", greenDeep: "#1F7A55", coralText: "#9A3412", coralSoft: "#FDF0E7",
+  amber: "#B45309", amberSoft: "#FBF3E8", navyChip: "#EEF1F5",
+  shell: "#EDF0F4", navBg: "rgba(255,255,255,.94)",
 };
 const DARK = {
-  navy: "#4A5BBF", navyDeep: "#0B1128", navyMid: "#27379B", navySoft: "#8E9CE8",
-  mint: "#5EE6A8", mintSoft: "rgba(94,230,168,.16)",
-  bg: "#111832", card: "#1B2444", ink: "#EDF0FF", inkSoft: "#A6AFD6", inkFaint: "#7079A6",
-  line: "#2A3560", gold: "#FFC555", coral: "#FF8A7C",
-  green: "#7FEFC0", greenDeep: "#7FEFC0", coralText: "#FF9A8C", coralSoft: "rgba(255,122,107,.14)",
-  amber: "#FFB067", amberSoft: "rgba(255,180,90,.14)", navyChip: "#232D52",
-  shell: "#0B1023", navBg: "rgba(24,31,60,.9)",
+  navy: "#7B98B5", navyDeep: "#0B1620", navyMid: "#334E68", navySoft: "#9FB3C8",
+  mint: "#4FBF8B", mintSoft: "rgba(79,191,139,.14)",
+  bg: "#0F1A24", card: "#17242F", ink: "#E8EDF2", inkSoft: "#9FB3C8", inkFaint: "#7089A0",
+  line: "#243642", gold: "#D9A441", coral: "#E8845C",
+  green: "#4FBF8B", greenDeep: "#4FBF8B", coralText: "#E8845C", coralSoft: "rgba(232,132,92,.14)",
+  amber: "#D9A441", amberSoft: "rgba(217,164,65,.14)", navyChip: "#1E2E3B",
+  shell: "#0A121A", navBg: "rgba(18,29,39,.94)",
 };
+
+/* ── Corner radii ─────────────────────────────────────────────────────────
+   Radii previously ran 11, 13, 14, 15, 16, 17, 18, 22 and 30 with no rule
+   behind which went where. That inconsistency is what read as unconsidered —
+   not the roundness, which is deliberate and stays. So: the same soft corners,
+   but four steps applied by rule, and one place to change them all. */
+const R = { sm: 10, md: 14, lg: 18, xl: 24, pill: 999 };
+
 const C = { ...LIGHT };
 const applyTheme = (dark) => Object.assign(C, dark ? DARK : LIGHT);
 
@@ -342,13 +363,13 @@ const STAGE = (status, fulfilment) => {
   const M = collection
     ? { 0: L("New", "Új"), 1: L("Assigned", "Kiosztva"), 2: L("On the way", "Úton"),
         5: L("Collected", "Elvittük"), 3: L("In progress", "Folyamatban"),
-        6: L("Out for return", "Úton vissza"), 4: L("Returned ✨", "Visszahozva ✨") }
+        6: L("Out for return", "Úton vissza"), 4: L("Returned", "Visszahozva") }
     : { 0: L("New", "Új"), 1: L("Assigned", "Kiosztva"), 2: L("On the way", "Úton"),
-        3: L("Cleaning", "Takarítás"), 4: L("Done ✨", "Kész ✨") };
+        3: L("Cleaning", "Takarítás"), 4: L("Done", "Kész") };
   return M[Number(status)] || "";
 };
 /* Branching on HUL() left the other ten languages on the English list. */
-const stageList = () => [L("New", "Új"), L("Assigned", "Kiosztva"), L("On the way", "Úton"), L("Cleaning", "Takarítás"), L("Done ✨", "Kész ✨")];
+const stageList = () => [L("New", "Új"), L("Assigned", "Kiosztva"), L("On the way", "Úton"), L("Cleaning", "Takarítás"), L("Done", "Kész")];
 /* Bookable hours. Companies tick the ones they work; customers see only those. */
 const HOURS = ["06:00","07:00","08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
 const SLOTS = HOURS;   // legacy alias — the app books on whole hours now
@@ -409,15 +430,19 @@ const slotOpen = (av, iso, slot, serviceId) => openSlots(av, iso, serviceId).inc
 /* A day is only "closed" if NOTHING at all can be booked — never grey out the
    whole day just because one service happens to be full. */
 const dayClosed = (av, iso) => openSlots(av, iso).length === 0;
+/* Flat colour, not two-tone gradients.
+
+   Eight 135-degree gradients in saturated pairs — green to lime, purple to
+   lilac, orange to pink — is the single most template-looking thing on the
+   customer's home screen, and it made every company card shout at the same
+   volume. Muted flat tones let the company's name and price be the loud part.
+
+   Existing rows keep whatever they were given: cover is stored per company, so
+   nothing is rewritten in the database and a partner who picked one still has
+   it until they choose again. */
 const COVER_PRESETS = [
-  "linear-gradient(135deg,#22B573,#7BD96A)",
-  "linear-gradient(135deg,#3D7BF5,#2BB8E8)",
-  "linear-gradient(135deg,#7B4DE0,#B388FF)",
-  "linear-gradient(135deg,#FF6B6B,#FFE66D)",
-  "linear-gradient(135deg,#1B2A6B,#27379B)",
-  "linear-gradient(135deg,#F9731C,#FF5E8A)",
-  "linear-gradient(135deg,#00B09B,#96C93D)",
-  "linear-gradient(135deg,#4776E6,#8E54E9)",
+  "#334E68", "#2A6B5E", "#5B4B7A", "#8A5A3C",
+  "#1F4E5F", "#6B4A4A", "#3D5A46", "#4A4E69",
 ];
 const coverOf = (co) => co.cover || COVER_PRESETS[0];
 
@@ -442,11 +467,11 @@ function Calendar({ selected, onSelect, minISO, marks = {}, initialMonth }) {
   const monthLabel = view.toLocaleDateString(LOC(), { month: "long", year: "numeric" });
   const canPrev = new Date(y, m, 1) > new Date(today.getFullYear(), today.getMonth(), 1);
   return (
-    <div style={{ background: C.card, borderRadius: 18, padding: "12px 12px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.06)" }}>
+    <div style={{ background: C.card, borderRadius: R.lg, padding: "12px 12px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.06)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <button onClick={() => canPrev && setView(new Date(y, m - 1, 1))} disabled={!canPrev} style={{ width: 32, height: 32, borderRadius: 10, border: "none", background: C.bg, color: canPrev ? C.navy : C.inkFaint, fontSize: 15, fontWeight: 700, cursor: canPrev ? "pointer" : "default" }}>‹</button>
+        <button onClick={() => canPrev && setView(new Date(y, m - 1, 1))} disabled={!canPrev} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.bg, color: canPrev ? C.navy : C.inkFaint, fontSize: 15, fontWeight: 700, cursor: canPrev ? "pointer" : "default" }}>‹</button>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{monthLabel}</div>
-        <button onClick={() => setView(new Date(y, m + 1, 1))} style={{ width: 32, height: 32, borderRadius: 10, border: "none", background: C.bg, color: C.navy, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>›</button>
+        <button onClick={() => setView(new Date(y, m + 1, 1))} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.bg, color: C.navy, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>›</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
         {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((w) => (
@@ -462,7 +487,7 @@ function Calendar({ selected, onSelect, minISO, marks = {}, initialMonth }) {
           const mark = marks[iso];
           return (
             <button key={iso} onClick={() => !disabled && onSelect(iso)} disabled={disabled} style={{
-              position: "relative", aspectRatio: "1", borderRadius: 10, border: "none", cursor: disabled ? "default" : "pointer",
+              position: "relative", aspectRatio: "1", borderRadius: R.sm, border: "none", cursor: disabled ? "default" : "pointer",
               fontFamily: F, fontWeight: 700, fontSize: 12.5,
               background: isSel ? C.navy : "transparent",
               color: isSel ? "#fff" : disabled ? "#D5DAED" : C.ink,
@@ -505,17 +530,17 @@ function DocUpload({ docs = [], onChange, label, hint }) {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{label}</div>
       {hint && <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>{hint}</div>}
       {docs.map((doc, i) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 13, padding: "8px 12px", marginBottom: 7, boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: R.md, padding: "8px 12px", marginBottom: 7, boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
           {doc.type?.startsWith("image/")
-            ? <img src={doc.data} alt="" style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 9, flexShrink: 0 }} />
-            : <div style={{ width: 38, height: 38, borderRadius: 9, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>📄</div>}
+            ? <img src={doc.data} alt="" style={{ width: 38, height: 38, objectFit: "cover", borderRadius: R.sm, flexShrink: 0 }} />
+            : <div style={{ width: 38, height: 38, borderRadius: R.sm, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}></div>}
           <span style={{ flex: 1, fontFamily: B, fontSize: 11.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
           <button onClick={() => onChange(docs.filter((_, k) => k !== i))} style={{ border: "none", background: "none", color: C.coral, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>✕</button>
         </div>
       ))}
       {docs.length < 6 && (
-        <label style={{ display: "block", textAlign: "center", fontFamily: F, fontWeight: 700, fontSize: 12.5, padding: "11px 0", borderRadius: 13, border: `1.5px dashed ${C.navySoft}66`, color: C.navySoft, cursor: "pointer", background: C.card }}>
-          📎 Add document (photo or PDF)
+        <label style={{ display: "block", textAlign: "center", fontFamily: F, fontWeight: 700, fontSize: 12.5, padding: "11px 0", borderRadius: R.md, border: `1.5px dashed ${C.navySoft}66`, color: C.navySoft, cursor: "pointer", background: C.card }}>
+          Add document (photo or PDF)
           <input type="file" accept="image/*,application/pdf" multiple onChange={add} style={{ display: "none" }} />
         </label>
       )}
@@ -570,10 +595,10 @@ function DocViewer({ docs, title, close }) {
           {doc.type?.startsWith("image/")
             ? <>
                 <img src={doc.data} alt={doc.name} onContextMenu={(e) => { if (!canDownload) e.preventDefault(); }} draggable={canDownload}
-                  style={{ width: "100%", borderRadius: 14, boxShadow: "0 2px 10px rgba(20,28,58,.1)", pointerEvents: canDownload ? "auto" : "none" }} />
-                {canDownload && <button onClick={() => openDoc(doc)} style={{ marginTop: 6, background: "none", border: "none", padding: 0, fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft, cursor: "pointer" }}>⬇ Open / download {doc.name}</button>}
+                  style={{ width: "100%", borderRadius: R.md, boxShadow: "0 2px 10px rgba(20,28,58,.1)", pointerEvents: canDownload ? "auto" : "none" }} />
+                {canDownload && <button onClick={() => openDoc(doc)} style={{ marginTop: 6, background: "none", border: "none", padding: 0, fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft, cursor: "pointer" }}>Open / download {doc.name}</button>}
               </>
-            : <button onClick={() => openDoc(doc)} style={{ display: "block", width: "100%", textAlign: "left", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, border: "none", borderRadius: 13, padding: "12px 14px", cursor: "pointer", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>📄 Open / download {doc.name}</button>}
+            : <button onClick={() => openDoc(doc)} style={{ display: "block", width: "100%", textAlign: "left", fontFamily: B, fontSize: 12.5, color: C.navySoft, background: C.card, border: "none", borderRadius: R.md, padding: "12px 14px", cursor: "pointer", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>Open / download {doc.name}</button>}
         </div>
       ))}
     </Sheet>
@@ -715,7 +740,7 @@ const canStillCancel = (b, freeH = 48) => {
 
 /* Five glyphs, rounded. Lived inside one component and was called from two
    others, which is a ReferenceError rather than a missing star. */
-const stars = (n) => "★".repeat(Math.round(n || 0)) + "☆".repeat(Math.max(0, 5 - Math.round(n || 0)));
+const stars = (n) => "".repeat(Math.round(n || 0)) + "".repeat(Math.max(0, 5 - Math.round(n || 0)));
 
 const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -805,7 +830,7 @@ function ToastProvider({ children }) {
       {children}
       <div style={{ position: "fixed", bottom: 100, left: "50%", transform: "translateX(-50%)", zIndex: 200, display: "flex", flexDirection: "column", gap: 8, width: "min(360px,calc(100vw - 40px))", pointerEvents: "none" }}>
         {toasts.map((t) => (
-          <div key={t.id} className="cl-rise" style={{ background: t.type === "error" ? C.coral : C.navyDeep, color: "#fff", padding: "13px 18px", borderRadius: 16, fontFamily: B, fontSize: 13.5, boxShadow: "0 8px 24px rgba(0,0,0,.28)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+          <div key={t.id} className="cl-rise" style={{ background: t.type === "error" ? C.coral : C.navyDeep, color: "#fff", padding: "13px 18px", borderRadius: R.lg, fontFamily: B, fontSize: 13.5, boxShadow: "0 8px 24px rgba(0,0,0,.28)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 16 }}>{t.type === "error" ? "✕" : "✓"}</span>
             {t.msg}
           </div>
@@ -832,6 +857,21 @@ const ICON_PATHS = {
   home: "M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15V14H9v7.5H4.5A1.5 1.5 0 0 1 3 20Z",
   calendar: "M17 3v3M7 3v3M4.5 5h15A1.5 1.5 0 0 1 21 6.5v13A1.5 1.5 0 0 1 19.5 21h-15A1.5 1.5 0 0 1 3 19.5v-13A1.5 1.5 0 0 1 4.5 5ZM3 10h18",
   sparkle: "M12 3.5 13.9 9 19.5 11 13.9 13 12 18.5 10.1 13 4.5 11 10.1 9Z",
+  /* Added when the emoji came out of the interface. Same 24-box, same 1.7
+     stroke, so they sit with the ones the nav already used. */
+  pin: "M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
+  card: "M3 7.5A1.5 1.5 0 0 1 4.5 6h15A1.5 1.5 0 0 1 21 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5Z M3 10h18",
+  check: "M4.5 12.5 9.5 17.5 19.5 7",
+  repeat: "M4 9a5 5 0 0 1 5-5h11 M20 15a5 5 0 0 1-5 5H4 M17 1.5 20.5 4 17 6.5 M7 17.5 3.5 20 7 22.5",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M12 7v5.2l3.4 2",
+  cap: "M12 4 22 9l-10 5L2 9Z M6 11.2V16c0 1.4 2.7 2.6 6 2.6s6-1.2 6-2.6v-4.8",
+  house: "M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1Z",
+  van: "M2 8.5A1.5 1.5 0 0 1 3.5 7H14v9H2Z M14 10h3.6l2.9 3.2V16H14Z M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z M18 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z",
+  box: "M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4Z M3.5 7.5 12 11.5l8.5-4 M12 11.5v9",
+  shield: "M12 3.2 20 6v6c0 4.2-3.2 7.4-8 8.8C7.2 19.4 4 16.2 4 12V6Z",
+  banknote: "M2.5 7.5h19v9h-19Z M12 14.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z",
+  chat: "M20.5 12c0 4-3.8 7.2-8.5 7.2a10 10 0 0 1-2.8-.4L4 20.5l1.4-3.6A6.8 6.8 0 0 1 3.5 12C3.5 8 7.3 4.8 12 4.8s8.5 3.2 8.5 7.2Z",
+  star: "M12 3.6 14.6 9l5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.8 1-5.9L3.5 9.8 9.4 9Z",
   bell: "M18 8.5a6 6 0 0 0-12 0c0 6.5-2.5 8-2.5 8h17S18 15 18 8.5M13.8 20.5a2.1 2.1 0 0 1-3.6 0",
   clipboard: "M9 4.5h6M9 3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Zm7 1.5h1.5A1.5 1.5 0 0 1 19 6v13.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5V6a1.5 1.5 0 0 1 1.5-1.5H8",
   users: "M16.5 20.5v-1.8a3.6 3.6 0 0 0-3.6-3.6H6.1a3.6 3.6 0 0 0-3.6 3.6v1.8M9.3 11.5a3.9 3.9 0 1 0 0-7.8 3.9 3.9 0 0 0 0 7.8ZM21.5 20.5v-1.8a3.6 3.6 0 0 0-2.7-3.5M15.3 3.9a3.9 3.9 0 0 1 0 7.55",
@@ -856,7 +896,7 @@ function Ic({ name, size = 19, color = "currentColor", sw = 1.7, style }) {
 // A company's own uploaded logo on a white tile; falls back to its emoji.
 const CompanyLogo = ({ co, size = 46, radius }) => (
   <div style={{ width: size, height: size, borderRadius: radius ?? Math.round(size * 0.28), background: C.card, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0, fontSize: size * 0.5 }}>
-    {co?.logo_url ? <img src={co.logo_url} alt={co?.name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} draggable="false" /> : (co?.emoji || "🏢")}
+    {co?.logo_url ? <img src={co.logo_url} alt={co?.name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} draggable="false" /> : (co?.emoji || "")}
   </div>
 );
 const Star = ({ filled = true, size = 12, onClick }) => (
@@ -870,9 +910,9 @@ const Pill = ({ children, bg = C.mintSoft, color = C.navy, style = {} }) => (
 const Btn = ({ children, onClick, full, ghost, mint, small, disabled, danger, style = {} }) => (
   <button onClick={onClick} disabled={disabled} className="cl-btn" style={{
     fontFamily: F, fontWeight: 700, fontSize: small ? 13 : 15.5,
-    padding: small ? "9px 16px" : "15px 22px", borderRadius: 16,
+    padding: small ? "9px 16px" : "15px 22px", borderRadius: R.lg,
     border: ghost ? `1.5px solid ${C.line}` : "none",
-    background: disabled ? "#C9CFE6" : ghost ? C.card : mint ? C.mint : danger ? C.coral : `linear-gradient(135deg,${C.navy},${C.navyMid})`,
+    background: disabled ? "#C9CFE6" : ghost ? C.card : mint ? C.mint : danger ? C.coral : C.navy,
     color: ghost ? (danger ? C.coral : C.navy) : mint ? C.navyDeep : "#fff",
     width: full ? "100%" : "auto", cursor: disabled ? "default" : "pointer",
     boxShadow: disabled || ghost ? "none" : mint ? "0 6px 18px rgba(94,230,168,.4)" : danger ? "0 6px 18px rgba(255,122,107,.35)" : "0 6px 18px rgba(27,42,107,.28)",
@@ -891,15 +931,15 @@ const Field = ({ label, hint, area, ...props }) => {
     <div style={{ marginBottom: 13 }}>
       {label && <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{label}</div>}
       {area
-        ? <textarea {...props} rows={props.rows || 3} style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 13.5, outline: "none", background: C.card, color: C.ink, resize: "none" }} />
+        ? <textarea {...props} rows={props.rows || 3} style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: R.md, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 13.5, outline: "none", background: C.card, color: C.ink, resize: "none" }} />
         : (
           <div style={{ position: "relative" }}>
             <input {...props} type={isPw && showPw ? "text" : props.type}
-              style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", paddingRight: isPw ? 46 : 15, borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, outline: "none", background: C.card, color: C.ink }} />
+              style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", paddingRight: isPw ? 46 : 15, borderRadius: R.md, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, outline: "none", background: C.card, color: C.ink }} />
             {isPw && (
               <button type="button" tabIndex={-1} onClick={() => setShowPw((v) => !v)} aria-label={showPw ? L("Hide password", "Jelszó elrejtése") : L("Show password", "Jelszó mutatása")}
                 style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 17, opacity: .7, padding: 6 }}>
-                {showPw ? "🙈" : "👁️"}
+                {showPw ? "" : "️"}
               </button>
             )}
           </div>
@@ -929,7 +969,7 @@ function Sheet({ title, close, children }) {
         <div style={{ width: 40, height: 4, borderRadius: 99, background: C.line, margin: "0 auto 14px" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{title}</div>
-          <button onClick={close} style={{ width: 32, height: 32, borderRadius: 11, border: "none", background: C.card, fontSize: 14, cursor: "pointer", color: C.inkSoft }}>✕</button>
+          <button onClick={close} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.card, fontSize: 14, cursor: "pointer", color: C.inkSoft }}>✕</button>
         </div>
         {children}
       </div>
@@ -937,8 +977,8 @@ function Sheet({ title, close, children }) {
   );
 }
 const Progress = ({ done, total }) => (
-  <div style={{ height: 5, borderRadius: 9, background: C.line, overflow: "hidden" }}>
-    <div style={{ height: "100%", borderRadius: 9, width: `${total ? (done / total) * 100 : 0}%`, background: C.mint, transition: "width .3s" }} />
+  <div style={{ height: 5, borderRadius: R.sm, background: C.line, overflow: "hidden" }}>
+    <div style={{ height: "100%", borderRadius: R.sm, width: `${total ? (done / total) * 100 : 0}%`, background: C.mint, transition: "width .3s" }} />
   </div>
 );
 /* Dark navy live map: the cleaner shows as the Cleano octopus, the destination
@@ -968,7 +1008,7 @@ function AreaMap({ lat, lng, radiusKm, onChange, height = 240 }) {
   }, []);
   React.useEffect(() => { if (cirRef.current) cirRef.current.setRadius((radiusKm || 10) * 1000); }, [radiusKm]);
   if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>{L("Map unavailable offline.", "A térkép offline nem érhető el.")}</div>;
-  return <div ref={ref} style={{ height, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.line}` }} />;
+  return <div ref={ref} style={{ height, borderRadius: R.lg, overflow: "hidden", border: `1px solid ${C.line}` }} />;
 }
 
 function LiveMap({ lat, lng, destLat, destLng, height = 320 }) {
@@ -1033,7 +1073,7 @@ function LiveMap({ lat, lng, destLat, destLng, height = 320 }) {
 
   React.useEffect(() => () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } }, []);
   if (!window.L) return <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, textAlign: "center", padding: 20 }}>{L("Map unavailable offline.", "A térkép offline nem érhető el.")}</div>;
-  return <div ref={ref} style={{ width: "100%", height, borderRadius: 18, overflow: "hidden", zIndex: 0, background: C.navyDeep }} />;
+  return <div ref={ref} style={{ width: "100%", height, borderRadius: R.lg, overflow: "hidden", zIndex: 0, background: C.navyDeep }} />;
 }
 
 /* Turn a written address into coordinates (cached per address). */
@@ -1092,7 +1132,7 @@ function TrackSheet({ bookingId, close, booking }) {
 
       {/* who + where — the cleaner needs this on the way, the customer likes seeing it */}
       {(addr || booking) && (
-        <div style={{ background: C.card, borderRadius: 16, padding: 14, marginTop: 12 }}>
+        <div style={{ background: C.card, borderRadius: R.lg, padding: 14, marginTop: 12 }}>
           {booking?.customer_name && isCleaner && (
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginBottom: 4 }}>{booking.customer_name}</div>
           )}
@@ -1104,12 +1144,12 @@ function TrackSheet({ bookingId, close, booking }) {
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             {addr && (
               <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`} target="_blank" rel="noreferrer"
-                style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, color: C.navySoft, background: C.bg, borderRadius: 12, padding: "10px 12px", textDecoration: "none" }}>
+                style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, color: C.navySoft, background: C.bg, borderRadius: R.md, padding: "10px 12px", textDecoration: "none" }}>
                 {L("Open in Maps", "Megnyitás a Térképen")}
               </a>
             )}
             {isCleaner && booking?.customer_phone && (
-              <a href={`tel:${booking.customer_phone}`} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, color: C.greenDeep, background: C.mintSoft, borderRadius: 12, padding: "10px 12px", textDecoration: "none" }}>
+              <a href={`tel:${booking.customer_phone}`} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, color: C.greenDeep, background: C.mintSoft, borderRadius: R.md, padding: "10px 12px", textDecoration: "none" }}>
                 {L("Call", "Hívás")}
               </a>
             )}
@@ -1200,7 +1240,7 @@ function NotificationBanner() {
   if (!show) return null;
   return ReactDOM.createPortal(
     <div className="cl-rise" onClick={() => setShow(null)}
-      style={{ position: "fixed", top: "calc(env(safe-area-inset-top) + 10px)", left: 0, right: 0, margin: "0 auto", width: "min(400px, calc(100vw - 28px))", zIndex: 220, background: C.navBg, backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${C.line}`, borderRadius: 18, padding: "13px 16px", boxShadow: "0 14px 40px rgba(16,25,74,.28)", cursor: "pointer" }}>
+      style={{ position: "fixed", top: "calc(env(safe-area-inset-top) + 10px)", left: 0, right: 0, margin: "0 auto", width: "min(400px, calc(100vw - 28px))", zIndex: 220, background: C.navBg, backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${C.line}`, borderRadius: R.lg, padding: "13px 16px", boxShadow: "0 14px 40px rgba(16,25,74,.28)", cursor: "pointer" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{show.title}</div>
       {show.body && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>{show.body}</div>}
     </div>,
@@ -1215,7 +1255,7 @@ function NotificationHistory() {
   const list = notifications || [];
   return (
     <div style={{ marginTop: 14 }}>
-      <button onClick={() => setOpen(!open)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
+      <button onClick={() => setOpen(!open)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: R.md, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
         <span>{L("Notifications", "Értesítések")} ({list.length})</span><span>{open ? "▴" : "▾"}</span>
       </button>
       {open && list.length > 0 && (
@@ -1225,7 +1265,7 @@ function NotificationHistory() {
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 7, maxHeight: 260, overflowY: "auto" }}>
           {list.length === 0 && <div style={{ fontFamily: B, fontSize: 12, color: C.inkFaint, textAlign: "center", padding: 14 }}>{L("Nothing yet.", "Még semmi.")}</div>}
           {list.map((n) => (
-            <div key={n.id} style={{ background: C.bg, borderRadius: 13, padding: "10px 13px" }}>
+            <div key={n.id} style={{ background: C.bg, borderRadius: R.md, padding: "10px 13px" }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.title}</div>
               {n.body && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{n.body}</div>}
               <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 4 }}>{(() => { try { return new Date(n.created_at).toLocaleString(); } catch { return ""; } })()}</div>
@@ -1245,7 +1285,7 @@ function ConfirmDialog({ title, body, confirmLabel, onConfirm, onCancel }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px" }}>
       <div onClick={onCancel} style={{ position: "absolute", inset: 0, background: "rgba(16,25,74,.6)", backdropFilter: "blur(3px)" }} />
-      <div className="cl-pop" style={{ position: "relative", background: C.card, borderRadius: 24, padding: "28px 24px", width: "100%", maxWidth: 340, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+      <div className="cl-pop" style={{ position: "relative", background: C.card, borderRadius: R.xl, padding: "28px 24px", width: "100%", maxWidth: 340, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: C.ink }}>{title}</div>
         <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 10, lineHeight: 1.6 }}>{body}</div>
         <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
@@ -1328,11 +1368,11 @@ function ChangePasswordBox() {
   return (
     <div style={{ marginTop: 14 }}>
       {!open ? (
-        <button onClick={() => setOpen(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer" }}>
+        <button onClick={() => setOpen(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: R.md, width: "100%", padding: "11px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer" }}>
           {L("Change password", "Jelszó módosítása")}
         </button>
       ) : (
-        <div style={{ background: C.bg, borderRadius: 15, padding: 14 }}>
+        <div style={{ background: C.bg, borderRadius: R.md, padding: 14 }}>
           <Field label={L("Current password", "Jelenlegi jelszó")} type="password" value={cur} onChange={(e) => setCur(e.target.value)} />
           <Field label={L("New password", "Új jelszó")} type="password" placeholder={L("Min. 6 characters", "Min. 6 karakter")} value={nw} onChange={(e) => setNw(e.target.value)} />
           <div style={{ display: "flex", gap: 8 }}>
@@ -1432,7 +1472,7 @@ function AddressPicker({ value, onChange }) {
   }, []);
   const canSave = !!rawSession; // save-as needs a logged-in profile
 
-  const labelIcon = (lbl) => (/home|otthon/i.test(lbl) ? "🏠" : /office|iroda|work|munka/i.test(lbl) ? "💼" : "📍");
+  const labelIcon = (lbl) => (/home|otthon/i.test(lbl) ? "" : /office|iroda|work|munka/i.test(lbl) ? "" : "");
 
   const removeSaved = async (addr) => {
     const next = saved.filter((a) => a.address !== addr.address);
@@ -1442,7 +1482,7 @@ function AddressPicker({ value, onChange }) {
 
   const Opt = ({ icon, label, sub, selected, onPress, busy, onRemove }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-      <button onClick={onPress} disabled={busy} style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", borderRadius: 15, border: selected ? `2px solid ${C.navy}` : `2px solid transparent`, background: C.card, cursor: "pointer", boxShadow: "0 1px 6px rgba(20,28,58,.05)", opacity: busy ? .6 : 1, minWidth: 0 }}>
+      <button onClick={onPress} disabled={busy} style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", borderRadius: R.md, border: selected ? `2px solid ${C.navy}` : `2px solid transparent`, background: C.card, cursor: "pointer", boxShadow: "0 1px 6px rgba(20,28,58,.05)", opacity: busy ? .6 : 1, minWidth: 0 }}>
         <span style={{ fontSize: 19 }}>{icon}</span>
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
@@ -1451,7 +1491,7 @@ function AddressPicker({ value, onChange }) {
         {selected && <span style={{ color: C.green, fontWeight: 900 }}>✓</span>}
       </button>
       {onRemove && (
-        <button onClick={onRemove} title={L("Remove", "Törlés")} style={{ border: "none", background: C.bg, color: C.inkFaint, width: 28, height: 28, borderRadius: 10, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
+        <button onClick={onRemove} title={L("Remove", "Törlés")} style={{ border: "none", background: C.bg, color: C.inkFaint, width: 28, height: 28, borderRadius: R.sm, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
       )}
     </div>
   );
@@ -1459,7 +1499,7 @@ function AddressPicker({ value, onChange }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Address", "Cím")}</div>
-      <Opt icon={locBusy ? "⏳" : "📍"} busy={locBusy}
+      <Opt icon={locBusy ? "⏳" : ""} busy={locBusy}
         label={locBusy ? L("Locating…", "Helymeghatározás…") : L("Use my current location", "Jelenlegi helyzetem használata")}
         sub={L("GPS fills the exact address for you", "A GPS kitölti a pontos címet")}
         selected={false} onPress={useCurrentLocation} />
@@ -1469,7 +1509,7 @@ function AddressPicker({ value, onChange }) {
           onRemove={() => removeSaved(a)} />
       ))}
       {session.address && !saved.some((a) => a.address === session.address) && (
-        <Opt icon="🏠" label={L("Home address", "Lakcím")} sub={session.address}
+        <Opt icon="" label={L("Home address", "Lakcím")} sub={session.address}
           selected={value === session.address} onPress={() => { onChange(session.address); applyCityFrom(session.address); setAdding(false); }} />
       )}
       {/* A saved address could be added and deleted but never corrected: one
@@ -1486,22 +1526,22 @@ function AddressPicker({ value, onChange }) {
           setStreetPicked(null); setAdding(true);
         }} style={{ background: "none", border: "none", padding: "2px 2px 10px", cursor: "pointer",
                     fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.navySoft }}>
-          ✏️ {L("Edit a saved address", "Mentett cím szerkesztése")}
+         ️ {L("Edit a saved address", "Mentett cím szerkesztése")}
         </button>
       )}
       {recent.map((a) => (
-        <Opt key={a} icon="🕘" label={a} sub={L("Recently used", "Korábban használt")}
+        <Opt key={a} icon="" label={a} sub={L("Recently used", "Korábban használt")}
           selected={value === a} onPress={() => { onChange(a); applyCityFrom(a); setAdding(false); }} />
       ))}
       {value && value !== session.address && !saved.some((a) => a.address === value) && !recent.includes(value) && (
-        <Opt icon="📌" label={value} sub={L("Selected address", "Kiválasztott cím")} selected onPress={() => {}} />
+        <Opt icon="" label={value} sub={L("Selected address", "Kiválasztott cím")} selected onPress={() => {}} />
       )}
       {!adding ? (
-        <button onClick={() => setAdding(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: 15, width: "100%", padding: "12px 14px", fontFamily: F, fontWeight: 700, fontSize: 13, color: C.navySoft, cursor: "pointer" }}>
+        <button onClick={() => setAdding(true)} style={{ background: "none", border: `1.5px dashed ${C.line}`, borderRadius: R.md, width: "100%", padding: "12px 14px", fontFamily: F, fontWeight: 700, fontSize: 13, color: C.navySoft, cursor: "pointer" }}>
           + {L("Add a new address", "Új cím megadása")}
         </button>
       ) : (
-        <div style={{ background: C.card, borderRadius: 15, padding: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+        <div style={{ background: C.card, borderRadius: R.md, padding: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           {/* Country first, then city, then street — because the street
               suggestions are filtered by both. Guessing the country from the
               phone's locale is close enough to be useful and wrong often enough
@@ -1510,7 +1550,7 @@ function AddressPicker({ value, onChange }) {
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Country", "Ország")}</div>
               <select value={country} onChange={(e) => { setCountry(e.target.value); saveCountry(e.target.value); setSugs([]); setStreetPicked(null); }}
-                style={{ width: "100%", padding: "11px 12px", borderRadius: 13, border: `1px solid ${C.line}`, background: C.bg, color: C.ink, fontFamily: B, fontSize: 13 }}>
+                style={{ width: "100%", padding: "11px 12px", borderRadius: R.md, border: `1px solid ${C.line}`, background: C.bg, color: C.ink, fontFamily: B, fontSize: 13 }}>
                 {COUNTRIES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
               </select>
             </div>
@@ -1533,7 +1573,7 @@ function AddressPicker({ value, onChange }) {
               </span>
             )}
             {!streetPicked && sugs.length > 0 && (
-              <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card, borderRadius: 13, boxShadow: "0 10px 30px rgba(20,28,58,.18)", border: `1.5px solid ${C.line}`, overflow: "hidden" }}>
+              <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card, borderRadius: R.md, boxShadow: "0 10px 30px rgba(20,28,58,.18)", border: `1.5px solid ${C.line}`, overflow: "hidden" }}>
                 {sugs.map((sg) => (
                   <button key={sg.key} onClick={() => { setStreetPicked(sg); setSugs([]); if (sg.city) saveCity(cityFromAddress(sg.city) || sg.city); }}
                     style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none", borderBottom: `1px solid ${C.line}`, background: "transparent", cursor: "pointer", fontFamily: B, fontSize: 13, color: C.ink }}>
@@ -1613,7 +1653,7 @@ function PhoneVerifyGate() {
   };
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 95, background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center" }}>
-      <div style={{ fontSize: 52 }}>{mode === "email" ? "✉️" : "📱"}</div>
+      <div style={{ fontSize: 52 }}>{mode === "email" ? "️" : ""}</div>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, marginTop: 14 }}>{mode === "email" ? L("Verify your email", "Erősítsd meg az e-mail címed") : L("Verify your number", "Erősítsd meg a számodat")}</div>
       <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 8, lineHeight: 1.6, maxWidth: 320 }}>
         {sent
@@ -1634,7 +1674,7 @@ function PhoneVerifyGate() {
         ) : (
           <>
             <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))} inputMode="numeric" placeholder="• • • • • •"
-              style={{ textAlign: "center", letterSpacing: 8, fontSize: 22, fontFamily: F, fontWeight: 700, padding: "14px 10px", borderRadius: 15, border: `1.5px solid ${C.line}`, background: C.card, color: C.ink, outline: "none" }} />
+              style={{ textAlign: "center", letterSpacing: 8, fontSize: 22, fontFamily: F, fontWeight: 700, padding: "14px 10px", borderRadius: R.md, border: `1.5px solid ${C.line}`, background: C.card, color: C.ink, outline: "none" }} />
             <Btn full disabled={busy || code.length < 4} onClick={check}>{busy ? "..." : L("Verify", "Megerősítés")}</Btn>
             <Btn ghost full disabled={busy} onClick={() => send(mode === "email" ? undefined : "sms")}>{mode === "email" ? L("Resend code", "Kód újraküldése") : L("Resend as SMS", "Újraküldés SMS-ben")}</Btn>
           </>
@@ -1660,8 +1700,8 @@ function PaymentWait({ url, check, onPaid, onCancel }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(16,25,74,.65)", backdropFilter: "blur(4px)" }} />
-      <div className="cl-pop" style={{ position: "relative", background: C.card, borderRadius: 24, padding: "30px 24px", width: "100%", maxWidth: 340, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
-        <div style={{ fontSize: 44 }}>💳</div>
+      <div className="cl-pop" style={{ position: "relative", background: C.card, borderRadius: R.xl, padding: "30px 24px", width: "100%", maxWidth: 340, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+        <div style={{ fontSize: 44 }}></div>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink, marginTop: 10 }}>{L("Waiting for payment", "Várakozás a fizetésre")}{dots}</div>
         <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 8, lineHeight: 1.6 }}>
           {L("Finish paying in the secure payment window that just opened. This screen updates automatically.", "Fejezd be a fizetést a most megnyílt biztonságos fizetési ablakban. Ez a képernyő automatikusan frissül.")}
@@ -1678,7 +1718,7 @@ function PaymentWait({ url, check, onPaid, onCancel }) {
 /* ── Profile sheet (all roles) ────────────────────────────── */
 
 function ProfileSheet({ close }) {
-  const { session, updateProfile, deleteAccount, logout, t, lang, setLang } = useStore();
+  const { session, updateProfile, deleteAccount, logout, t, lang, setLang, companies, updateCompany } = useStore();
   const toast = useToast();
   const [f, setF] = useState({ name: session.name || "", phone: session.phone || "", custType: session.custType || "resident", address: session.address || "", paymentMethod: session.paymentMethod || "card", documents: session.documents || [] });
   const wantsUpgrade = session.role === "customer" && session.custType !== "student" && f.custType === "student";
@@ -1686,11 +1726,36 @@ function ProfileSheet({ close }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  /* A company owner's business identity lives here, next to their personal
+     details, because that is what a "profile" is: who you are. How the business
+     RUNS — where it works, when it is open — stays on the Setup screen, which
+     is the thing they come back to. Which field is which is decided once, in
+     COMPANY_FIELDS. */
+  const myCo = session.role === "company" ? (companies || []).find((c) => c.id === session.companyId) : null;
+  const [cf, setCf] = useState(() => {
+    const src = myCo || {};
+    return Object.fromEntries(fieldsFor("profile").map((x) => [x.id, src[x.id] ?? ""]));
+  });
+  const [coBusy, setCoBusy] = useState(false);
+  const saveCompany = async () => {
+    if (!String(cf.name || "").trim()) return toast(L("Company name is required", "A cégnév kötelező"), "error");
+    setCoBusy(true);
+    const res = await updateCompany({
+      name: String(cf.name).trim(), tagline: cf.tagline, contactPhone: cf.contact_phone,
+      taxId: cf.tax_id, regNumber: cf.reg_number, googlePlaceId: cf.google_place_id,
+      billingName: cf.billing_name, billingZip: cf.billing_zip, billingCity: cf.billing_city,
+      billingAddress: cf.billing_address, billingEmail: cf.billing_email,
+    });
+    setCoBusy(false);
+    if (res?.error) toast(res.error, "error");
+    else toast(L("Business details saved", "Céges adatok mentve"));
+  };
+
   const save = async () => {
     setBusy(true);
     if (wantsUpgrade && upgradeDocs.length === 0) { toast(L("Upload your student card photo first", "Előbb töltsd fel a diákigazolvány fotóját"), "error"); return; }
     const res = await updateProfile({ full_name: f.name, phone: f.phone, ...(session.role === "customer" ? { customer_type: f.custType, address: f.address, payment_method: f.paymentMethod, ...(wantsUpgrade ? { documents: upgradeDocs } : {}) } : {}), ...(session.role === "employee" ? { documents: f.documents } : {}) });
-    if (!res?.error && wantsUpgrade) { toast(L("Card sent for verification — discount activates once approved 🎓", "Igazolvány beküldve — a kedvezmény jóváhagyás után aktiválódik 🎓")); }
+    if (!res?.error && wantsUpgrade) { toast(L("Card sent for verification — discount activates once approved", "Igazolvány beküldve — a kedvezmény jóváhagyás után aktiválódik")); }
     setBusy(false);
     if (res?.error) toast(res.error, "error");
     else { toast(t("profile.updated")); close(); }
@@ -1698,12 +1763,12 @@ function ProfileSheet({ close }) {
 
   return (
     <Sheet title={t("profile.title")} close={close}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, background: C.bg, borderRadius: 16, padding: "14px 16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, background: C.bg, borderRadius: R.lg, padding: "14px 16px", marginBottom: 20 }}>
         <Avatar name={session.name} size={48} color={C.navySoft} />
         <div>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink }}>{session.name}</div>
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
-            {session.role === "customer" ? (session.custType === "student" ? L("🎓 Student", "🎓 Diák") : L("🏡 Resident", "🏡 Lakos")) : session.role === "employee" ? L("🧽 Cleaner", "🧽 Takarító") : session.role === "admin" ? L("🛡️ Platform admin", "🛡️ Platform admin") : L("🏢 Company admin", "🏢 Cég admin")}
+            {session.role === "customer" ? (session.custType === "student" ? L("Student", "Diák") : L("Resident", "Lakos")) : session.role === "employee" ? L("Cleaner", "Takarító") : session.role === "admin" ? L("️ Platform admin", "️ Platform admin") : L("Company admin", "Cég admin")}
           </div>
         </div>
       </div>
@@ -1714,9 +1779,9 @@ function ProfileSheet({ close }) {
         <div style={{ marginBottom: 13 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.accountType")}</div>
           <div style={{ display: "flex", gap: 10 }}>
-            {[{ id: "student", label: L("🎓 Student", "🎓 Diák"), sub: L("Save up to 20%", "Akár 20% kedvezmény") }, { id: "resident", label: L("🏡 Resident", "🏡 Lakos"), sub: L("Standard pricing", "Normál árazás") }].map((o) => (
+            {[{ id: "student", label: L("Student", "Diák"), sub: L("Save up to 20%", "Akár 20% kedvezmény") }, { id: "resident", label: L("Resident", "Lakos"), sub: L("Standard pricing", "Normál árazás") }].map((o) => (
               <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{
-                flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: 14, cursor: "pointer",
+                flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: R.md, cursor: "pointer",
                 border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent",
                 background: f.custType === o.id ? C.card : C.bg, boxShadow: f.custType === o.id ? "0 2px 10px rgba(27,42,107,.12)" : "none",
               }}>
@@ -1726,7 +1791,7 @@ function ProfileSheet({ close }) {
             ))}
           </div>
           {wantsUpgrade && (
-            <div style={{ marginTop: 10, background: C.amberSoft, borderRadius: 14, padding: "12px 14px" }}>
+            <div style={{ marginTop: 10, background: C.amberSoft, borderRadius: R.md, padding: "12px 14px" }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 6 }}>{L("Student card photo required", "Diákigazolvány fotó szükséges")}</div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>{L("Our team verifies it — the discount activates after approval.", "Csapatunk ellenőrzi — a kedvezmény jóváhagyás után aktiválódik.")}</div>
               <DocUpload docs={upgradeDocs} onChange={setUpgradeDocs} label={L("Student card", "Diákigazolvány")} />
@@ -1746,7 +1811,7 @@ function ProfileSheet({ close }) {
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.paymentMethod")}</div>
             <div style={{ display: "flex", gap: 10 }}>
               {(isLive ? [{ id: "card", label: t("profile.card"), sub: t("profile.cardSub") }] : [{ id: "cash", label: t("profile.cash"), sub: t("profile.cashSub") }, { id: "card", label: t("profile.card"), sub: t("profile.cardSub") }]).map((o) => (
-                <button key={o.id} onClick={() => setF({ ...f, paymentMethod: o.id })} style={{ flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: 14, cursor: "pointer", border: f.paymentMethod === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: f.paymentMethod === o.id ? C.card : C.bg, boxShadow: f.paymentMethod === o.id ? "0 2px 10px rgba(27,42,107,.12)" : "none" }}>
+                <button key={o.id} onClick={() => setF({ ...f, paymentMethod: o.id })} style={{ flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: R.md, cursor: "pointer", border: f.paymentMethod === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: f.paymentMethod === o.id ? C.card : C.bg, boxShadow: f.paymentMethod === o.id ? "0 2px 10px rgba(27,42,107,.12)" : "none" }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{o.label}</div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>{o.sub}</div>
                 </button>
@@ -1770,18 +1835,51 @@ function ProfileSheet({ close }) {
 
       <div style={{ marginBottom: 13 }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.language")}</div>
-        <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 14, border: `1.5px solid ${C.line}`, background: C.bg, fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, cursor: "pointer", appearance: "none", WebkitAppearance: "none", outline: "none" }}>
+        <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: R.md, border: `1.5px solid ${C.line}`, background: C.bg, fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, cursor: "pointer", appearance: "none", WebkitAppearance: "none", outline: "none" }}>
           {LANGS.map((o) => <option key={o.id} value={o.id}>{o.label} · {o.name}</option>)}
         </select>
       </div>
 
       {!isLive && (
-        <div style={{ background: C.mintSoft, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontFamily: B, fontSize: 11, color: C.greenDeep }}>
+        <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "10px 14px", marginBottom: 14, fontFamily: B, fontSize: 11, color: C.greenDeep }}>
           Demo mode — changes persist for this session only.
         </div>
       )}
 
       <Btn full disabled={busy || !f.name.trim()} onClick={save}>{busy ? t("common.saving") : t("profile.saveProfile")}</Btn>
+
+      {/* A company owner's business details, rendered straight from
+          COMPANY_FIELDS. Saved separately from the personal profile because
+          they go to a different table — one button that half-writes two records
+          is worse than two buttons that each finish. */}
+      {myCo && (
+        <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 3 }}>
+            {L("Your business", "A céged")}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+            {L("Who you are and how we invoice you. Where and when you work is on the Setup screen.",
+               "Ki vagy és hogyan számlázunk. Hol és mikor dolgozol, azt a Beállítás képernyőn add meg.")}
+          </div>
+
+          <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint, margin: "0 0 8px" }}>
+            {L("Details", "Adatok")}
+          </div>
+          <CompanyFields screen="profile" group="identity" f={cf} setF={setCf} />
+
+          <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint, margin: "14px 0 8px" }}>
+            {L("Invoicing", "Számlázás")}
+          </div>
+          <CompanyFields screen="profile" group="billing" f={cf} setF={setCf} />
+
+          <div style={{ marginTop: 14 }}>
+            <Btn full disabled={coBusy} onClick={saveCompany}>
+              {coBusy ? t("common.saving") : L("Save business details", "Céges adatok mentése")}
+            </Btn>
+          </div>
+        </div>
+      )}
+
       <div style={{ marginTop: 10 }}>
         <Btn ghost full onClick={() => { close(); logout(); }}>{t("common.logout")}</Btn>
       </div>
@@ -1913,7 +2011,7 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
       <div style={{ display: "flex", gap: 8 }}>
         {isPhone && !verified && (
           <select value={cc} onChange={(e) => setCc(e.target.value)} disabled={disabled}
-            style={{ width: 112, flexShrink: 0, padding: "13px 8px", borderRadius: 14, fontFamily: B, fontSize: 13,
+            style={{ width: 112, flexShrink: 0, padding: "13px 8px", borderRadius: R.md, fontFamily: B, fontSize: 13,
                      border: `1.5px solid ${C.line}`, background: C.bg, color: C.ink, outline: "none" }}>
             {dialCodesFor(getLang()).map((x) => <option key={x.c} value={x.c}>{dialLabel(x, getLang())}</option>)}
           </select>
@@ -1924,12 +2022,12 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
           onChange={(e) => { if (verified) return; if (isPhone) setLocal(e.target.value); else onChange(e); }}
           readOnly={verified} disabled={disabled}
           inputMode={isPhone ? "tel" : "email"} autoCapitalize="none" autoCorrect="off"
-          style={{ flex: 1, minWidth: 0, padding: "13px 14px", borderRadius: 14, fontFamily: B, fontSize: 14,
+          style={{ flex: 1, minWidth: 0, padding: "13px 14px", borderRadius: R.md, fontFamily: B, fontSize: 14,
                    border: `1.5px solid ${verified ? C.green + "66" : phoneBad ? C.coral : C.line}`,
                    background: verified ? C.mintSoft : C.bg, color: C.ink }} />
         {!verified && (
           <button onClick={send} disabled={!enough || busy}
-            style={{ border: "none", borderRadius: 14, padding: "0 14px", cursor: enough && !busy ? "pointer" : "default",
+            style={{ border: "none", borderRadius: R.md, padding: "0 14px", cursor: enough && !busy ? "pointer" : "default",
                      background: enough && !busy ? C.navy : C.bg, color: enough && !busy ? "#fff" : C.inkFaint,
                      fontFamily: B, fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>
             {busy ? "…" : sent ? L("Resend", "Újraküldés") : L("Send code", "Kód kérése")}
@@ -1961,10 +2059,10 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
         <div style={{ display: "flex", gap: 8, marginTop: 9 }}>
           <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))}
             inputMode="numeric" placeholder={L("6-digit code", "6 jegyű kód")}
-            style={{ flex: 1, padding: "13px 14px", borderRadius: 14, border: `1.5px solid ${C.line}`, background: C.bg,
+            style={{ flex: 1, padding: "13px 14px", borderRadius: R.md, border: `1.5px solid ${C.line}`, background: C.bg,
                      color: C.ink, fontFamily: B, fontSize: 16, letterSpacing: 3, textAlign: "center" }} />
           <button onClick={check} disabled={code.length < 4 || busy}
-            style={{ border: "none", borderRadius: 14, padding: "0 18px", cursor: code.length >= 4 ? "pointer" : "default",
+            style={{ border: "none", borderRadius: R.md, padding: "0 18px", cursor: code.length >= 4 ? "pointer" : "default",
                      background: code.length >= 4 && !busy ? C.mint : C.bg, color: code.length >= 4 && !busy ? C.navyDeep : C.inkFaint,
                      fontFamily: B, fontWeight: 700, fontSize: 12.5 }}>
             {busy ? "…" : L("Verify", "Igazolás")}
@@ -1974,7 +2072,7 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
 
       {err && (
         <div style={{ fontFamily: B, fontSize: 11.5, color: C.coralText || C.coral, background: C.coralSoft,
-                      borderRadius: 10, padding: "8px 11px", marginTop: 8, lineHeight: 1.5 }}>{err}</div>
+                      borderRadius: R.sm, padding: "8px 11px", marginTop: 8, lineHeight: 1.5 }}>{err}</div>
       )}
     </div>
   );
@@ -2042,7 +2140,7 @@ function Auth() {
         {/* Three different people reach this screen and only one of them is a
             student. A cleaner reading "we are verifying your student card"
             reasonably concludes something has gone wrong. */}
-        <div className="cl-pop" style={{ fontSize: 58 }}>{role === "employee" ? "🧽" : role === "company" ? "🏢" : "🎓"}</div>
+        <div className="cl-pop" style={{ fontSize: 58 }}>{role === "employee" ? "" : role === "company" ? "" : ""}</div>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>
           {role === "employee" ? L("You're in — pending approval", "Kész — jóváhagyásra vár") : L("Application received!", "Jelentkezés beérkezett!")}
         </div>
@@ -2079,10 +2177,10 @@ function Auth() {
             {roles.map((r, i) => (
               <button key={r.id} onClick={() => { setRole(r.id); setMode("signup"); setErr(null); }} className="cl-rise cl-card" style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 14, textAlign: "left",
-                background: C.card, border: "none", borderRadius: 20, padding: "16px 18px",
+                background: C.card, border: "none", borderRadius: R.lg, padding: "16px 18px",
                 marginBottom: 12, cursor: "pointer", boxShadow: "0 8px 24px rgba(0,0,0,.22)", animationDelay: `${.2 + i * .09}s`,
               }}>
-                <div style={{ width: 48, height: 48, borderRadius: 15, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.navySoft }}><Ic name={r.icon} size={24} /></div>
+                <div style={{ width: 48, height: 48, borderRadius: R.md, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.navySoft }}><Ic name={r.icon} size={24} /></div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink }}>{r.title}</div>
                   <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{r.sub}</div>
@@ -2097,7 +2195,7 @@ function Auth() {
             </button>
           )}
           {!isLive && store.demoSwitchRole && (
-            <button onClick={() => store.demoSwitchRole("admin")} style={{ background: "none", border: `1px solid rgba(255,255,255,.18)`, borderRadius: 12, padding: "9px 0", width: "100%", fontFamily: B, fontSize: 12, fontWeight: 700, color: "#C9D2F5", cursor: "pointer", marginTop: 10 }}>
+            <button onClick={() => store.demoSwitchRole("admin")} style={{ background: "none", border: `1px solid rgba(255,255,255,.18)`, borderRadius: R.md, padding: "9px 0", width: "100%", fontFamily: B, fontSize: 12, fontWeight: 700, color: "#C9D2F5", cursor: "pointer", marginTop: 10 }}>
               {t("auth.peekAdmin")}
             </button>
           )}
@@ -2109,9 +2207,9 @@ function Auth() {
     );
 
   const h = {
-    customer: { icon: "🛋️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Book a verified cleaner in a few taps.", "Foglalj ellenőrzött takarítót pár koppintással.") },
-    employee: { icon: "🧽", title: L("Cleaner sign-up", "Takarító regisztráció"), sub: L("Use the invite code your company gave you.", "Használd a cégedtől kapott meghívókódot.") },
-    company: { icon: "🏢", title: L("Register your company", "Cég regisztrálása"), sub: L("Free to list — manage your team and bookings.", "A listázás ingyenes — kezeld a csapatod és a foglalásaid.") },
+    customer: { icon: "️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Book a verified cleaner in a few taps.", "Foglalj ellenőrzött takarítót pár koppintással.") },
+    employee: { icon: "", title: L("Cleaner sign-up", "Takarító regisztráció"), sub: L("Use the invite code your company gave you.", "Használd a cégedtől kapott meghívókódot.") },
+    company: { icon: "", title: L("Register your company", "Cég regisztrálása"), sub: L("Free to list — manage your team and bookings.", "A listázás ingyenes — kezeld a csapatod és a foglalásaid.") },
   }[role];
 
   /* With verification on, the account must not be creatable until both proofs
@@ -2130,15 +2228,15 @@ function Auth() {
   return (
     <div className="cl-fade" style={{ height: "100dvh", minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", padding: "0 26px", overflow: "hidden", boxSizing: "border-box" }}>
       <div style={{ paddingTop: "calc(22px + env(safe-area-inset-top))", flexShrink: 0 }}>
-        <button onClick={() => setRole(null)} style={{ background: C.card, border: "none", width: 38, height: 38, borderRadius: 13, fontSize: 16, cursor: "pointer", boxShadow: "0 2px 8px rgba(20,28,58,.08)" }}>←</button>
+        <button onClick={() => setRole(null)} style={{ background: C.card, border: "none", width: 38, height: 38, borderRadius: R.md, fontSize: 16, cursor: "pointer", boxShadow: "0 2px 8px rgba(20,28,58,.08)" }}>←</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", paddingTop: 24 }}>
-        <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: 23, background: `linear-gradient(135deg,${C.navy},${C.navyMid})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>{h.icon}</div>
+        <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: R.lg, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>{h.icon}</div>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>{h.title}</div>
         <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.6 }}>{h.sub}</div>
         <div style={{ marginTop: 22 }}>
           {!isLive && (
-            <div style={{ background: C.mintSoft, borderRadius: 14, padding: "11px 14px", marginBottom: 14, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.55 }}>
+            <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "11px 14px", marginBottom: 14, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.55 }}>
               <b>{L("Demo mode", "Demó mód")}</b> — {L("no email needed. Run the backend (see README) and set VITE_USE_API=true for real accounts.", "nincs szükség e-mailre. Indítsd el a szervert (lásd README), és állítsd be a VITE_USE_API=true értéket az éles fiókokhoz.")}
             </div>
           )}
@@ -2147,9 +2245,9 @@ function Auth() {
               <Field label={L("Your name", "A neved")} placeholder={L("e.g. Musa Gillani", "pl. Kovács Anna")} value={f.name} onChange={set("name")} />
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("I am a…", "Én egy…")}</div>
               <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                {[{ id: "student", icon: "🎓", t: L("Student", "Diák"), s: L("Uni email verification · save up to 20%", "Egyetemi e-mail igazolás · akár 20% kedvezmény") },
-                  { id: "resident", icon: "🏡", t: L("Resident", "Lakos"), s: L("Standard pricing, full service", "Normál árazás, teljes szolgáltatás") }].map((o) => (
-                  <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{ flex: 1, textAlign: "left", padding: 14, borderRadius: 17, cursor: "pointer", border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)" }}>
+                {[{ id: "student", icon: "", t: L("Student", "Diák"), s: L("Uni email verification · save up to 20%", "Egyetemi e-mail igazolás · akár 20% kedvezmény") },
+                  { id: "resident", icon: "", t: L("Resident", "Lakos"), s: L("Standard pricing, full service", "Normál árazás, teljes szolgáltatás") }].map((o) => (
+                  <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{ flex: 1, textAlign: "left", padding: 14, borderRadius: R.lg, cursor: "pointer", border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)" }}>
                     <div style={{ fontSize: 22 }}>{o.icon}</div>
                     <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginTop: 6 }}>{o.t}</div>
                     <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 4, lineHeight: 1.45 }}>{o.s}</div>
@@ -2212,7 +2310,7 @@ function Auth() {
                 country={f.country || getCountry()} value={f.city}
                 onChange={(v) => setF((p) => ({ ...p, city: v }))} />
               <Field label={L("Tax number (adószám) *", "Adószám *")} placeholder="12345678-1-42"
-                hint={f.taxId.trim() ? (huTaxIdValid(f.taxId) ? "✅ " + L("Valid tax number", "Érvényes adószám") : "❌ " + L("Invalid — check the digits (format: 12345678-1-42)", "Hibás — ellenőrizd a számokat (formátum: 12345678-1-42)")) : L("We verify this against the official checksum.", "A hivatalos ellenőrzőszám alapján ellenőrizzük.")}
+                hint={f.taxId.trim() ? (huTaxIdValid(f.taxId) ? "" + L("Valid tax number", "Érvényes adószám") : "" + L("Invalid — check the digits (format: 12345678-1-42)", "Hibás — ellenőrizd a számokat (formátum: 12345678-1-42)")) : L("We verify this against the official checksum.", "A hivatalos ellenőrzőszám alapján ellenőrizzük.")}
                 value={f.taxId} onChange={set("taxId")} />
               <Field label={L("Company registration no.", "Cégjegyzékszám")} placeholder="e.g. 09-09-123456" value={f.regNumber} onChange={set("regNumber")} />
               <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contactPhone} onChange={(v) => setF((p) => ({ ...p, contactPhone: v }))} />
@@ -2222,8 +2320,8 @@ function Auth() {
                 docs={f.documents}
                 onChange={(docs) => setF({ ...f, documents: docs })}
               />
-              <div style={{ background: C.navyChip, borderRadius: 13, padding: "10px 13px", marginBottom: 14, fontFamily: B, fontSize: 11, color: C.navySoft, lineHeight: 1.5 }}>
-                🛡️ These details are submitted for verification. You can sign in straight away, but your company is listed to customers only after an admin approves your documents.
+              <div style={{ background: C.navyChip, borderRadius: R.md, padding: "10px 13px", marginBottom: 14, fontFamily: B, fontSize: 11, color: C.navySoft, lineHeight: 1.5 }}>
+               ️ These details are submitted for verification. You can sign in straight away, but your company is listed to customers only after an admin approves your documents.
               </div>
             </>
           )}
@@ -2239,7 +2337,7 @@ function Auth() {
               <Field label={L("Password", "Jelszó")} type="password" placeholder={L("Min. 6 characters", "Legalább 6 karakter")} value={f.password} onChange={set("password")} />
             </>
           )}
-          {err && <div style={{ background: C.coralSoft, borderRadius: 13, padding: "11px 14px", fontFamily: B, fontSize: 12, color: C.coralText, marginBottom: 12 }}>{err}</div>}
+          {err && <div style={{ background: C.coralSoft, borderRadius: R.md, padding: "11px 14px", fontFamily: B, fontSize: 12, color: C.coralText, marginBottom: 12 }}>{err}</div>}
         </div>
       </div>
       <div style={{ paddingTop: 12, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", flexShrink: 0 }}>
@@ -2256,7 +2354,7 @@ function Auth() {
             </button>
           )}
           {mode === "login" && forgot === 1 && (
-            <div style={{ background: C.card, borderRadius: 15, padding: 14, marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+            <div style={{ background: C.card, borderRadius: R.md, padding: 14, marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
               <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>{L("We emailed a 6-digit code to", "Elküldtük a 6 jegyű kódot ide:")} <b>{f.email}</b></div>
               <Field label={L("Code from the email", "Kód az e-mailből")} inputMode="numeric" placeholder="• • • • • •" value={fpCode} onChange={(e) => setFpCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))} />
               <Field label={L("New password", "Új jelszó")} type="password" placeholder={L("Min. 6 characters", "Min. 6 karakter")} value={fpNew} onChange={(e) => setFpNew(e.target.value)} />
@@ -2306,8 +2404,8 @@ function CityPickerSheet({ close, city, onPick }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
             {m.cities.map((c) => (
               <button key={c} onClick={() => { onPick(c); close(); }}
-                style={{ padding: "13px 10px", borderRadius: 14, border: city === c ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.05)", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>
-                {city === c ? "📍 " : ""}{c}
+                style={{ padding: "13px 10px", borderRadius: R.md, border: city === c ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.05)", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>
+                {city === c ? "" : ""}{c}
               </button>
             ))}
           </div>
@@ -2377,11 +2475,11 @@ function CustomerHome({ openBooking, openProfile }) {
             <Octo size={32} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                {t("home.hi")} {session.name.split(" ")[0]} 👋
-                <span style={{ fontSize: 11, color: C.mint, background: "rgba(94,230,168,.16)", borderRadius: 99, padding: "2px 8px", fontFamily: B, fontWeight: 700 }}>✎</span>
+                {t("home.hi")} {session.name.split(" ")[0]}
+                <span style={{ fontSize: 11, color: C.mint, background: "rgba(94,230,168,.16)", borderRadius: 99, padding: "2px 8px", fontFamily: B, fontWeight: 700 }}></span>
               </div>
               <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 4, maxWidth: 220 }}>
-                <span style={{ fontFamily: B, fontSize: 11.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📍 {session.address ? session.address : t("home.setAddress")}</span>
+                <span style={{ fontFamily: B, fontSize: 11.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.address ? session.address : t("home.setAddress")}</span>
                 <span style={{ color: C.mint, fontSize: 11 }}>▾</span>
               </div>
             </div>
@@ -2398,11 +2496,11 @@ function CustomerHome({ openBooking, openProfile }) {
             {t("home.whatSparkle")}
           </div>
           <span style={{ flexShrink: 0, fontFamily: F, fontWeight: 700, fontSize: 12, color: "#C9D2F5", padding: "7px 4px" }}>
-            📍 {city}
+            {city}
           </span>
         </div>
-        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 16, padding: "12px 16px", boxShadow: "0 10px 30px rgba(0,0,0,.18)" }}>
-          <span style={{ fontSize: 15, opacity: .55 }}>🔍</span>
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: R.lg, padding: "12px 16px", boxShadow: "0 10px 30px rgba(0,0,0,.18)" }}>
+          <span style={{ fontSize: 15, opacity: .55 }}></span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("home.search")}
             style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 14, color: C.ink, background: "transparent" }} />
           {q && <button onClick={() => setQ("")} style={{ border: "none", background: "none", color: C.inkFaint, cursor: "pointer", fontSize: 16 }}>✕</button>}
@@ -2434,7 +2532,7 @@ function CustomerHome({ openBooking, openProfile }) {
              search for "laundry" returns a cleaning company with no explanation. */
           const hitSvcs = matchesSearch(co, services, q).services;
           return (
-            <div key={co.id} onClick={() => openBooking(co)} className="cl-card cl-rise" style={{ background: C.card, borderRadius: 22, marginBottom: 14, overflow: "hidden", cursor: "pointer", boxShadow: "0 4px 18px rgba(20,28,58,.07)", animationDelay: `${i * .07}s` }}>
+            <div key={co.id} onClick={() => openBooking(co)} className="cl-card cl-rise" style={{ background: C.card, borderRadius: R.lg, marginBottom: 14, overflow: "hidden", cursor: "pointer", boxShadow: "0 4px 18px rgba(20,28,58,.07)", animationDelay: `${i * .07}s` }}>
               <div style={{ height: 70, background: coverOf(co), display: "flex", alignItems: "center", padding: "0 16px" }}>
                 <CompanyLogo co={co} size={46} radius={14} />
               </div>
@@ -2446,7 +2544,7 @@ function CustomerHome({ openBooking, openProfile }) {
                   </div>
                   {availOf(co)?.paused && <Pill bg={C.amberSoft} color={C.amber}>{L("Fully booked", "Betelt")}</Pill>}
                   {promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{promoOf(co).pct}%{promoOf(co).label ? ` ${promoOf(co).label}` : ""}</Pill>}
-                  {isStudent && !promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}% 🎓</Pill>}
+                  {isStudent && !promoOf(co) && <Pill bg={C.mintSoft} color={C.green}>−{co.student_discount}%</Pill>}
                   {(() => {
                     /* Only worth showing when it beats what is already on the
                        card — two pills saying different numbers is worse than
@@ -2474,7 +2572,7 @@ function CustomerHome({ openBooking, openProfile }) {
                 )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Star size={12} /> <b style={{ color: C.ink }}>{co.rating}</b> ({co.review_count})</span>
-                  <><span>·</span><span>📍 {co.city || ""}{co.area ? ` · ${co.area}` : ""}{co.distance_km != null ? ` · ${co.distance_km} km` : ""}</span></>
+                  <><span>·</span><span>{co.city || ""}{co.area ? ` · ${co.area}` : ""}{co.distance_km != null ? ` · ${co.distance_km} km` : ""}</span></>
                   {minPrice != null && <><span>·</span><span style={{ fontWeight: 700, color: C.navy }}>{fill(L("from {0}", "{0}-tól"), huf(minPrice))}</span></>}
                 </div>
                 {(hasHourly || hasSub) && (
@@ -2489,7 +2587,7 @@ function CustomerHome({ openBooking, openProfile }) {
         })}
         {list.length === 0 && (
           <div style={{ textAlign: "center", padding: "50px 30px" }}>
-            <div style={{ fontSize: 40 }}>🫧</div>
+            <div style={{ fontSize: 40 }}></div>
             <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, marginTop: 10 }}>
               {q ? t("home.noMatch") : fill(L("No companies in {0} yet — be the first! Companies can register free from the login screen.", "{0} városban még nincs partnerünk — cégek ingyen regisztrálhatnak a belépő képernyőről."), city)}
             </div>
@@ -2568,10 +2666,10 @@ function BookingFlow({ company, close, onBooked }) {
               <CompanyLogo co={company} size={38} radius={12} />
               <div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink }}>{company.name}</div>
-                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>★ {company.rating} · {company.area}</div>
+                <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>{company.rating} · {company.area}</div>
               </div>
             </div>
-            <button onClick={close} style={{ width: 32, height: 32, borderRadius: 11, border: "none", background: C.card, fontSize: 14, cursor: "pointer", color: C.inkSoft }}>✕</button>
+            <button onClick={close} style={{ width: 32, height: 32, borderRadius: R.sm, border: "none", background: C.card, fontSize: 14, cursor: "pointer", color: C.inkSoft }}>✕</button>
           </div>
           <div style={{ display: "flex", alignItems: "center", margin: "15px 0 3px" }}>
             {labels.map((l, i) => (
@@ -2580,7 +2678,7 @@ function BookingFlow({ company, close, onBooked }) {
                   <div style={{ width: 25, height: 25, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, fontWeight: 700, fontSize: 11, transition: "all .3s", background: step > i ? C.mint : step === i ? C.navy : C.card, color: step > i ? C.navyDeep : step === i ? "#fff" : C.inkFaint, border: step >= i ? "none" : `1.5px solid ${C.line}` }}>{step > i ? "✓" : i + 1}</div>
                   <span style={{ fontFamily: B, fontSize: 9, fontWeight: 700, color: step === i ? C.navy : C.inkFaint }}>{l}</span>
                 </div>
-                {i < 3 && <div style={{ flex: 1, height: 2, margin: "0 4px 14px", borderRadius: 9, background: step > i ? C.mint : C.line }} />}
+                {i < 3 && <div style={{ flex: 1, height: 2, margin: "0 4px 14px", borderRadius: R.sm, background: step > i ? C.mint : C.line }} />}
               </React.Fragment>
             ))}
           </div>
@@ -2590,39 +2688,39 @@ function BookingFlow({ company, close, onBooked }) {
           {step === 0 && (
             <>
               {svcs.map((s) => (
-                <button key={s.id} onClick={() => pickSvc(s)} className="cl-fade" style={{ width: "100%", textAlign: "left", display: "flex", gap: 12, padding: 14, borderRadius: 17, marginBottom: 10, border: svc?.id === s.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, cursor: "pointer", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 13, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{s.icon}</div>
+                <button key={s.id} onClick={() => pickSvc(s)} className="cl-fade" style={{ width: "100%", textAlign: "left", display: "flex", gap: 12, padding: 14, borderRadius: R.lg, marginBottom: 10, border: svc?.id === s.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, cursor: "pointer", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+                  <div style={{ width: 42, height: 42, borderRadius: R.md, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{s.icon}</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>{s.name}</span>
                       <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(s)}</span>
                     </div>
-                    <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{s.description} · ⏱ ~{s.minutes} {L("min", "perc")}{s.pricing_type === "subscription" ? ` · 🔁 ${everyP(s.period)}` : s.pricing_type === "hourly" ? fill(L(" · pick {0}–{1} h", " · {0}–{1} óra választható"), s.min_hours || 2, s.max_hours || 8) : ""}</div>
-                    {isStudent && <div style={{ fontFamily: B, fontSize: 10.5, color: C.green, fontWeight: 700, marginTop: 4 }}>🎓 {L("You pay:", "A te árad:")} {youPay(s)}</div>}
+                    <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{s.description} · ~{s.minutes} {L("min", "perc")}{s.pricing_type === "subscription" ? ` · ${everyP(s.period)}` : s.pricing_type === "hourly" ? fill(L(" · pick {0}–{1} h", " · {0}–{1} óra választható"), s.min_hours || 2, s.max_hours || 8) : ""}</div>
+                    {isStudent && <div style={{ fontFamily: B, fontSize: 10.5, color: C.green, fontWeight: 700, marginTop: 4 }}>{L("You pay:", "A te árad:")} {youPay(s)}</div>}
                   </div>
                 </button>
               ))}
               {isHourly && (
-                <div className="cl-fade" style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+                <div className="cl-fade" style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 10, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 12 }}>{L("How many hours do you need?", "Hány órára van szükséged?")}</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <button onClick={() => setHours((h) => Math.max(svc.min_hours || 2, h - 1))} style={{ width: 44, height: 44, borderRadius: 14, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>−</button>
+                    <button onClick={() => setHours((h) => Math.max(svc.min_hours || 2, h - 1))} style={{ width: 44, height: 44, borderRadius: R.md, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>−</button>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 26, color: C.navy }}>{hours} <span style={{ fontSize: 14 }}>{L("hours", "óra")}</span></div>
                       <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{huf(svc.hourly_rate_huf)} × {hours} = <b style={{ color: C.ink }}>{huf((svc.hourly_rate_huf || 0) * hours)}</b></div>
                     </div>
-                    <button onClick={() => setHours((h) => Math.min(svc.max_hours || 8, h + 1))} style={{ width: 44, height: 44, borderRadius: 14, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>+</button>
+                    <button onClick={() => setHours((h) => Math.min(svc.max_hours || 8, h + 1))} style={{ width: 44, height: 44, borderRadius: R.md, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>+</button>
                   </div>
                 </div>
               )}
               {isUnit && (
-                <div className="cl-fade" style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+                <div className="cl-fade" style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 12, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 12 }}>
                     {L("How much do you need cleaned?", "Mennyit kell kitisztítani?")}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <button onClick={() => setUnits((u) => Math.max(unitMin, Math.round((u - 1) * 100) / 100))}
-                      style={{ width: 44, height: 44, borderRadius: 14, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>−</button>
+                      style={{ width: 44, height: 44, borderRadius: R.md, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>−</button>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 26, color: C.navy }}>
                         {units} <span style={{ fontSize: 14 }}>{svc.unit_label}</span>
@@ -2632,7 +2730,7 @@ function BookingFlow({ company, close, onBooked }) {
                       </div>
                     </div>
                     <button onClick={() => setUnits((u) => Math.min(unitMax, Math.round((u + 1) * 100) / 100))}
-                      style={{ width: 44, height: 44, borderRadius: 14, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>+</button>
+                      style={{ width: 44, height: 44, borderRadius: R.md, border: "none", background: C.bg, fontSize: 22, fontWeight: 700, color: C.navy, cursor: "pointer" }}>+</button>
                   </div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
                     {L("An estimate is fine — the company checks it when they arrive.", "A becslés is elég — a cég a helyszínen ellenőrzi.")}
@@ -2640,15 +2738,15 @@ function BookingFlow({ company, close, onBooked }) {
                 </div>
               )}
               {isSub && (
-                <div className="cl-fade" style={{ background: C.mintSoft, borderRadius: 14, padding: "11px 14px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.5 }}>
-                  {fill(L("🔁 Subscription — recurs {0}. We schedule the first clean next; cancel anytime.", "🔁 Előfizetés — {0} ismétlődik. Most az első takarítást időzítjük; bármikor lemondhatod."), everyP(svc.period))}
+                <div className="cl-fade" style={{ background: C.mintSoft, borderRadius: R.md, padding: "11px 14px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, lineHeight: 1.5 }}>
+                  {fill(L("Subscription — recurs {0}. We schedule the first clean next; cancel anytime.", "Előfizetés — {0} ismétlődik. Most az első takarítást időzítjük; bármikor lemondhatod."), everyP(svc.period))}
                 </div>
               )}
               {revs.length > 0 && (
                 <>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "14px 0 8px" }}>{L("Recent reviews", "Friss értékelések")}</div>
                   {revs.slice(0, 3).map((r) => (
-                    <div key={r.id} style={{ background: C.card, borderRadius: 15, padding: 13, marginBottom: 8, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
+                    <div key={r.id} style={{ background: C.card, borderRadius: R.md, padding: 13, marginBottom: 8, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Avatar name={r.customer_name || "C"} size={28} />
                         <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink }}>{r.customer_name || L("Customer", "Ügyfél")}</span>
@@ -2665,10 +2763,10 @@ function BookingFlow({ company, close, onBooked }) {
           {step === 1 && (
             <div className="cl-fade">
               {(isHourly || isSub) && (
-                <div style={{ background: C.navyChip, borderRadius: 13, padding: "10px 13px", marginBottom: 12, fontFamily: B, fontSize: 11.5, color: C.navySoft, lineHeight: 1.5 }}>
+                <div style={{ background: C.navyChip, borderRadius: R.md, padding: "10px 13px", marginBottom: 12, fontFamily: B, fontSize: 11.5, color: C.navySoft, lineHeight: 1.5 }}>
                   {isHourly
-                    ? fill(L("⏱ Choose the day and start time for your {0}-hour clean.", "⏱ Válaszd ki a napot és a kezdési időt a {0} órás takarításhoz."), hours)
-                    : fill(L("🔁 Choose your recurring schedule — repeats {0}.", "🔁 Válaszd ki az ismétlődő időpontot — {0} ismétlődik."), everyP(svc.period))}
+                    ? fill(L("Choose the day and start time for your {0}-hour clean.", "Válaszd ki a napot és a kezdési időt a {0} órás takarításhoz."), hours)
+                    : fill(L("Choose your recurring schedule — repeats {0}.", "Válaszd ki az ismétlődő időpontot — {0} ismétlődik."), everyP(svc.period))}
                 </div>
               )}
 
@@ -2686,7 +2784,7 @@ function BookingFlow({ company, close, onBooked }) {
                   />
                   {day && (
                     <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 8, lineHeight: 1.5 }}>
-                      🔁 {cadenceLabel(svc.period, day)} — {L("after each completed visit, the next one is scheduled automatically. You can cancel anytime.", "minden befejezett alkalom után automatikusan időzítjük a következőt. Bármikor lemondhatod.")}
+                      {cadenceLabel(svc.period, day)} — {L("after each completed visit, the next one is scheduled automatically. You can cancel anytime.", "minden befejezett alkalom után automatikusan időzítjük a következőt. Bármikor lemondhatod.")}
                     </div>
                   )}
                 </>
@@ -2696,34 +2794,14 @@ function BookingFlow({ company, close, onBooked }) {
                     <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{L("Day", "Nap")}</span>
                     <span style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint }}>{L("Book up to 2 months ahead", "Két hónapra előre foglalhatsz")}</span>
                   </div>
-                  {/* Two months of days is too many to scroll blindly, so they are
-                      grouped by month and the strip snaps to whole weeks. */}
-                  <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 6, scrollSnapType: "x proximity" }} className="cl-noscroll">
-                    {Object.entries(DAYS.reduce((acc, d) => { (acc[d.monthKey] ||= []).push(d); return acc; }, {})).map(([mk, mdays]) => (
-                      <div key={mk} style={{ flex: "0 0 auto" }}>
-                        <div style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: "capitalize", marginBottom: 6, paddingLeft: 2 }}>{mdays[0].month}</div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          {mdays.map((d) => {
-                            const closed = dayClosed(availOf(company), d.iso);
-                            const full = !closed && openSlots(availOf(company), d.iso, svc?.id).length === 0;
-                            const off = closed || full;
-                            return (
-                              <button key={d.iso} disabled={off} onClick={() => setDay(d)}
-                                title={full ? L("Fully booked", "Teljesen betelt") : undefined}
-                                style={{ minWidth: 58, padding: "11px 0", borderRadius: 16, border: "none", scrollSnapAlign: "start",
-                                  opacity: off ? .3 : 1, cursor: off ? "not-allowed" : "pointer",
-                                  background: day?.iso === d.iso ? C.navy : C.card,
-                                  boxShadow: day?.iso === d.iso ? "0 4px 14px rgba(27,42,107,.3)" : "0 1px 5px rgba(20,28,58,.06)" }}>
-                                <div style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: day?.iso === d.iso ? "#9FB0E8" : C.inkFaint }}>{d.d}</div>
-                                <div style={{ fontFamily: F, fontSize: 16, fontWeight: 700, color: day?.iso === d.iso ? "#fff" : C.ink, marginTop: 2 }}>{d.n}</div>
-                                {d.label && <div style={{ fontFamily: B, fontSize: 8.5, fontWeight: 700, color: day?.iso === d.iso ? C.mint : C.navySoft, marginTop: 2 }}>{d.label}</div>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {/* A grid, not a rail. See MonthCalendar. */}
+                  <MonthCalendar
+                    days={DAYS}
+                    value={day}
+                    onPick={setDay}
+                    isClosed={(iso) => dayClosed(availOf(company), iso)}
+                    isFull={(iso) => openSlots(availOf(company), iso, svc?.id).length === 0}
+                  />
                 </>
               )}
 
@@ -2735,15 +2813,15 @@ function BookingFlow({ company, close, onBooked }) {
                   </div>
                 )}
                 {(day ? openSlots(availOf(company), day.iso, svc?.id) : []).map((s) => (
-                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.navy : C.card, color: slot === s ? "#fff" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(27,42,107,.28)" : "0 1px 5px rgba(20,28,58,.06)" }}>
+                  <button key={s} onClick={() => setSlot(s)} style={{ padding: "12px 0", borderRadius: R.md, border: "none", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, background: slot === s ? C.navy : C.card, color: slot === s ? "#fff" : C.ink, boxShadow: slot === s ? "0 4px 14px rgba(27,42,107,.28)" : "0 1px 5px rgba(20,28,58,.06)" }}>
                     {s}
                   </button>
                 ))}
               </div>
 
               {isSub && day && slot && (
-                <div style={{ background: C.mintSoft, borderRadius: 12, padding: "9px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.greenDeep, fontWeight: 600 }}>
-                  📅 {cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day.iso)}
+                <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "9px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.greenDeep, fontWeight: 600 }}>
+                  {cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day.iso)}
                 </div>
               )}
             </div>
@@ -2759,9 +2837,9 @@ function BookingFlow({ company, close, onBooked }) {
           {step === 3 && svc && (
             <div className="cl-fade" style={{ paddingTop: 6 }}>
               {svc?.fulfilment === "collection" && (
-                <div style={{ background: C.navyChip, borderRadius: 18, padding: "13px 16px", marginBottom: 12 }}>
+                <div style={{ background: C.navyChip, borderRadius: R.lg, padding: "13px 16px", marginBottom: 12 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 5 }}>
-                    🚚 {L("We collect and bring it back", "Elvisszük és visszahozzuk")}
+                    {L("We collect and bring it back", "Elvisszük és visszahozzuk")}
                   </div>
                   <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, lineHeight: 1.55 }}>
                     {L("We pick your items up at the time you chose above. You'll get them back about {d} days later, and we'll message you before we return them.", "A fent választott időpontban elvisszük a holmidat. Körülbelül {d} nap múlva kapod vissza, és a visszaszállítás előtt üzenünk.")
@@ -2771,7 +2849,7 @@ function BookingFlow({ company, close, onBooked }) {
               )}
 
               {/* ── What happens if you cancel. One line, no sliding scale. ── */}
-              <div style={{ background: C.card, borderRadius: 18, padding: "13px 16px", marginBottom: 12, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+              <div style={{ background: C.card, borderRadius: R.lg, padding: "13px 16px", marginBottom: 12, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 7 }}>
                   {L("If you need to cancel", "Ha le kell mondanod")}
                 </div>
@@ -2794,7 +2872,7 @@ function BookingFlow({ company, close, onBooked }) {
 
               {/* ── 5.4 What the company needs from you — acknowledged BEFORE paying ── */}
               {reqList.length > 0 && (
-                <div style={{ background: C.amberSoft, borderRadius: 18, padding: "14px 16px", marginBottom: 12 }}>
+                <div style={{ background: C.amberSoft, borderRadius: R.lg, padding: "14px 16px", marginBottom: 12 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 8 }}>
                     {L("Before they arrive", "Mielőtt megérkeznek")}
                   </div>
@@ -2814,7 +2892,7 @@ function BookingFlow({ company, close, onBooked }) {
                   </label>
                 </div>
               )}
-              <div style={{ background: C.card, borderRadius: 18, padding: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+              <div style={{ background: C.card, borderRadius: R.lg, padding: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 12.5, color: C.inkSoft }}>
                   <span>{svc.name}{isHourly ? ` · ${hours} ${L("h", "óra")} × ${huf(svc.hourly_rate_huf)}` : isUnit ? ` · ${units} ${svc.unit_label} × ${huf(svc.unit_price_huf)}` : isSub ? ` · ${everyP(svc.period)}` : ""}</span><span>{huf(gross)}</span>
                 </div>
@@ -2834,12 +2912,12 @@ function BookingFlow({ company, close, onBooked }) {
                 </div>
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 7, lineHeight: 1.6 }}>
                   {isSub
-                    ? <>🔁 {cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day?.iso)}<br />📍 {addr} · {isLive ? L("💳 Card per visit", "💳 Kártya alkalmanként") : L("💵 Cash each visit (demo)", "💵 Készpénz minden alkalommal (demo)")} · {L("renews after each visit", "minden alkalom után megújul")}</>
-                    : <>📅 {day?.label || dayLabel(day?.iso)} · {slot}<br />📍 {addr} · {isLive ? L("💳 Card payment", "💳 Kártyás fizetés") : L("💵 Cash (demo)", "💵 Készpénz (demo)")}</>}
+                    ? <>{cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day?.iso)}<br />{addr} · {isLive ? L("Card per visit", "Kártya alkalmanként") : L("Cash each visit (demo)", "Készpénz minden alkalommal (demo)")} · {L("renews after each visit", "minden alkalom után megújul")}</>
+                    : <>{day?.label || dayLabel(day?.iso)} · {slot}<br />{addr} · {isLive ? L("Card payment", "Kártyás fizetés") : L("Cash (demo)", "Készpénz (demo)")}</>}
                 </div>
               </div>
               {svc.tasks?.length > 0 && (
-                <div style={{ background: C.card, borderRadius: 15, padding: 14, marginTop: 10, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
+                <div style={{ background: C.card, borderRadius: R.md, padding: 14, marginTop: 10, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{fill(L("Cleaner will complete ({0} tasks)", "A takarító elvégzi ({0} feladat)"), svc.tasks.length)}</div>
                   {svc.tasks.map((t, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 5 }}>
@@ -2856,7 +2934,7 @@ function BookingFlow({ company, close, onBooked }) {
           <PaymentWait
             url={payWait.url}
             check={() => getPaymentStatus(payWait.row.id)}
-            onPaid={() => { toast(L("Payment received 🎉", "Sikeres fizetés 🎉")); onBooked(payWait.row); }}
+            onPaid={() => { toast(L("Payment received", "Sikeres fizetés")); onBooked(payWait.row); }}
             onCancel={async () => { await cancelBooking(payWait.row.id); toast(L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés")); close(); }}
           />
         )}
@@ -2911,7 +2989,7 @@ function CustomerBookings({ openBooking }) {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 18px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("My bookings", "Foglalásaim")}</div>
-        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>🛟 {L("My reports", "Bejelentéseim")}</button>
+        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>{L("My reports", "Bejelentéseim")}</button>
       </div>
       {showReports && <CustomerReports close={() => setShowReports(false)} />}
       {trackId && <TrackSheet bookingId={trackId} booking={(bookings || []).find((x) => x.id === trackId)} close={() => setTrackId(null)} />}
@@ -2921,10 +2999,10 @@ function CustomerBookings({ openBooking }) {
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.inkSoft, marginBottom: 8 }}>{L("Recurring plans", "Ismétlődő csomagok")}</div>
           {plans.filter((p) => p.status !== "cancelled").map((p) => (
-            <div key={p.id} style={{ background: C.card, borderRadius: 18, padding: "13px 15px", marginBottom: 9, boxShadow: "0 2px 10px rgba(20,28,58,.06)" }}>
+            <div key={p.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 9, boxShadow: "0 2px 10px rgba(20,28,58,.06)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{p.company_emoji || "🫧"} {p.company_name}</div>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{p.company_emoji || ""} {p.company_name}</div>
                   <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3 }}>
                     {p.frequency === "weekly" ? L("Every week", "Hetente") : p.frequency === "biweekly" ? L("Every 2 weeks", "Kéthetente") : L("Every month", "Havonta")} · {p.slot}
                   </div>
@@ -2966,7 +3044,7 @@ function CustomerBookings({ openBooking }) {
       )}
       {mine.length === 0 && (
         <div style={{ textAlign: "center", padding: "70px 30px" }}>
-          <div style={{ width: 88, height: 88, borderRadius: 28, background: C.card, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>🫧</div>
+          <div style={{ width: 88, height: 88, borderRadius: R.xl, background: C.card, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}></div>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, marginTop: 18 }}>{L("Nothing booked yet", "Még nincs foglalásod")}</div>
           <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 8 }}>{L("Book your first clean from the Home tab.", "Foglald le az első takarítást a Főoldal fülről.")}</div>
         </div>
@@ -2978,16 +3056,16 @@ function CustomerBookings({ openBooking }) {
         const reviewed = reviews.some((r) => r.booking_id === b.id);
         const svc = b.service_snapshot || {};
         return (
-          <div key={b.id} className="cl-rise" style={{ background: C.card, borderRadius: 22, padding: 18, marginBottom: 14, boxShadow: "0 4px 18px rgba(20,28,58,.07)", opacity: (b.status === 9 || b.status === 8) ? .65 : 1 }}>
+          <div key={b.id} className="cl-rise" style={{ background: C.card, borderRadius: R.lg, padding: 18, marginBottom: 14, boxShadow: "0 4px 18px rgba(20,28,58,.07)", opacity: (b.status === 9 || b.status === 8) ? .65 : 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div style={{ width: 40, height: 40, borderRadius: 13, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>{svc.icon || "🧽"}</div>
+                <div style={{ width: 40, height: 40, borderRadius: R.md, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>{svc.icon || ""}</div>
                 <div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{svc.name}</div>
                   <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1 }}>{co ? `${co.emoji} ${co.name}` : ""}</div>
                 </div>
               </div>
-              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>💳 Paid</Pill>} <StatusPill status={b.status} fulfilment={b.fulfilment} /></>
+              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>Paid</Pill>} <StatusPill status={b.status} fulfilment={b.fulfilment} /></>
             </div>
 
             {b.status !== 9 && b.status !== 8 && (
@@ -2996,7 +3074,7 @@ function CustomerBookings({ openBooking }) {
                   {stageList().map((s, k) => (
                     <React.Fragment key={s}>
                       <div style={{ width: 12, height: 12, borderRadius: "50%", flexShrink: 0, background: k <= b.status ? C.mint : C.line, boxShadow: k === b.status ? `0 0 0 5px ${C.mint}33` : "none", transition: "all .3s" }} />
-                      {k < stageList().length - 1 && <div style={{ flex: 1, height: 3, borderRadius: 9, background: k < b.status ? C.mint : C.line }} />}
+                      {k < stageList().length - 1 && <div style={{ flex: 1, height: 3, borderRadius: R.sm, background: k < b.status ? C.mint : C.line }} />}
                     </React.Fragment>
                   ))}
                 </div>
@@ -3007,13 +3085,13 @@ function CustomerBookings({ openBooking }) {
             )}
 
             {b.status === 8 && (
-              <div style={{ background: C.coralSoft, border: "1px solid #FFD8D1", borderRadius: 13, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.coralText, lineHeight: 1.55 }}>
+              <div style={{ background: C.coralSoft, border: "1px solid #FFD8D1", borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: C.coralText, lineHeight: 1.55 }}>
                 ✕ <b>{L("Declined by", "Elutasította:")} {co?.name || L("the company", "a cég")}.</b>{b.decline_reason ? ` ${b.decline_reason}.` : ""} {L("Try another time or company.", "Próbálj másik időpontot vagy céget.")}
               </div>
             )}
 
             {cleanerName && b.status > 0 && b.status < 8 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.bg, borderRadius: 13, padding: "10px 13px", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.bg, borderRadius: R.md, padding: "10px 13px", marginBottom: 10 }}>
                 <Avatar name={cleanerName} size={32} />
                 <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>
                   <b style={{ color: C.ink, fontFamily: F }}>{cleanerName}</b>{L(" is your cleaner", " a takarítód")}{b.pricing_type === "subscription" ? L(" — they stay with your plan", " — ő marad az előfizetésednél") : ""}
@@ -3029,19 +3107,19 @@ function CustomerBookings({ openBooking }) {
             )}
 
             {b.pricing_type === "subscription" && b.status !== 9 && b.status !== 8 && (
-              <div style={{ background: C.mintSoft, borderRadius: 13, padding: "9px 13px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, fontWeight: 600, lineHeight: 1.5 }}>
-                {fill(L("🔁 Active subscription — repeats {0}.", "🔁 Aktív előfizetés — {0} ismétlődik."), everyP(b.period))} {L("Next visit", "Következő:")} {dayLabel(b.scheduled_date)} · {b.scheduled_slot}.
+              <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "9px 13px", marginBottom: 10, fontFamily: B, fontSize: 11.5, color: C.greenDeep, fontWeight: 600, lineHeight: 1.5 }}>
+                {fill(L("Active subscription — repeats {0}.", "Aktív előfizetés — {0} ismétlődik."), everyP(b.period))} {L("Next visit", "Következő:")} {dayLabel(b.scheduled_date)} · {b.scheduled_slot}.
               </div>
             )}
 
-            <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.7, background: C.bg, borderRadius: 13, padding: "10px 13px" }}>
-              📅 {dayLabel(b.scheduled_date)} · {b.scheduled_slot} · 📍 {b.address}<br />
-              💰 {huf(b.total_huf)}{b.pricing_type === "hourly" && b.hours ? ` · ⏱ ${b.hours} ${L("h", "óra")}` : b.pricing_type === "subscription" && b.period ? ` · 🔁 ${everyP(b.period)}` : ""} {b.customer_type === "student" && L("· 🎓 student price", "· 🎓 diákár")}
+            <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.7, background: C.bg, borderRadius: R.md, padding: "10px 13px" }}>
+              {dayLabel(b.scheduled_date)} · {b.scheduled_slot} · {b.address}<br />
+              {huf(b.total_huf)}{b.pricing_type === "hourly" && b.hours ? ` · ${b.hours} ${L("h", "óra")}` : b.pricing_type === "subscription" && b.period ? ` · ${everyP(b.period)}` : ""} {b.customer_type === "student" && L("· student price", "· diákár")}
             </div>
 
             {b.fulfilment === "collection" && b.return_date && b.status !== 8 && b.status !== 9 && (
-              <div style={{ background: C.navyChip, borderRadius: 12, padding: "9px 12px", marginTop: 9, fontFamily: B, fontSize: 11.5, color: C.ink }}>
-                🚚 {Number(b.status) >= 4
+              <div style={{ background: C.navyChip, borderRadius: R.md, padding: "9px 12px", marginTop: 9, fontFamily: B, fontSize: 11.5, color: C.ink }}>
+                {Number(b.status) >= 4
                   ? L("Returned to you", "Visszahoztuk")
                   : `${L("Back with you on", "Nálad lesz")} ${dayLabel(b.return_date)}`}
               </div>
@@ -3054,7 +3132,7 @@ function CustomerBookings({ openBooking }) {
                 <Btn small ghost style={{ flex: 1, color: C.coral, borderColor: C.line }} onClick={() => setConfirmCancel(b)}>{b.pricing_type === "subscription" ? L("Cancel subscription", "Előfizetés lemondása") : L("Cancel booking", "Foglalás lemondása")}</Btn>
               )}
               {b.status === 4 && !reviewed && <Btn small mint style={{ flex: 1 }} onClick={() => { setReviewing(b); setStars(5); setBody(""); }}>{L("Rate this clean", "Értékeld a takarítást")}</Btn>}
-              {b.status === 4 && reviewed && <Pill style={{ alignSelf: "center" }}>{L("Thanks for your review ⭐", "Köszönjük az értékelést ⭐")}</Pill>}
+              {b.status === 4 && reviewed && <Pill style={{ alignSelf: "center" }}>{L("Thanks for your review", "Köszönjük az értékelést")}</Pill>}
               {(b.status === 4 || b.status === 8 || b.status === 9) && b.pricing_type !== "subscription" && co && openBooking && (
                 <Btn small ghost style={{ flex: 1 }} onClick={() => openBooking(co)}>{L("Rebook", "Újrafoglalás")}</Btn>
               )}
@@ -3088,7 +3166,7 @@ function CustomerBookings({ openBooking }) {
 
       {googlePrompt && (
         <ConfirmDialog
-          title={L("Loved it? Tell Google too ⭐", "Tetszett? Mondd el a Google-ön is ⭐")}
+          title={L("Loved it? Tell Google too", "Tetszett? Mondd el a Google-ön is")}
           body={fill(L("A Google review helps {0} get found by more people. It takes 30 seconds.", "Egy Google-értékelés segít, hogy többen megtalálják: {0}. 30 másodperc az egész."), googlePrompt.name)}
           confirmLabel={L("Review on Google", "Értékelés Google-ön")}
           onCancel={() => setGooglePrompt(null)}
@@ -3178,9 +3256,9 @@ function EmployeeJobs({ openProfile }) {
           {[
             { k: L("Open jobs", "Nyitott munkák"), v: open.length },
             { k: L("Completed", "Elvégzett"), v: done.length },
-            { k: L("Rating", "Értékelés"), v: avgRating ? `${avgRating} ★` : "—" },
+            { k: L("Rating", "Értékelés"), v: avgRating ? `${avgRating}` : "—" },
           ].map((s) => (
-            <div key={s.k} style={{ flex: 1, background: "rgba(255,255,255,.1)", borderRadius: 15, padding: "11px 12px" }}>
+            <div key={s.k} style={{ flex: 1, background: "rgba(255,255,255,.1)", borderRadius: R.md, padding: "11px 12px" }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: "#fff" }}>{s.v}</div>
               <div style={{ fontFamily: B, fontSize: 9.5, color: "#9FB0E8", marginTop: 3, fontWeight: 600 }}>{s.k}</div>
             </div>
@@ -3194,13 +3272,13 @@ function EmployeeJobs({ openProfile }) {
       <div style={{ padding: "8px 20px 30px" }}>
         {/* ── 5.6 What you're doing today, before anything else ── */}
         {todays.length > 0 && (
-          <div style={{ background: C.navy, borderRadius: 22, padding: 18, marginBottom: 16, boxShadow: "0 6px 20px rgba(27,42,107,.22)" }}>
+          <div style={{ background: C.navy, borderRadius: R.lg, padding: 18, marginBottom: 16, boxShadow: "0 6px 20px rgba(27,42,107,.22)" }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: "#fff" }}>
               {L("Today", "Ma")} · {todays.length} {todays.length === 1 ? L("job", "munka") : L("jobs", "munka")}
             </div>
             {todays.map((b) => (
               <div key={b.id} style={{ display: "flex", gap: 11, alignItems: "flex-start", marginTop: 12 }}>
-                <div style={{ background: "rgba(255,255,255,.14)", borderRadius: 11, padding: "6px 9px", fontFamily: F, fontWeight: 700, fontSize: 13, color: "#fff", flexShrink: 0 }}>{b.scheduled_slot}</div>
+                <div style={{ background: "rgba(255,255,255,.14)", borderRadius: R.sm, padding: "6px 9px", fontFamily: F, fontWeight: 700, fontSize: 13, color: "#fff", flexShrink: 0 }}>{b.scheduled_slot}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: "#fff" }}>{(b.service_snapshot || {}).name}</div>
                   <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2, lineHeight: 1.5 }}>{b.address}</div>
@@ -3212,11 +3290,11 @@ function EmployeeJobs({ openProfile }) {
 
         {/* ── 5.6 The week ahead, so nothing is a surprise ── */}
         {open.length > 0 && (
-          <div style={{ background: C.card, borderRadius: 20, padding: "14px 16px", marginBottom: 16, boxShadow: "0 2px 12px rgba(20,28,58,.05)" }}>
+          <div style={{ background: C.card, borderRadius: R.lg, padding: "14px 16px", marginBottom: 16, boxShadow: "0 2px 12px rgba(20,28,58,.05)" }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginBottom: 10 }}>{L("Next 14 days", "Következő 14 nap")}</div>
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
               {calDays.map((d) => (
-                <div key={d.iso} style={{ flex: "0 0 auto", width: 44, textAlign: "center", borderRadius: 13, padding: "8px 0",
+                <div key={d.iso} style={{ flex: "0 0 auto", width: 44, textAlign: "center", borderRadius: R.md, padding: "8px 0",
                   background: d.isToday ? C.navy : d.jobs.length ? C.navyChip : C.bg }}>
                   <div style={{ fontFamily: B, fontSize: 9.5, fontWeight: 700, color: d.isToday ? "#9FB0E8" : C.inkFaint }}>{d.dow}</div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: d.isToday ? "#fff" : C.ink, marginTop: 1 }}>{d.dom}</div>
@@ -3233,8 +3311,8 @@ function EmployeeJobs({ openProfile }) {
 
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "8px 0 12px" }}>{L("My jobs", "Munkáim")}</div>
         {open.length === 0 && (
-          <div style={{ textAlign: "center", padding: "44px 30px", background: C.card, borderRadius: 20, boxShadow: "0 2px 12px rgba(20,28,58,.05)" }}>
-            <div style={{ fontSize: 36 }}>🛋️</div>
+          <div style={{ textAlign: "center", padding: "44px 30px", background: C.card, borderRadius: R.lg, boxShadow: "0 2px 12px rgba(20,28,58,.05)" }}>
+            <div style={{ fontSize: 36 }}>️</div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, marginTop: 12 }}>{L("No jobs assigned", "Nincs kiosztott munka")}</div>
             <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6 }}>{L("New assignments appear here automatically.", "Az új megbízások automatikusan itt jelennek meg.")}</div>
           </div>
@@ -3244,21 +3322,21 @@ function EmployeeJobs({ openProfile }) {
           const tasks = svc.tasks || [];
           const allDone = tasks.length > 0 && b.tasks_done.length === tasks.length;
           return (
-            <div key={b.id} className="cl-rise" style={{ background: C.card, borderRadius: 22, padding: 18, marginBottom: 14, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>
+            <div key={b.id} className="cl-rise" style={{ background: C.card, borderRadius: R.lg, padding: 18, marginBottom: 14, boxShadow: "0 4px 18px rgba(20,28,58,.07)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink }}>{svc.icon} {svc.name}</div>
                   <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4, lineHeight: 1.6 }}>
-                    🕘 {dayLabel(b.scheduled_date)}, {b.scheduled_slot} · ⏱ ~{svc.minutes} min<br />
-                    📍 {b.address} · 👤 {b.customer_name || L("Customer", "Ügyfél")}
+                    {dayLabel(b.scheduled_date)}, {b.scheduled_slot} · ~{svc.minutes} min<br />
+                    {b.address} · {b.customer_name || L("Customer", "Ügyfél")}
                   </div>
                 </div>
                 <StatusPill status={b.status} fulfilment={b.fulfilment} />
               </div>
 
               {b.note && (
-                <div style={{ background: "#FFF8EA", border: `1px solid ${C.gold}55`, borderRadius: 13, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: "#8A6A1F", lineHeight: 1.55 }}>
-                  📝 <b>Customer note:</b> {b.note}
+                <div style={{ background: "#FFF8EA", border: `1px solid ${C.gold}55`, borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: "#8A6A1F", lineHeight: 1.55 }}>
+                  <b>Customer note:</b> {b.note}
                 </div>
               )}
 
@@ -3272,8 +3350,8 @@ function EmployeeJobs({ openProfile }) {
                   {tasks.map((t, i) => {
                     const isDone = b.tasks_done.includes(i);
                     return (
-                      <button key={i} onClick={() => toggleTask(b.id, i)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 13, marginBottom: 6, border: "none", cursor: "pointer", background: isDone ? C.mintSoft : C.bg, textAlign: "left" }}>
-                        <span style={{ width: 21, height: 21, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: isDone ? C.mint : C.card, border: isDone ? "none" : `1.5px solid ${C.line}`, fontSize: 11, fontWeight: 700, color: C.navyDeep, flexShrink: 0 }}>{isDone ? "✓" : ""}</span>
+                      <button key={i} onClick={() => toggleTask(b.id, i)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: R.md, marginBottom: 6, border: "none", cursor: "pointer", background: isDone ? C.mintSoft : C.bg, textAlign: "left" }}>
+                        <span style={{ width: 21, height: 21, borderRadius: R.sm, display: "flex", alignItems: "center", justifyContent: "center", background: isDone ? C.mint : C.card, border: isDone ? "none" : `1.5px solid ${C.line}`, fontSize: 11, fontWeight: 700, color: C.navyDeep, flexShrink: 0 }}>{isDone ? "✓" : ""}</span>
                         <span style={{ fontFamily: B, fontSize: 12.5, color: isDone ? C.green : C.ink, textDecoration: isDone ? "line-through" : "none", fontWeight: 500 }}>{t}</span>
                       </button>
                     );
@@ -3283,18 +3361,18 @@ function EmployeeJobs({ openProfile }) {
 
               <div style={{ marginTop: 12 }}>
                 <div style={{ marginBottom: 8 }}><AddToCalendar booking={b} /></div>
-                {b.status === 1 && <Btn small full onClick={() => { setStatus(b.id, 2); toast(L("Status updated — on the way!", "Állapot frissítve — úton vagy!")); }}>🚗 {L("I'm on the way", "Úton vagyok")}</Btn>}
+                {b.status === 1 && <Btn small full onClick={() => { setStatus(b.id, 2); toast(L("Status updated — on the way!", "Állapot frissítve — úton vagy!")); }}>{L("I'm on the way", "Úton vagyok")}</Btn>}
                 {/* A collection job goes: on the way → collected → in progress →
                     out for return → returned. Nothing says "done" until it is back. */}
                 {b.fulfilment === "collection" ? (
                   <>
-                    {b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 5); toast(L("Items collected", "Holmi elvive")); }}>📦 {L("I've collected the items", "Elvittem a holmit")}</Btn>}
-                    {b.status === 5 && <Btn small full onClick={() => { setStatus(b.id, 3); toast(L("Work started", "Munka elkezdve")); }}>🧺 {L("Start the work", "Munka indítása")}</Btn>}
-                    {b.status === 3 && <Btn small full onClick={() => { setStatus(b.id, 6); toast(L("On the way back", "Úton vissza")); }}>🚚 {L("Taking it back", "Viszem vissza")}</Btn>}
+                    {b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 5); toast(L("Items collected", "Holmi elvive")); }}>{L("I've collected the items", "Elvittem a holmit")}</Btn>}
+                    {b.status === 5 && <Btn small full onClick={() => { setStatus(b.id, 3); toast(L("Work started", "Munka elkezdve")); }}>{L("Start the work", "Munka indítása")}</Btn>}
+                    {b.status === 3 && <Btn small full onClick={() => { setStatus(b.id, 6); toast(L("On the way back", "Úton vissza")); }}>{L("Taking it back", "Viszem vissza")}</Btn>}
                     {b.status === 6 && <Btn small full mint onClick={() => { setStatus(b.id, 4); toast(L("Returned to the customer ✓", "Visszaadva az ügyfélnek ✓")); }}>✓ {L("Returned to the customer", "Visszaadva az ügyfélnek")}</Btn>}
                   </>
                 ) : (
-                  b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 3); toast(L("Cleaning started", "Takarítás elkezdve")); }}>🧽 {L("Start cleaning", "Takarítás indítása")}</Btn>
+                  b.status === 2 && <Btn small full onClick={() => { setStatus(b.id, 3); toast(L("Cleaning started", "Takarítás elkezdve")); }}>{L("Start cleaning", "Takarítás indítása")}</Btn>
                 )}
                 {canTrack(b) && <LocationShare bookingId={b.id} />}
                 {b.status === 3 && b.fulfilment !== "collection" && (
@@ -3311,12 +3389,12 @@ function EmployeeJobs({ openProfile }) {
           <>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>{L("Completed", "Elvégzett")}</div>
             {done.map((b) => (
-              <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .8 }}>
+              <div key={b.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 16px", marginBottom: 9, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .8 }}>
                 <div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{(b.service_snapshot || {}).name}</div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{b.customer_name} · {dayLabel(b.scheduled_date)}</div>
                 </div>
-                <Pill>Done ✨</Pill>
+                <Pill>Done</Pill>
               </div>
             ))}
           </>
@@ -3340,22 +3418,22 @@ function EmployeeNotices() {
         From {co?.name || L("your company", "a céged")} {unread > 0 && <Pill bg={C.coral} color="#fff" style={{ marginLeft: 6 }}>{unread} new</Pill>}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={L("Message your company…", "Írj a cégednek…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 14, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
+        <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={L("Message your company…", "Írj a cégednek…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "11px 14px", fontFamily: B, fontSize: 13, color: C.ink, background: C.card, outline: "none" }} />
         <Btn small mint disabled={!reply.trim()} onClick={async () => { const r = await sendCompanyMessage(reply.trim()); if (r?.error) toast(r.error, "error"); else { toast(L("Message sent to your company", "Üzenet elküldve a cégednek")); setReply(""); } }}>Send</Btn>
       </div>
       {mine.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 50 }}>{L("No messages from your company yet.", "Még nincs üzenet a cégedtől.")}</div>}
       {mine.map((n) => (
-        <div key={n.id} onClick={() => { if (!n.from_employee && !n.is_read) { markNoticeRead(n.id); toast(L("Marked as read", "Olvasottnak jelölve")); } }} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: (n.from_employee || n.is_read) ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: (n.from_employee || n.is_read) ? "default" : "pointer" }}>
+        <div key={n.id} onClick={() => { if (!n.from_employee && !n.is_read) { markNoticeRead(n.id); toast(L("Marked as read", "Olvasottnak jelölve")); } }} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: R.lg, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: (n.from_employee || n.is_read) ? "2px solid transparent" : `2px solid ${C.mint}`, cursor: (n.from_employee || n.is_read) ? "default" : "pointer" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-              {n.from_employee ? <div style={{ width: 32, height: 32, borderRadius: 10, background: C.mint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>🧽</div> : <CompanyLogo co={co} size={32} radius={10} />}
+              {n.from_employee ? <div style={{ width: 32, height: 32, borderRadius: R.sm, background: C.mint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}></div> : <CompanyLogo co={co} size={32} radius={10} />}
               <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{n.from_employee ? L("You → company", "Te → cég") : (co?.name || L("Company", "Cég"))}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontFamily: B, fontSize: 10, color: C.inkFaint }}>{typeof n.created_at === "string" && n.created_at.length < 25 ? n.created_at : new Date(n.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
               <button onClick={(e) => { e.stopPropagation(); deleteNotice(n.id); toast(L("Notice cleared", "Értesítés törölve")); }}
                 title={L("Clear from my list", "Törlés a listámról")}
-                style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: 9, cursor: "pointer", fontSize: 12 }}>✕</button>
+                style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: R.sm, cursor: "pointer", fontSize: 12 }}>✕</button>
             </div>
           </div>
           <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, lineHeight: 1.65, marginTop: 10 }}>{n.body}</div>
@@ -3467,7 +3545,7 @@ function CompanyJobs({ openProfile }) {
           { k: L("Total earned", "Összes bevétel"), v: huf(revenue), accent: C.green, sub: `${done.length} ${L("jobs done", "kész munka")}` },
           { k: L("Today", "Ma"), v: huf(todayRevenue), accent: unassigned ? C.coral : C.navySoft, sub: `${todayJobs.length} completed today` },
         ].map((s) => (
-          <div key={s.k} style={{ background: C.card, borderRadius: 16, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+          <div key={s.k} style={{ background: C.card, borderRadius: R.lg, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: s.accent, lineHeight: 1.2 }}>{s.v}</div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 11, color: C.ink, marginTop: 4 }}>{s.k}</div>
             <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 2 }}>{s.sub}</div>
@@ -3476,7 +3554,7 @@ function CompanyJobs({ openProfile }) {
       </div>
 
       {needsAttention > 0 && (
-        <div style={{ background: C.amberSoft, border: `1.5px solid ${C.coral}44`, borderRadius: 14, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ background: C.amberSoft, border: `1.5px solid ${C.coral}44`, borderRadius: R.md, padding: "12px 14px", marginBottom: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.amber }}>
             {L("Needs you", "Rád vár")} · {needsAttention}
           </div>
@@ -3506,8 +3584,8 @@ function CompanyJobs({ openProfile }) {
       )}
 
       {subs.length > 0 && (
-        <div style={{ background: "linear-gradient(135deg,#EAFBF2,#E7F0FF)", borderRadius: 16, padding: "12px 15px", marginBottom: 14 }}>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>🔁 {subs.length} active subscription{subs.length > 1 ? "s" : ""} — recurring revenue {huf(subs.reduce((a, b) => a + (b.total_huf || 0), 0))} / cycle</div>
+        <div style={{ background: C.navyChip, borderRadius: R.lg, padding: "12px 15px", marginBottom: 14 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{subs.length} active subscription{subs.length > 1 ? "s" : ""} — recurring revenue {huf(subs.reduce((a, b) => a + (b.total_huf || 0), 0))} / cycle</div>
           <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3 }}>{L("Each completed visit automatically schedules the next one with the same cleaner.", "Minden teljesített alkalom automatikusan időpontot foglal a következőre, ugyanazzal a takarítóval.")}</div>
         </div>
       )}
@@ -3515,28 +3593,28 @@ function CompanyJobs({ openProfile }) {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15.5, color: C.ink, marginBottom: 10 }}>{L("Incoming & active jobs", "Beérkező és folyamatban lévő munkák")}</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
         {[
-          { id: "attention", label: `⚠️ ${L("Needs you", "Rád vár")} (${needsAttention})`, hide: !needsAttention },
+          { id: "attention", label: `️ ${L("Needs you", "Rád vár")} (${needsAttention})`, hide: !needsAttention },
           { id: "all", label: `${L("All", "Mind")} (${open.length})` },
           { id: "new", label: `🆕 ${L("Not accepted", "Nincs elfogadva")} (${unaccepted.length})` },
-          { id: "unassigned", label: `👤 ${L("No cleaner", "Nincs takarító")} (${unassigned})` },
-          { id: "today", label: `📅 ${L("Today", "Ma")} (${open.filter(isToday).length})` },
-          { id: "subs", label: `🔁 ${L("Plans", "Bérletek")} (${subs.length})` },
+          { id: "unassigned", label: `${L("No cleaner", "Nincs takarító")} (${unassigned})` },
+          { id: "today", label: `${L("Today", "Ma")} (${open.filter(isToday).length})` },
+          { id: "subs", label: `${L("Plans", "Bérletek")} (${subs.length})` },
         ].filter((f) => !f.hide).map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: filter === f.id ? C.navy : C.card, color: filter === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>{f.label}</button>
         ))}
       </div>
-      {shownOpen.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 36, background: C.card, borderRadius: 18, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{open.length === 0 ? L("No open jobs right now. New customer bookings will appear here.", "Most nincs nyitott munka. Az új foglalások itt jelennek meg.") : L("Nothing matches this filter.", "Semmi nem felel meg ennek a szűrőnek.")}</div>}
+      {shownOpen.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 36, background: C.card, borderRadius: R.lg, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{open.length === 0 ? L("No open jobs right now. New customer bookings will appear here.", "Most nincs nyitott munka. Az új foglalások itt jelennek meg.") : L("Nothing matches this filter.", "Semmi nem felel meg ennek a szűrőnek.")}</div>}
       {[...shownOpen].sort((a, b) => (a.assigned_to ? 1 : 0) - (b.assigned_to ? 1 : 0)).map((b) => {
         const svc = b.service_snapshot || {};
         const tasks = svc.tasks || [];
         return (
-          <div key={b.id} style={{ background: C.card, borderRadius: 20, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: !b.assigned_to ? `2px solid ${C.coral}55` : "2px solid transparent" }}>
+          <div key={b.id} style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", border: !b.assigned_to ? `2px solid ${C.coral}55` : "2px solid transparent" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{svc.icon} {svc.name}</div>
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4, lineHeight: 1.6 }}>
-                  👤 {b.customer_name || L("Customer", "Ügyfél")} {b.customer_type === "student" && "🎓"} · 🕘 {dayLabel(b.scheduled_date)}, {b.scheduled_slot}<br />
-                  📍 {b.address}
+                  {b.customer_name || L("Customer", "Ügyfél")} {b.customer_type === "student" && ""} · {dayLabel(b.scheduled_date)}, {b.scheduled_slot}<br />
+                  {b.address}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -3570,7 +3648,7 @@ function CompanyJobs({ openProfile }) {
                       const dn = (b.tasks_done || []).includes(i);
                       return (
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px" }}>
-                          <span style={{ width: 16, height: 16, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: dn ? C.mint : C.bg, border: dn ? "none" : `1.5px solid ${C.line}`, fontSize: 9, fontWeight: 700, color: C.navyDeep, flexShrink: 0 }}>{dn ? "✓" : ""}</span>
+                          <span style={{ width: 16, height: 16, borderRadius: R.sm, display: "flex", alignItems: "center", justifyContent: "center", background: dn ? C.mint : C.bg, border: dn ? "none" : `1.5px solid ${C.line}`, fontSize: 9, fontWeight: 700, color: C.navyDeep, flexShrink: 0 }}>{dn ? "✓" : ""}</span>
                           <span style={{ fontFamily: B, fontSize: 11.5, color: dn ? C.green : C.inkSoft, textDecoration: dn ? "line-through" : "none" }}>{tk}</span>
                         </div>
                       );
@@ -3593,7 +3671,7 @@ function CompanyJobs({ openProfile }) {
               <div style={{ marginTop: 10 }}><AddToCalendar booking={b} /></div>
             )}
             {(b.enroute_at || b.started_at || b.finished_at || b.collected_at || b.returned_at) && (
-              <div style={{ background: C.bg, borderRadius: 12, padding: "9px 12px", marginTop: 10 }}>
+              <div style={{ background: C.bg, borderRadius: R.md, padding: "9px 12px", marginTop: 10 }}>
                 <div style={{ fontFamily: B, fontWeight: 700, fontSize: 10, color: C.inkFaint, letterSpacing: .3, marginBottom: 4 }}>
                   {L("WHAT ACTUALLY HAPPENED", "AMI VALÓJÁBAN TÖRTÉNT")}
                 </div>
@@ -3633,7 +3711,7 @@ function CompanyJobs({ openProfile }) {
         <>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "20px 0 10px" }}>{L("Completed jobs", "Elvégzett munkák")}</div>
           {done.map((b) => (
-            <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .9 }}>
+            <div key={b.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .9 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>
@@ -3646,7 +3724,7 @@ function CompanyJobs({ openProfile }) {
                   </div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{dayLabel(b.scheduled_date)} · {huf((b.total_huf || 0) - (b.service_fee_huf || 0))} your share</div>
                 </div>
-                <Pill>Done ✨</Pill>
+                <Pill>Done</Pill>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
                 {/* The real uploader is <PartnerInvoiceBox> above: it posts to
@@ -3660,7 +3738,7 @@ function CompanyJobs({ openProfile }) {
                     a crash to hide: invisible until someone does the one thing
                     the button is for. */}
                 <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast(L("Moved to history (Settings)", "Áthelyezve az előzményekbe (Beállítások)")); }}
-                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: 9, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{L("Clear", "Törlés")}</button>
+                  style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: R.sm, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{L("Clear", "Törlés")}</button>
               </div>
             </div>
           ))}
@@ -3717,36 +3795,36 @@ function CompanyClients() {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>Clients ({clients.length})</div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-        <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+        <div style={{ flex: 1, background: C.card, borderRadius: R.md, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{huf(totalSpend)}</div>
           <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>{L("lifetime revenue", "teljes bevétel")}</div>
         </div>
-        <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+        <div style={{ flex: 1, background: C.card, borderRadius: R.md, padding: "12px 14px", boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>{clients.filter((c) => c.hasSub).length}</div>
           <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>{L("active subscribers", "aktív előfizető")}</div>
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 14, padding: "11px 14px", marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
-        <span style={{ opacity: .45 }}>🔍</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: R.md, padding: "11px 14px", marginBottom: 14, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+        <span style={{ opacity: .45 }}></span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("Search clients…", "Ügyfelek keresése…")} style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
       </div>
       {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No clients yet — they appear after the first booking.</div>}
       {filtered.map((c) => (
-        <div key={c.key} style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+        <div key={c.key} style={{ background: C.card, borderRadius: R.lg, padding: "14px 16px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
             <Avatar name={c.name} size={40} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}>
                 {c.name}
-                {c.kind === "student" && <Pill bg={C.mintSoft} color={C.green}>🎓</Pill>}
-                {c.hasSub && <Pill bg={C.navyChip} color={C.navySoft}>🔁 plan</Pill>}
+                {c.kind === "student" && <Pill bg={C.mintSoft} color={C.green}></Pill>}
+                {c.hasSub && <Pill bg={C.navyChip} color={C.navySoft}>plan</Pill>}
               </div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
                 {c.done}/{c.jobs} jobs done · {huf(c.spend)} · last: {c.last ? dayLabel(c.last) : "—"}
               </div>
-              {c.addresses.size > 0 && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📍 {[...c.addresses][0]}</div>}
+              {c.addresses.size > 0 && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[...c.addresses][0]}</div>}
             </div>
-            {c.phone && <a href={`tel:${c.phone}`} style={{ textDecoration: "none", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, background: C.card }}>📞 Call</a>}
+            {c.phone && <a href={`tel:${c.phone}`} style={{ textDecoration: "none", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, color: C.navySoft, background: C.card }}>Call</a>}
           </div>
         </div>
       ))}
@@ -3775,19 +3853,19 @@ function CompanySchedule() {
         {dayJobs.length > 0 && <Pill bg={C.mintSoft} color={C.green}>{huf(dayRevenue)}</Pill>}
       </div>
       {dayJobs.length === 0 && (
-        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30, background: C.card, borderRadius: 18, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{L("Nothing scheduled this day.", "Erre a napra nincs semmi.")}</div>
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30, background: C.card, borderRadius: R.lg, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>{L("Nothing scheduled this day.", "Erre a napra nincs semmi.")}</div>
       )}
       {dayJobs.map((b) => {
         const svc = b.service_snapshot || {};
         const cleaner = b.assigned_name || allEmployees.find((e) => e.id === b.assigned_to)?.full_name;
         return (
-          <div key={b.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+          <div key={b.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>🕘 {b.scheduled_slot} · {svc.icon} {svc.name}{b.pricing_type === "subscription" ? " 🔁" : ""}</div>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{b.scheduled_slot} · {svc.icon} {svc.name}{b.pricing_type === "subscription" ? "" : ""}</div>
                 <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
-                  👤 {b.customer_name || L("Customer", "Ügyfél")} · 📍 {b.address}<br />
-                  🧽 {cleaner || L("Unassigned — assign in Jobs tab", "Nincs kiosztva — oszd ki a Munkák fülön")}
+                  {b.customer_name || L("Customer", "Ügyfél")} · {b.address}<br />
+                  {cleaner || L("Unassigned — assign in Jobs tab", "Nincs kiosztva — oszd ki a Munkák fülön")}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -3811,7 +3889,7 @@ function CompanyServices() {
   const [editing, setEditing] = useState(null);
   const [f, setF] = useState({});
   const openEditor = (svc) => {
-    setF(svc ? { ...svc, tasksText: (svc.tasks || []).join("\n"), reqText: (Array.isArray(svc.requirements) ? svc.requirements : []).join("\n") } : { name: "", description: "", icon: "🏠", price_huf: "", minutes: 120, tasksText: "", reqText: "", pricing_type: "flat", hourly_rate_huf: "", min_hours: 2, max_hours: 8, period: "weekly", promo_pct: 0,
+    setF(svc ? { ...svc, tasksText: (svc.tasks || []).join("\n"), reqText: (Array.isArray(svc.requirements) ? svc.requirements : []).join("\n") } : { name: "", description: "", icon: "", price_huf: "", minutes: 120, tasksText: "", reqText: "", pricing_type: "flat", hourly_rate_huf: "", min_hours: 2, max_hours: 8, period: "weekly", promo_pct: 0,
       fulfilment: "onsite", turnaround_days: 3, slot_capacity: null, dur_unit: "min" });
     setEditing(svc ? "edit" : "new");
   };
@@ -3827,20 +3905,20 @@ function CompanyServices() {
       </div>
 
       {mine.map((s) => (
-        <div key={s.id} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: s.is_active ? 1 : .55 }}>
+        <div key={s.id} style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: s.is_active ? 1 : .55 }}>
           <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 13, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{s.icon}</div>
+            <div style={{ width: 42, height: 42, borderRadius: R.md, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{s.icon}</div>
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <span style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>{s.name}</span>
                 <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(s)}</span>
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
-                <Pill bg={C.navyChip} color={C.navySoft}>{s.pricing_type === "hourly" ? `⏱ ${L("Hourly", "Óradíj")}` : s.pricing_type === "unit" ? `⚖️ ${huf(s.unit_price_huf)}/${s.unit_label || ""}` : s.pricing_type === "subscription" ? `🔁 ${periodLabel(s.period)}` : `💰 ${L("Flat", "Fix")}`}</Pill>
+                <Pill bg={C.navyChip} color={C.navySoft}>{s.pricing_type === "hourly" ? `${L("Hourly", "Óradíj")}` : s.pricing_type === "unit" ? `️ ${huf(s.unit_price_huf)}/${s.unit_label || ""}` : s.pricing_type === "subscription" ? `${periodLabel(s.period)}` : `${L("Flat", "Fix")}`}</Pill>
               </div>
-              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{s.description} · ⏱ {s.minutes} min · {(s.tasks || []).length} tasks</div>
+              <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5, lineHeight: 1.5 }}>{s.description} · {s.minutes} min · {(s.tasks || []).length} tasks</div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <Btn small ghost onClick={() => openEditor(s)}>✏️ Edit</Btn>
+                <Btn small ghost onClick={() => openEditor(s)}>️ Edit</Btn>
                 {s.promo_pct > 0 && <Pill bg={C.mintSoft} color={C.greenDeep}>−{s.promo_pct}%</Pill>}
                 <Btn small ghost onClick={() => { upsertService({ ...s, is_active: !s.is_active }); toast(s.is_active ? L("Service hidden", "Szolgáltatás elrejtve") : L("Service re-listed", "Szolgáltatás újra látható")); }} style={{ color: s.is_active ? C.coral : C.green }}>
                   {s.is_active ? L("Hide", "Elrejtés") : L("Re-list", "Újra listázom")}
@@ -3856,7 +3934,7 @@ function CompanyServices() {
         <Sheet title={editing === "new" ? L("New service", "Új szolgáltatás") : L("Edit service", "Szolgáltatás szerkesztése")} close={() => setEditing(null)}>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ width: 84 }}>
-              <Field label={L("Icon", "Ikon")} placeholder="🏠" value={f.icon} onChange={(e) => setF({ ...f, icon: e.target.value })} />
+              <Field label={L("Icon", "Ikon")} placeholder="" value={f.icon} onChange={(e) => setF({ ...f, icon: e.target.value })} />
             </div>
             <div style={{ flex: 1 }}>
               <Field label={L("Name", "Név")} placeholder={L("e.g. Deep clean", "pl. Nagytakarítás")} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
@@ -3871,10 +3949,10 @@ function CompanyServices() {
                  different ending, so it gets its own stages. ── */}
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{L("How it works", "Hogyan zajlik")}</div>
           <div style={{ display: "flex", gap: 7, marginBottom: 12 }}>
-            {[["onsite", "🏠", L("We work at their address", "Náluk dolgozunk")],
-              ["collection", "🚚", L("We collect and bring it back", "Elvisszük és visszahozzuk")]].map(([id, ic, lbl]) => (
+            {[["onsite", "", L("We work at their address", "Náluk dolgozunk")],
+              ["collection", "", L("We collect and bring it back", "Elvisszük és visszahozzuk")]].map(([id, ic, lbl]) => (
               <button key={id} onClick={() => setF({ ...f, fulfilment: id })}
-                style={{ flex: 1, border: "none", cursor: "pointer", borderRadius: 14, padding: "11px 9px", textAlign: "left",
+                style={{ flex: 1, border: "none", cursor: "pointer", borderRadius: R.md, padding: "11px 9px", textAlign: "left",
                   background: (f.fulfilment || "onsite") === id ? C.navy : C.bg, color: (f.fulfilment || "onsite") === id ? "#fff" : C.inkSoft }}>
                 <div style={{ fontSize: 16 }}>{ic}</div>
                 <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, marginTop: 3, lineHeight: 1.35 }}>{lbl}</div>
@@ -3882,27 +3960,27 @@ function CompanyServices() {
             ))}
           </div>
           {(f.fulfilment || "onsite") === "collection" && (
-            <div style={{ background: C.navyChip, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ background: C.navyChip, borderRadius: R.md, padding: "12px 14px", marginBottom: 12 }}>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.5 }}>
                 {L("The customer is told when their things come back, and the job only counts as finished once you return them.", "Az ügyfél megtudja, mikor kapja vissza a holmiját, és a munka csak a visszaszállításkor számít késznek.")}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <div style={{ flex: 1 }}><Field label={L("Ready in (days)", "Elkészül (nap)")} type="number" placeholder="3"
                   value={f.turnaround_days ?? 3} onChange={(e) => setF({ ...f, turnaround_days: Math.min(60, Math.max(0, parseInt(e.target.value, 10) || 0)) })} /></div>
-                <div style={{ flex: 1 }}><Field label={L("Pickups per hour", "Felvétel óránként")} type="number" placeholder={L("team size", "csapatlétszám")}
+                <div style={{ flex: 1 }}><Field label={L("Jobs at the same time", "Egyszerre vállalt munkák")} type="number" placeholder={L("team size", "csapatlétszám")}
                   value={f.slot_capacity ?? ""} onChange={(e) => setF({ ...f, slot_capacity: e.target.value === "" ? null : Math.min(100, Math.max(1, parseInt(e.target.value, 10) || 1)) })} /></div>
               </div>
               <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 4, lineHeight: 1.5 }}>
-                {L("Leave pickups per hour empty to use your team size. One van can usually call at several addresses in an hour.", "Hagyd üresen, ha a csapatlétszámot használnád. Egy furgon általában több címre is eljut egy óra alatt.")}
+                {L("How many of this service you can run at once. Leave it empty to use your team size. A long job now blocks the whole time it lasts, not just the hour it starts.", "Hányat tudsz ebből egyszerre vállalni. Hagyd üresen, ha a csapatlétszámot használnád. A hosszú munka mostantól a teljes időtartamát lefoglalja, nem csak a kezdő óráját.")}
               </div>
             </div>
           )}
 
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Pricing model", "Árazás módja")}</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[{ id: "flat", t: L("Flat", "Fix"), icon: "💰" }, { id: "hourly", t: L("Hourly", "Óradíj"), icon: "⏱️" },
-              { id: "unit", t: L("Per unit", "Egységár"), icon: "⚖️" }, { id: "subscription", t: L("Plan", "Bérlet"), icon: "🔁" }].map((o) => (
-              <button key={o.id} onClick={() => setF({ ...f, pricing_type: o.id })} style={{ flex: 1, padding: "10px 4px", borderRadius: 13, cursor: "pointer", border: (f.pricing_type || "flat") === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", textAlign: "center" }}>
+            {[{ id: "flat", t: L("Flat", "Fix"), icon: "" }, { id: "hourly", t: L("Hourly", "Óradíj"), icon: "️" },
+              { id: "unit", t: L("Per unit", "Egységár"), icon: "️" }, { id: "subscription", t: L("Plan", "Bérlet"), icon: "" }].map((o) => (
+              <button key={o.id} onClick={() => setF({ ...f, pricing_type: o.id })} style={{ flex: 1, padding: "10px 4px", borderRadius: R.md, cursor: "pointer", border: (f.pricing_type || "flat") === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", textAlign: "center" }}>
                 <div style={{ fontSize: 18 }}>{o.icon}</div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.ink, marginTop: 3 }}>{o.t}</div>
               </button>
@@ -3954,11 +4032,11 @@ function CompanyServices() {
                       if (v === "") return setF({ ...f, minutes: "" });
                       setF({ ...f, minutes: f.dur_unit === "h" ? Math.round(Number(v) * 60) : Math.round(Number(v)) });
                     }}
-                    style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }} />
-                  <div style={{ display: "flex", background: C.bg, borderRadius: 13, padding: 3 }}>
+                    style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }} />
+                  <div style={{ display: "flex", background: C.bg, borderRadius: R.md, padding: 3 }}>
                     {[["min", L("min", "perc")], ["h", L("hours", "óra")]].map(([u, lbl]) => (
                       <button key={u} onClick={() => setF({ ...f, dur_unit: u })}
-                        style={{ border: "none", cursor: "pointer", borderRadius: 10, padding: "8px 11px", fontFamily: B, fontWeight: 700, fontSize: 11,
+                        style={{ border: "none", cursor: "pointer", borderRadius: R.sm, padding: "8px 11px", fontFamily: B, fontWeight: 700, fontSize: 11,
                           background: (f.dur_unit || "min") === u ? C.card : "transparent", color: (f.dur_unit || "min") === u ? C.ink : C.inkFaint }}>{lbl}</button>
                     ))}
                   </div>
@@ -3986,7 +4064,7 @@ function CompanyServices() {
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Billing period", "Számlázási időszak")}</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 {["weekly", "biweekly", "monthly"].map((p) => (
-                  <button key={p} onClick={() => setF({ ...f, period: p })} style={{ flex: 1, padding: "10px 4px", borderRadius: 13, cursor: "pointer", border: (f.period || "weekly") === p ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", fontFamily: F, fontWeight: 700, fontSize: 11, color: C.ink, textTransform: "capitalize" }}>{p}</button>
+                  <button key={p} onClick={() => setF({ ...f, period: p })} style={{ flex: 1, padding: "10px 4px", borderRadius: R.md, cursor: "pointer", border: (f.period || "weekly") === p ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", fontFamily: F, fontWeight: 700, fontSize: 11, color: C.ink, textTransform: "capitalize" }}>{p}</button>
                 ))}
               </div>
             </>
@@ -4001,7 +4079,7 @@ function CompanyServices() {
                            "A mosnivalót tedd ki az ajtó elé\nA kizárólag vegytisztítható darabokat nem mossuk")}
             value={f.reqText || ""} onChange={(e) => setF({ ...f, reqText: e.target.value })} />
           <Btn full disabled={!f.name || (f.pricing_type === "hourly" ? !f.hourly_rate_huf : !f.price_huf)} onClick={() => {
-            upsertService({ id: editing === "edit" ? f.id : undefined, requirements: String(f.reqText || "").split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 8), name: f.name, description: f.description, icon: f.icon || "🏠", price_huf: parseInt(f.price_huf, 10) || 0, minutes: parseInt(f.minutes, 10) || 120, tasks: f.tasksText.split("\n").map((t) => t.trim()).filter(Boolean), is_active: f.is_active !== false, pricing_type: f.pricing_type || "flat", hourly_rate_huf: f.pricing_type === "hourly" ? (parseInt(f.hourly_rate_huf, 10) || 0) : null, min_hours: parseInt(f.min_hours, 10) || 2, max_hours: parseInt(f.max_hours, 10) || 8, period: f.pricing_type === "subscription" ? (f.period || "weekly") : null,
+            upsertService({ id: editing === "edit" ? f.id : undefined, requirements: String(f.reqText || "").split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 8), name: f.name, description: f.description, icon: f.icon || "", price_huf: parseInt(f.price_huf, 10) || 0, minutes: parseInt(f.minutes, 10) || 120, tasks: f.tasksText.split("\n").map((t) => t.trim()).filter(Boolean), is_active: f.is_active !== false, pricing_type: f.pricing_type || "flat", hourly_rate_huf: f.pricing_type === "hourly" ? (parseInt(f.hourly_rate_huf, 10) || 0) : null, min_hours: parseInt(f.min_hours, 10) || 2, max_hours: parseInt(f.max_hours, 10) || 8, period: f.pricing_type === "subscription" ? (f.period || "weekly") : null,
               /* The per-service discount was bound to this form but never sent — a
                  dead input. Send 0 to clear it, which the server maps to NULL. */
               promo_pct: f.promo_pct === "" || f.promo_pct == null ? 0 : (parseInt(f.promo_pct, 10) || 0),
@@ -4049,15 +4127,15 @@ function CompanyTeam() {
       </div>
 
       {employees.length === 0 && !invites.length && (
-        <div style={{ textAlign: "center", padding: "44px 24px", background: C.card, borderRadius: 20, boxShadow: "0 2px 10px rgba(20,28,58,.05)", marginBottom: 16 }}>
-          <div style={{ fontSize: 34 }}>👥</div>
+        <div style={{ textAlign: "center", padding: "44px 24px", background: C.card, borderRadius: R.lg, boxShadow: "0 2px 10px rgba(20,28,58,.05)", marginBottom: 16 }}>
+          <div style={{ fontSize: 34 }}></div>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.ink, marginTop: 12 }}>{L("No team members yet", "Még nincs csapattag")}</div>
           <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>Invite your first cleaner. They sign up with the code and are instantly linked to your company.</div>
         </div>
       )}
 
       {pendingCleaners.length > 0 && (
-        <div style={{ background: C.amberSoft, borderRadius: 20, padding: 16, marginBottom: 14 }}>
+        <div style={{ background: C.amberSoft, borderRadius: R.lg, padding: 16, marginBottom: 14 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 4 }}>
             {L("Waiting for your approval", "Jóváhagyásra vár")} ({pendingCleaners.length})
           </div>
@@ -4065,7 +4143,7 @@ function CompanyTeam() {
             {L("These cleaners signed up with your invite code. They can only log in once you approve them.", "Ezek a takarítók a meghívókódoddal regisztráltak. Csak jóváhagyás után tudnak belépni.")}
           </div>
           {pendingCleaners.map((p) => (
-            <div key={p.id} style={{ background: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 8 }}>
+            <div key={p.id} style={{ background: C.card, borderRadius: R.md, padding: "12px 14px", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <Avatar name={p.full_name || "?"} size={36} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -4096,7 +4174,7 @@ function CompanyTeam() {
       {viewCleanerDocs && <DocViewer title={viewCleanerDocs.title} docs={viewCleanerDocs.docs} close={() => setViewCleanerDocs(null)} />}
 
       {employees.map((m) => (
-        <div key={m.id} style={{ background: C.card, borderRadius: 20, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)" }}>
+        <div key={m.id} style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Avatar name={m.full_name} size={42} />
             <div style={{ flex: 1 }}>
@@ -4106,8 +4184,8 @@ function CompanyTeam() {
             <Pill bg={C.mintSoft} color={C.green}>{L("Active", "Aktív")}</Pill>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
-            <Btn small ghost style={{ flex: 1 }} onClick={() => { setShowMsg(m); setMsg(""); }}>💬 {L("Send notice", "Üzenet küldése")}</Btn>
-            <Btn small ghost style={{ flex: 1 }}>📋 {bookings.filter((b) => b.assigned_to === m.id && b.status < 4).length} open</Btn>
+            <Btn small ghost style={{ flex: 1 }} onClick={() => { setShowMsg(m); setMsg(""); }}>{L("Send notice", "Üzenet küldése")}</Btn>
+            <Btn small ghost style={{ flex: 1 }}>{bookings.filter((b) => b.assigned_to === m.id && b.status < 4).length} open</Btn>
             <Btn small ghost style={{ color: C.coral }} onClick={() => setConfirmRm(m)}>{L("Remove", "Törlés")}</Btn>
           </div>
         </div>
@@ -4117,7 +4195,7 @@ function CompanyTeam() {
         <>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>{L("Pending invites", "Függő meghívók")}</div>
           {invites.filter((i) => !i.used_by).map((i) => (
-            <div key={i.code} style={{ background: C.card, borderRadius: 16, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
+            <div key={i.code} style={{ background: C.card, borderRadius: R.lg, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 14, color: C.navy, letterSpacing: 1.5 }}>{i.code}</div>
@@ -4128,7 +4206,7 @@ function CompanyTeam() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <Btn small ghost style={{ flex: 1 }} onClick={() => copyCode(i.code)}>📋 {L("Copy code", "Kód másolása")}</Btn>
+                <Btn small ghost style={{ flex: 1 }} onClick={() => copyCode(i.code)}>{L("Copy code", "Kód másolása")}</Btn>
                 <Btn small ghost style={{ flex: 1, color: C.coral }} onClick={() => { deleteInvite(i.code); toast(L("Invite deleted", "Meghívó törölve")); }}>✕ Revoke</Btn>
               </div>
             </div>
@@ -4141,7 +4219,7 @@ function CompanyTeam() {
           {!newCode ? (
             <>
               <Field label={L("Who is this invite for? (optional)", "Kinek szól a meghívó? (nem kötelező)")} placeholder={L("e.g. Zoltán Farkas", "pl. Farkas Zoltán")} value={label} onChange={(e) => setLabel(e.target.value)} />
-              <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.6, background: C.mintSoft, borderRadius: 13, padding: "11px 14px", marginBottom: 16 }}>
+              <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.6, background: C.mintSoft, borderRadius: R.md, padding: "11px 14px", marginBottom: 16 }}>
                 {L("A one-time invite code is generated. They open Cleano, choose \"I'm a cleaner\", and sign up with the code — they're instantly linked to your company.", "Egyszer használatos meghívókód készül. Megnyitják a Cleanót, a „Takarító vagyok” lehetőséget választják, és a kóddal regisztrálnak — azonnal a céghez kerülnek.")}
               </div>
               <Btn full onClick={async () => { const code = await createInvite(label); if (code) setNewCode(code); else toast(L("Failed to generate code", "A kód létrehozása nem sikerült"), "error"); }}>{L("Generate invite code", "Meghívókód létrehozása")}</Btn>
@@ -4149,8 +4227,8 @@ function CompanyTeam() {
           ) : (
             <div style={{ textAlign: "center" }}>
               <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 12 }}>Share this code with {label || L("your employee", "a munkatársaddal")}:</div>
-              <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 26, color: C.navy, letterSpacing: 3, background: C.card, borderRadius: 16, padding: "18px 0", boxShadow: "0 2px 12px rgba(20,28,58,.07)", marginBottom: 14 }}>{newCode}</div>
-              <Btn ghost full onClick={() => copyCode(newCode)} style={{ marginBottom: 10 }}>📋 {L("Copy to clipboard", "Másolás a vágólapra")}</Btn>
+              <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 26, color: C.navy, letterSpacing: 3, background: C.card, borderRadius: R.lg, padding: "18px 0", boxShadow: "0 2px 12px rgba(20,28,58,.07)", marginBottom: 14 }}>{newCode}</div>
+              <Btn ghost full onClick={() => copyCode(newCode)} style={{ marginBottom: 10 }}>{L("Copy to clipboard", "Másolás a vágólapra")}</Btn>
               <Btn full mint onClick={() => setShowAdd(false)}>Done</Btn>
             </div>
           )}
@@ -4159,14 +4237,14 @@ function CompanyTeam() {
 
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink, margin: "22px 0 12px" }}>{L("Sent notices", "Elküldött üzenetek")}</div>
       {notices.filter((n) => n.company_id === session.companyId).length === 0 && (
-        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, background: C.card, borderRadius: 14, padding: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
-          No notices sent yet — use the 💬 button on a team member.
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, background: C.card, borderRadius: R.md, padding: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+          No notices sent yet — use the button on a team member.
         </div>
       )}
       {notices.filter((n) => n.company_id === session.companyId).map((n) => {
         const emp = employees.find((e) => e.id === n.to_employee);
         return (
-          <div key={n.id} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: 15, padding: "13px 15px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+          <div key={n.id} style={{ background: n.from_employee ? C.mintSoft : C.card, borderRadius: R.md, padding: "13px 15px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               <Avatar name={n.employee_name || emp?.full_name || "?"} size={30} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -4174,13 +4252,13 @@ function CompanyTeam() {
                 <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.body}</div>
               </div>
               {n.from_employee
-                ? <Pill bg={C.mintSoft} color={C.green}>💬 Reply</Pill>
+                ? <Pill bg={C.mintSoft} color={C.green}>Reply</Pill>
                 : n.is_read
                 ? <Pill bg={C.mintSoft} color={C.green}>✓✓ {n.read_at ? new Date(n.read_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : L("Seen", "Látta")}</Pill>
                 : <Pill bg={C.amberSoft} color={C.amber}>✓ {L("Not seen yet", "Még nem látta")}</Pill>}
               <button onClick={() => { deleteNotice(n.id); }}
                 title={L("Clear from my list", "Törlés a listámról")}
-                style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: 9, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
+                style={{ border: "none", background: C.bg, color: C.inkFaint, width: 26, height: 26, borderRadius: R.sm, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>✕</button>
             </div>
           </div>
         );
@@ -4202,7 +4280,7 @@ function CompanyTeam() {
       {showMsg && (
         <Sheet title={`Notice to ${showMsg.full_name.split(" ")[0]}`} close={() => setShowMsg(null)}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-            {[L("Bring HEPA vacuum 🌬️", "Hozz HEPA porszívót 🌬️"), L("Call me when free 📞", "Hívj, ha ráérsz 📞"), L("Schedule change tomorrow 🗓️", "Holnap változik a beosztás 🗓️"), L("Check the job notes carefully 📋", "Olvasd el figyelmesen a munka jegyzetét 📋")].map((q) => (
+            {[L("Bring HEPA vacuum️", "Hozz HEPA porszívót️"), L("Call me when free", "Hívj, ha ráérsz"), L("Schedule change tomorrow️", "Holnap változik a beosztás️"), L("Check the job notes carefully", "Olvasd el figyelmesen a munka jegyzetét")].map((q) => (
               <button key={q} onClick={() => setMsg(q)} style={{ fontFamily: B, fontSize: 11.5, fontWeight: 600, padding: "8px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: msg === q ? C.mintSoft : C.card, color: C.navySoft, cursor: "pointer" }}>{q}</button>
             ))}
           </div>
@@ -4221,9 +4299,9 @@ function JobHistory() {
   const done = bookings.filter((b) => b.company_id === session.companyId && b.status === 4);
   const total = done.reduce((a, b) => a + (b.total_huf || 0) - (b.service_fee_huf || 0), 0);
   return (
-    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+    <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
       <button onClick={() => setOpen(!open)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: 0, textAlign: "left" }}>
-        <span style={{ fontSize: 20 }}>🗄</span>
+        <span style={{ fontSize: 20 }}></span>
         <span style={{ flex: 1 }}>
           <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>{L("Completed jobs history", "Elvégzett munkák előzményei")}</span>
           <span style={{ display: "block", fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>{done.length} jobs · {huf(total)} earned all-time</span>
@@ -4251,9 +4329,9 @@ function PayoutSetup() {
   if (!isLive || !st || !st.available) return null;
   const ready = st.connected && st.chargesEnabled;
   return (
-    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)", border: ready ? `1.5px solid ${C.mint}` : `1.5px dashed ${C.line}` }}>
+    <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)", border: ready ? `1.5px solid ${C.mint}` : `1.5px dashed ${C.line}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 22 }}>{ready ? "✅" : "⚡"}</span>
+        <span style={{ fontSize: 22 }}>{ready ? "" : ""}</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>
             {ready ? L("Automatic payouts active", "Automatikus kifizetés aktív") : L("Set up automatic payouts", "Automatikus kifizetés beállítása")}
@@ -4353,7 +4431,7 @@ function CalendarSync() {
   };
 
   return (
-    <div style={{ background: C.card, borderRadius: 18, padding: 16, marginTop: 14 }}>
+    <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginTop: 14 }}>
       <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", padding: 0, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
         <div style={{ textAlign: "left" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Sync with my calendar", "Szinkronizálás a naptárammal")}</div>
@@ -4369,7 +4447,7 @@ function CalendarSync() {
           {busy && !link && <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft }}>{L("Loading…", "Betöltés…")}</div>}
           {link && (
             <>
-              <div style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", fontFamily: "monospace", fontSize: 10.5, color: C.inkSoft, wordBreak: "break-all", lineHeight: 1.5 }}>
+              <div style={{ background: C.bg, borderRadius: R.md, padding: "10px 12px", fontFamily: "monospace", fontSize: 10.5, color: C.inkSoft, wordBreak: "break-all", lineHeight: 1.5 }}>
                 {link.url}
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -4383,7 +4461,7 @@ function CalendarSync() {
                 <br />
                 <b style={{ color: C.ink }}>{L("Android", "Android")}:</b> {L("Open Google Calendar on a computer → Other calendars → From URL, then paste the link.", "Nyisd meg a Google Naptárt számítógépen → Egyéb naptárak → URL alapján, majd illeszd be a linket.")}
               </div>
-              <div style={{ background: C.amberSoft, borderRadius: 12, padding: "10px 12px", marginTop: 11, fontFamily: B, fontSize: 10.5, color: C.ink, lineHeight: 1.55 }}>
+              <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "10px 12px", marginTop: 11, fontFamily: B, fontSize: 10.5, color: C.ink, lineHeight: 1.55 }}>
                 {L("Treat this link like a password — anyone who has it can see your schedule. It cannot be used to log in or change anything.", "Kezeld ezt a linket jelszóként — aki megkapja, látja a beosztásodat. Bejelentkezni vagy módosítani nem lehet vele.")}
               </div>
               <button onClick={reset} disabled={busy}
@@ -4473,7 +4551,7 @@ function PartnerInvoiceBox({ booking }) {
 
   if (inv?.partner) {
     return (
-      <div style={{ background: C.mintSoft, borderRadius: 12, padding: "9px 12px", marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.ink }}>
+      <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "9px 12px", marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.ink }}>
         ✓ {L("Invoice uploaded", "Számla feltöltve")} · <b>{inv.partner.number}</b>
       </div>
     );
@@ -4499,7 +4577,7 @@ function PartnerInvoiceBox({ booking }) {
   };
 
   return (
-    <div style={{ background: C.amberSoft, borderRadius: 12, padding: "10px 12px", marginTop: 10 }}>
+    <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "10px 12px", marginTop: 10 }}>
       <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, color: C.ink }}>
         {L("This job still needs your invoice", "Ehhez a munkához még hiányzik a számlád")}
       </div>
@@ -4511,9 +4589,9 @@ function PartnerInvoiceBox({ booking }) {
       ) : (
         <div style={{ marginTop: 9 }}>
           <input value={num} onChange={(e) => setNum(e.target.value)} placeholder={L("Invoice number", "Számla sorszáma")}
-            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 }} />
+            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: "none", borderRadius: R.sm, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 }} />
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 }} />
+            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: "none", borderRadius: R.sm, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 }} />
           <input type="file" accept="application/pdf" onChange={pick}
             style={{ width: "100%", fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9 }} />
           <div style={{ display: "flex", gap: 8 }}>
@@ -4542,8 +4620,8 @@ function CustomerInvoiceLine({ booking }) {
     );
   }
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.bg, borderRadius: 11, padding: "8px 11px", marginTop: 9 }}>
-      <span style={{ fontFamily: B, fontSize: 11.5, color: C.ink }}>🧾 {L("Invoice", "Számla")} {inv.partner.number}</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.bg, borderRadius: R.sm, padding: "8px 11px", marginTop: 9 }}>
+      <span style={{ fontFamily: B, fontSize: 11.5, color: C.ink }}>{L("Invoice", "Számla")} {inv.partner.number}</span>
       {inv.partner.hasPdf && (
         <button onClick={async () => {
           const { API_BASE, getToken } = await import("./lib/api.js");
@@ -4583,7 +4661,7 @@ function ReportCustomerBox({ booking }) {
   ];
 
   if (sent) return (
-    <div style={{ background: C.mintSoft, borderRadius: 12, padding: "9px 12px", marginTop: 9, fontFamily: B, fontSize: 11.5, color: C.ink }}>
+    <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "9px 12px", marginTop: 9, fontFamily: B, fontSize: 11.5, color: C.ink }}>
       ✓ {L("Reported to Cleano — we'll look into it", "Bejelentve a Cleanónak — megvizsgáljuk")}
     </div>
   );
@@ -4592,11 +4670,11 @@ function ReportCustomerBox({ booking }) {
     <>
       <button onClick={() => setOpen(true)}
         style={{ border: "none", background: "none", padding: "8px 0 0", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint }}>
-        ⚑ {L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}
+        {L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}
       </button>
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 380, maxHeight: "88vh", overflowY: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: R.lg, padding: 22, width: "100%", maxWidth: 380, maxHeight: "88vh", overflowY: "auto" }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}</div>
             <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
               {L("This goes to Cleano only — the customer is never told and never sees it. Nobody is suspended automatically; a person reads every report.", "Ez csak a Cleanóhoz jut el — az ügyfél nem értesül róla és nem látja. Senkit nem függesztünk fel automatikusan; minden bejelentést ember olvas el.")}
@@ -4610,7 +4688,7 @@ function ReportCustomerBox({ booking }) {
             </div>
             <textarea rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={2000}
               placeholder={L("What happened? Dates, times and what was said or done help us act on it.", "Mi történt? A dátum, az időpont és az elhangzottak segítenek intézkedni.")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
               <Btn full ghost onClick={() => setOpen(false)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full disabled={busy || detail.trim().length < 10} onClick={async () => {
@@ -4657,16 +4735,16 @@ function CompanyReviews() {
         {headlineCount} {L("reviews", "értékelés")} · {L("average", "átlag")} <b style={{ color: C.navy }}>{(headline ?? avg) || "—"}</b> <span style={{ color: C.amber }}>{stars(avg)}</span>
       </div>
 
-      <div style={{ background: C.navyChip, borderRadius: 14, padding: "11px 13px", marginBottom: 12, fontFamily: B, fontSize: 11, color: C.inkSoft, lineHeight: 1.55 }}>
+      <div style={{ background: C.navyChip, borderRadius: R.md, padding: "11px 13px", marginBottom: 12, fontFamily: B, fontSize: 11, color: C.inkSoft, lineHeight: 1.55 }}>
         {L("Customers see one rating for your company — never which cleaner did the job. The breakdown below is yours alone.", "Az ügyfelek egyetlen céges értékelést látnak — azt soha nem, hogy melyik takarító végezte a munkát. Az alábbi bontás csak a tiéd.")}
       </div>
 
       {cleaners.length > 0 && (
-        <div style={{ background: C.card, borderRadius: 20, padding: 16, marginBottom: 16, boxShadow: "0 2px 12px rgba(20,28,58,.06)" }}>
+        <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 16, boxShadow: "0 2px 12px rgba(20,28,58,.06)" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginBottom: 10 }}>{L("By cleaner", "Takarítónként")}</div>
           {cleaners.map((c) => (
             <button key={c.cleanerId || "unassigned"} onClick={() => setFilter(String(c.cleanerId || "unassigned"))}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: filter === String(c.cleanerId || "unassigned") ? C.bg : "transparent", border: "none", borderRadius: 13, padding: "9px 10px", cursor: "pointer", textAlign: "left" }}>
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: filter === String(c.cleanerId || "unassigned") ? C.bg : "transparent", border: "none", borderRadius: R.md, padding: "9px 10px", cursor: "pointer", textAlign: "left" }}>
               <Avatar name={c.name} size={32} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{c.name}</div>
@@ -4688,7 +4766,7 @@ function CompanyReviews() {
 
       {shown.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 40 }}>{L("No reviews yet.", "Még nincs értékelés.")}</div>}
       {shown.map((r) => (
-        <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+        <div key={r.id} style={{ background: C.card, borderRadius: R.lg, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{r.customer_name || L("Customer", "Ügyfél")}</div>
             <div style={{ color: C.amber, fontSize: 13 }}>{stars(r.rating)}</div>
@@ -4701,11 +4779,11 @@ function CompanyReviews() {
           {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“<Translated map={r.body_i18n} fallback={r.comment} />”</div>}
           {r.reported_at ? (
             <div style={{ fontFamily: B, fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 9 }}>
-              ⚑ {L("Reported — an admin is reviewing it", "Bejelentve — az admin átnézi")}
+              {L("Reported — an admin is reviewing it", "Bejelentve — az admin átnézi")}
             </div>
           ) : (
             <button onClick={() => setReporting(r)} style={{ border: "none", background: "none", padding: "8px 0 0", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint }}>
-              ⚑ {L("Report this review", "Értékelés bejelentése")}
+              {L("Report this review", "Értékelés bejelentése")}
             </button>
           )}
         </div>
@@ -4714,14 +4792,14 @@ function CompanyReviews() {
       {/* report dialog — a real reason, so admins can judge it fairly */}
       {reporting && (
         <div onClick={() => setReporting(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: R.lg, padding: 22, width: "100%", maxWidth: 360 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Report this review", "Értékelés bejelentése")}</div>
             <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
               {L("Tell us what's wrong with it. An admin reads every report. Reviews are only removed if they break the rules — not for being negative.", "Írd le, mi a baj vele. Minden bejelentést admin olvas el. Csak szabálysértő értékelést törlünk — a negatívat nem.")}
             </div>
             <textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500}
               placeholder={L("e.g. abusive language, not a real customer, mentions a different company", "pl. sértő hangnem, nem valódi ügyfél, más céget említ")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <Btn full ghost onClick={() => setReporting(null)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full disabled={reason.trim().length < 5 || rBusy} onClick={async () => {
@@ -4759,11 +4837,11 @@ function AddCityField({ onAdd, country }) {
       <input value={q} onChange={(e) => type(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); take(sugs[0] || q); } }}
         placeholder={L("Add a city…", "Város hozzáadása…")}
-        style={{ width: "100%", boxSizing: "border-box", padding: "12px 15px", borderRadius: 15,
+        style={{ width: "100%", boxSizing: "border-box", padding: "12px 15px", borderRadius: R.md,
                  border: `1.5px dashed ${C.line}`, fontFamily: B, fontSize: 13.5, background: C.bg, color: C.ink }} />
       {sugs.length > 0 && (
         <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 50, background: C.card,
-                      borderRadius: 13, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
+                      borderRadius: R.md, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
           {sugs.map((c) => (
             <button key={c} onMouseDown={() => take(c)}
               style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none",
@@ -4772,6 +4850,91 @@ function AddCityField({ onAdd, country }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* A real calendar, not two months of days on a rail.
+
+   The date picker was a horizontal strip: sixty buttons in one line, grouped by
+   month and snapped to weeks. Picking a date three weeks out meant swiping
+   blindly past twenty tiles, with no sense of which weekday you were landing
+   on. People do not hold dates that way — they hold them as a grid, in the
+   shape of a month.
+
+   Weeks start on Monday, which is how Hungary reads a calendar. Days outside
+   the bookable window, days the company is closed and days already full are
+   drawn but not pressable, so the shape of the month stays intact rather than
+   collapsing into a list of whatever is left. */
+function MonthCalendar({ days, value, onPick, isClosed, isFull }) {
+  const byIso = React.useMemo(() => Object.fromEntries(days.map((d) => [d.iso, d])), [days]);
+  const first = days[0], last = days[days.length - 1];
+  const [cursor, setCursor] = useState(() => {
+    const d = new Date(value?.iso || first?.iso || Date.now());
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  if (!first) return null;
+
+  const firstOf = new Date(cursor.y, cursor.m, 1);
+  const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();
+  const lead = (firstOf.getDay() + 6) % 7;                 // Monday-first
+  const pad = (n) => String(n).padStart(2, "0");
+  const isoOf = (n) => `${cursor.y}-${pad(cursor.m + 1)}-${pad(n)}`;
+
+  const monthName = firstOf.toLocaleDateString(LOC(), { month: "long", year: "numeric" });
+  const dowNames = Array.from({ length: 7 }, (_, i) =>
+    new Date(2024, 0, 1 + i).toLocaleDateString(LOC(), { weekday: "short" }));
+
+  const step = (delta) => setCursor((c) => {
+    const d = new Date(c.y, c.m + delta, 1);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  const canBack = new Date(cursor.y, cursor.m, 1) > new Date(new Date(first.iso).getFullYear(), new Date(first.iso).getMonth(), 1);
+  const canFwd = new Date(cursor.y, cursor.m, 1) < new Date(new Date(last.iso).getFullYear(), new Date(last.iso).getMonth(), 1);
+
+  const Nav = ({ dir, on, label }) => (
+    <button onClick={() => on && step(dir)} disabled={!on} aria-label={label}
+      style={{ width: 34, height: 34, borderRadius: R.md, border: "none", cursor: on ? "pointer" : "default",
+               background: on ? C.navyChip : "transparent", color: on ? C.navySoft : C.inkFaint,
+               fontFamily: F, fontWeight: 700, fontSize: 15, lineHeight: 1 }}>{dir < 0 ? "‹" : "›"}</button>
+  );
+
+  return (
+    <div style={{ background: C.card, borderRadius: R.lg, padding: 12, boxShadow: "0 1px 6px rgba(20,28,58,.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <Nav dir={-1} on={canBack} label={L("Previous month", "Előző hónap")} />
+        <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, textTransform: "capitalize" }}>{monthName}</span>
+        <Nav dir={1} on={canFwd} label={L("Next month", "Következő hónap")} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 }}>
+        {dowNames.map((d) => (
+          <div key={d} style={{ textAlign: "center", fontFamily: B, fontSize: 9.5, fontWeight: 700,
+                                color: C.inkFaint, textTransform: "uppercase" }}>{d.slice(0, 2)}</div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+        {Array.from({ length: lead }).map((_, i) => <div key={"p" + i} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((n) => {
+          const iso = isoOf(n);
+          const d = byIso[iso];
+          const off = !d || isClosed(iso) || isFull(iso);
+          const on = value?.iso === iso;
+          return (
+            <button key={iso} disabled={off} onClick={() => d && onPick(d)}
+              title={d && isFull(iso) ? L("Fully booked", "Teljesen betelt") : undefined}
+              style={{ aspectRatio: "1 / 1", borderRadius: R.sm, border: "none",
+                       cursor: off ? "not-allowed" : "pointer", opacity: off ? .28 : 1,
+                       background: on ? C.navy : "transparent",
+                       color: on ? "#fff" : C.ink, fontFamily: F, fontWeight: 700, fontSize: 13,
+                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
+              {n}
+              {d?.label && !on && <span style={{ fontSize: 7.5, fontFamily: B, color: C.navySoft }}>{d.label}</span>}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -4791,11 +4954,11 @@ function CitySuggestField({ label, value, onChange, country }) {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{label}</div>
       <input value={value} placeholder="Debrecen" onChange={(e) => type(e.target.value)}
         onBlur={() => setTimeout(() => setOpen(false), 180)}
-        style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15,
+        style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: R.md,
                  border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.bg, color: C.ink }} />
       {open && sugs.length > 0 && (
         <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: 74, background: C.card,
-                      borderRadius: 13, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
+                      borderRadius: R.md, boxShadow: "0 10px 30px rgba(20,28,58,.18)", overflow: "hidden" }}>
           {sugs.map((c) => (
             <button key={c} onMouseDown={() => { onChange(c); setSugs([]); setOpen(false); }}
               style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none",
@@ -4810,10 +4973,171 @@ function CitySuggestField({ label, value, onChange, country }) {
   );
 }
 
+/* A collapsible section, and a checklist of what is still missing.
+
+   Company settings was twenty-three fields in one continuous scroll with three
+   save buttons in it — the logo next to the tax number next to the opening
+   hours, with nothing to say which of them a partner had to fill in before
+   customers could find them. Nobody sets that up correctly on the first pass;
+   they scroll, give up somewhere near the middle, and their listing is missing
+   the one field that mattered.
+
+   Grouped and folded away, with the incomplete things named at the top. */
+/* ── Where each company field lives ───────────────────────────────────────
+   One list, read by two screens. Moving a field from Setup to Profile later is
+   changing the word "setup" to "profile" on its line here — not cutting JSX out
+   of one 500-line component and pasting it into another, which is how a field
+   quietly loses its save handler on the way across.
+
+   The split is by how often a partner touches it:
+     profile — who the business IS. Set once, changed almost never: name, logo,
+               tax number, billing address, documents.
+     setup   — how it OPERATES. Revisited whenever the business changes: where
+               it works, when it is open, what it charges extra for.
+
+   `group` is the section heading it appears under; `req` marks the ones the
+   setup checklist nags about. */
+const COMPANY_FIELDS = [
+  // ── who you are ─────────────────────────────────────────────────────────
+  { id: "name",            screen: "profile", group: "identity", req: true,
+    label: () => L("Company name", "Cégnév"), placeholder: "Tiszta Otthon Kft" },
+  { id: "tagline",         screen: "profile", group: "identity",
+    label: () => L("Tagline", "Mottó"), placeholder: () => L("One line customers see under your name", "Egy sor, amit az ügyfelek a neved alatt látnak") },
+  { id: "contact_phone",   screen: "profile", group: "identity", type: "phone",
+    label: () => L("Contact phone", "Kapcsolattartó telefonszám") },
+
+  // ── the legal and money side ────────────────────────────────────────────
+  { id: "tax_id",          screen: "profile", group: "billing", req: true,
+    label: () => L("Tax number (adószám)", "Adószám"), placeholder: "12345678-1-42" },
+  { id: "reg_number",      screen: "profile", group: "billing",
+    label: () => L("Company registration no.", "Cégjegyzékszám"), placeholder: "09-09-123456" },
+  { id: "billing_name",    screen: "profile", group: "billing",
+    label: () => L("Billing name, if different", "Számlázási név, ha eltér") },
+  { id: "billing_zip",     screen: "profile", group: "billing", half: true,
+    label: () => L("Postcode", "Irányítószám") },
+  { id: "billing_city",    screen: "profile", group: "billing", half: true,
+    label: () => L("Town", "Település") },
+  { id: "billing_address", screen: "profile", group: "billing", req: true,
+    label: () => L("Street and number", "Utca és házszám") },
+  { id: "billing_email",   screen: "profile", group: "billing",
+    label: () => L("Where should we send invoices?", "Hová küldjük a számlákat?"), placeholder: "szamla@ceged.hu" },
+  { id: "google_place_id", screen: "profile", group: "billing",
+    label: () => L("Google Place ID (optional)", "Google Place ID (nem kötelező)") },
+
+  // ── how you operate ─────────────────────────────────────────────────────
+  { id: "city",            screen: "setup",   group: "area", req: true,
+    label: () => L("City served", "Kiszolgált város") },
+  { id: "area",            screen: "setup",   group: "area",
+    label: () => L("Service area (shown on your card)", "Szolgáltatási terület (a kártyádon látszik)") },
+  { id: "student_discount",screen: "setup",   group: "pricing", type: "number",
+    label: () => L("Student discount %", "Diákkedvezmény %") },
+];
+
+const fieldsFor = (screen, group) =>
+  COMPANY_FIELDS.filter((x) => x.screen === screen && (!group || x.group === group));
+
+/* Renders whatever the registry says belongs here. Both screens use it, so a
+   field looks and saves the same wherever it is shown. */
+function CompanyFields({ screen, group, f, setF }) {
+  const rows = fieldsFor(screen, group);
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const x = rows[i];
+    const val = (v) => (typeof v === "function" ? v() : v);
+    const node = (
+      <Field key={x.id} label={val(x.label)} placeholder={val(x.placeholder)}
+        type={x.type === "number" ? "number" : undefined}
+        value={f[x.id] ?? ""} onChange={(e) => setF((p) => ({ ...p, [x.id]: e.target.value }))} />
+    );
+    /* Two short fields share a row when the registry says so — a postcode does
+       not need the width of a street name. */
+    if (x.half && rows[i + 1]?.half) {
+      out.push(
+        <div key={x.id + "-row"} style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>{node}</div>
+          <div style={{ flex: 1 }}>
+            <Field label={val(rows[i + 1].label)} placeholder={val(rows[i + 1].placeholder)}
+              value={f[rows[i + 1].id] ?? ""} onChange={(e) => setF((p) => ({ ...p, [rows[i + 1].id]: e.target.value }))} />
+          </div>
+        </div>);
+      i++;
+    } else out.push(node);
+  }
+  return <>{out}</>;
+}
+
+function SetupSection({ title, sub, done, open, onToggle, children }) {
+  return (
+    <div style={{ background: C.card, borderRadius: R.lg, marginBottom: 12, overflow: "hidden",
+                  boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+      <button onClick={onToggle}
+        style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
+                 padding: "14px 16px", border: "none", background: "transparent", cursor: "pointer" }}>
+        <span style={{ width: 22, height: 22, borderRadius: R.pill, flexShrink: 0,
+                       background: done ? C.mintSoft : C.navyChip,
+                       display: "flex", alignItems: "center", justifyContent: "center",
+                       fontFamily: F, fontWeight: 700, fontSize: 12, color: done ? C.green : C.inkFaint }}>
+          {done ? "✓" : ""}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{title}</span>
+          {sub && <span style={{ display: "block", fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{sub}</span>}
+        </span>
+        <span style={{ fontFamily: F, fontWeight: 700, fontSize: 15, color: C.inkFaint,
+                       transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+      </button>
+      {open && <div style={{ padding: "0 16px 16px" }}>{children}</div>}
+    </div>
+  );
+}
+
+/* What a partner still has to do before customers can find and book them.
+   Only blocking things: a half-written tagline is not worth nagging about. */
+function SetupChecklist({ f, avail, services, onJump }) {
+  const items = [
+    { k: "name", ok: !!String(f.name || "").trim(), label: L("Company name", "Cégnév"), to: "identity" },
+    { k: "where", ok: !!String(f.city || "").trim(), label: L("Where you work", "Hol dolgozol"), to: "area" },
+    { k: "hours", ok: Object.values(avail?.days || {}).some((d) => d?.on && (d.slots || []).length),
+      label: L("Opening hours", "Nyitvatartás"), to: "hours" },
+    { k: "services", ok: (services || []).length > 0, label: L("At least one service", "Legalább egy szolgáltatás"), to: null },
+    { k: "billing", ok: !!String(f.billing_address || "").trim() && !!String(f.tax_id || "").trim(),
+      label: L("Billing details", "Számlázási adatok"), to: "billing" },
+  ];
+  const left = items.filter((i) => !i.ok);
+  if (!left.length) {
+    return (
+      <div style={{ background: C.mintSoft, borderRadius: R.lg, padding: "13px 15px", marginBottom: 14,
+                    fontFamily: B, fontSize: 12, color: C.greenDeep, lineHeight: 1.5 }}>
+        {L("Everything is set up — customers can find and book you.",
+           "Minden be van állítva — az ügyfelek megtalálnak és tudnak foglalni.")}
+      </div>
+    );
+  }
+  return (
+    <div style={{ background: C.amberSoft, borderRadius: R.lg, padding: "13px 15px", marginBottom: 14 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.amber, marginBottom: 8 }}>
+        {fill(L("{0} things left before customers can book you",
+                "{0} dolog maradt, mielőtt foglalni tudnának nálad"), left.length)}
+      </div>
+      {left.map((i) => (
+        <button key={i.k} onClick={() => i.to && onJump(i.to)}
+          style={{ display: "block", width: "100%", textAlign: "left", padding: "5px 0", border: "none",
+                   background: "transparent", cursor: i.to ? "pointer" : "default",
+                   fontFamily: B, fontSize: 12, color: C.ink }}>
+          — {i.label}{i.to ? " ›" : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CompanySettings() {
   const { session, companies, updateCompany, bookings, services } = useStore();
   const toast = useToast();
   const co = companies.find((c) => c.id === session.companyId);
+  /* One section open at a time: an accordion, not twenty-three fields at once. */
+  const [openSec, setOpenSec] = useState(null);
+  const sec = (id) => ({ open: openSec === id, onToggle: () => setOpenSec(openSec === id ? null : id) });
   const [f, setF] = useState({
     name: co?.name || "", tagline: co?.tagline || "", area: co?.area || "", city: co?.city || "",
     country: co?.country || "HU",
@@ -4821,7 +5145,7 @@ function CompanySettings() {
     service_radius_km: co?.service_radius_km || 10,
     service_cities: Array.isArray(co?.service_cities) ? co.service_cities
                   : (() => { try { return JSON.parse(co?.service_cities || "[]"); } catch { return []; } })(),
-    emoji: co?.emoji || "🫧", student_discount: co?.student_discount ?? 10,
+    emoji: co?.emoji || "", student_discount: co?.student_discount ?? 10,
     promo_on: !!promoOf(co), promo_pct: promoOf(co)?.pct ?? 10, promo_label: promoOf(co)?.label || "", promo_until: promoOf(co)?.until || "",
     cover: co?.cover || COVER_PRESETS[0], logo_url: co?.logo_url || null,
     tax_id: co?.tax_id || "", reg_number: co?.reg_number || "", contact_phone: co?.contact_phone || "", google_place_id: co?.google_place_id || "",
@@ -4878,7 +5202,7 @@ function CompanySettings() {
     const disc = parseInt(f.student_discount, 10);
     if (isNaN(disc) || disc < 0 || disc > 50) return toast(L("Discount must be 0–50%", "A kedvezmény 0–50% között lehet"), "error");
     setBusy(true);
-    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "🫧", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents, availability: avail,
+    const res = await updateCompany({ name: f.name.trim(), tagline: f.tagline, area: f.area, emoji: f.emoji || "", student_discount: disc, promo: f.promo_on ? { pct: parseInt(f.promo_pct, 10) || 10, label: f.promo_label, until: f.promo_until || null } : null, cover: f.cover, logo_url: f.logo_url, tax_id: f.tax_id, reg_number: f.reg_number, contact_phone: f.contact_phone, google_place_id: f.google_place_id, documents: f.documents, availability: avail,
       billingName: f.billing_name.trim(), billingZip: f.billing_zip.trim(), billingCity: f.billing_city.trim(),
       billingAddress: f.billing_address.trim(), billingEmail: f.billing_email.trim(),
       city: (f.city || "").trim(), requirements: (f.requirements || []).map((x) => String(x).trim()).filter(Boolean).slice(0, 12),
@@ -4893,15 +5217,17 @@ function CompanySettings() {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("Company settings", "Cégbeállítások")}</div>
 
-      <div style={{ height: 110, background: f.cover, borderRadius: 20, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
-        <div style={{ width: 68, height: 68, borderRadius: 18, background: C.card, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, overflow: "hidden" }}>
-          {f.logo_url ? <img src={f.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (f.emoji || "🫧")}
+      <SetupChecklist f={f} avail={avail} services={services} onJump={(id) => setOpenSec(id)} />
+
+      <div style={{ height: 110, background: f.cover, borderRadius: R.lg, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+        <div style={{ width: 68, height: 68, borderRadius: R.lg, background: C.card, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, overflow: "hidden" }}>
+          {f.logo_url ? <img src={f.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (f.emoji || "")}
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-        <label style={{ flex: 1, textAlign: "center", fontFamily: F, fontWeight: 700, fontSize: 13, padding: "12px 0", borderRadius: 14, background: `linear-gradient(135deg,${C.navy},${C.navyMid})`, color: "#fff", cursor: "pointer", boxShadow: "0 6px 18px rgba(27,42,107,.28)" }}>
-          ⬆️ Upload your logo (PNG)
+        <label style={{ flex: 1, textAlign: "center", fontFamily: F, fontWeight: 700, fontSize: 13, padding: "12px 0", borderRadius: R.md, background: C.navy, color: "#fff", cursor: "pointer", boxShadow: "0 6px 18px rgba(27,42,107,.28)" }}>
+         ️ Upload your logo (PNG)
           <input type="file" accept="image/png,image/*" onChange={onLogoFile} style={{ display: "none" }} />
         </label>
         {f.logo_url && <Btn small ghost onClick={() => setF({ ...f, logo_url: null })} style={{ color: C.coral }}>{L("Remove", "Törlés")}</Btn>}
@@ -4910,11 +5236,11 @@ function CompanySettings() {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{L("Cover colour", "Borítószín")}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
         {COVER_PRESETS.map((p) => (
-          <button key={p} onClick={() => setF({ ...f, cover: p })} style={{ width: 38, height: 38, borderRadius: 11, background: p, border: f.cover === p ? `3px solid ${C.navy}` : "3px solid transparent", cursor: "pointer", outline: f.cover === p ? `2px solid #fff` : "none", outlineOffset: -4 }} />
+          <button key={p} onClick={() => setF({ ...f, cover: p })} style={{ width: 38, height: 38, borderRadius: R.sm, background: p, border: f.cover === p ? `3px solid ${C.navy}` : "3px solid transparent", cursor: "pointer", outline: f.cover === p ? `2px solid #fff` : "none", outlineOffset: -4 }} />
         ))}
       </div>
 
-      <Field label={L("Emoji (shown if no logo uploaded)", "Emoji (ha nincs feltöltött logó)")} placeholder="🫧" value={f.emoji} onChange={set("emoji")} />
+      <Field label={L("Emoji (shown if no logo uploaded)", "Emoji (ha nincs feltöltött logó)")} placeholder="" value={f.emoji} onChange={set("emoji")} />
       <Field label={L("Company name *", "Cégnév *")} placeholder={L("SparkClean Kft.", "Ragyogó Kft.")} value={f.name} onChange={set("name")} />
       {/* Live suggestions for whichever country is selected below, rather than a
           fixed list of ten Hungarian cities. */}
@@ -4922,7 +5248,7 @@ function CompanySettings() {
         value={f.city || ""} onChange={(v) => setF((p) => ({ ...p, city: v }))} />
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{L("Country", "Ország")}</div>
       <select value={f.country || "HU"} onChange={(e) => setF({ ...f, country: e.target.value })}
-        style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: 15, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
+        style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", borderRadius: R.md, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, background: C.card, color: C.ink, marginBottom: 14, outline: "none" }}>
         {DIAL_CODES.map((x) => <option key={x.c} value={x.c}>{x.f} {x.n}</option>)}
       </select>
       <Field label={L("Tagline", "Szlogen")} placeholder={L("What makes you different?", "Miben vagytok mások?")} value={f.tagline} onChange={set("tagline")} />
@@ -5005,7 +5331,7 @@ function CompanySettings() {
           <button onClick={() => setF((p) => ({ ...p, service_cities: [...(p.service_cities || []), String(p.city).trim()] }))}
             style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "8px 13px", borderRadius: 99, border: "none",
                      background: C.navy, color: "#fff", cursor: "pointer", marginBottom: 10 }}>
-            {fill(L("🏙️ Serve the whole of {0}", "🏙️ {0} egészének kiszolgálása"), f.city)}
+            {fill(L("Serve the whole of {0}", "{0} egészének kiszolgálása"), f.city)}
           </button>
         )}
 
@@ -5023,7 +5349,7 @@ function CompanySettings() {
         <textarea rows={4} value={(f.requirements || []).join("\n")}
           onChange={(e) => setF((p) => ({ ...p, requirements: e.target.value.split("\n").map((x) => x.slice(0, 160)) }))}
           placeholder={L("Parking space for our van\nHot running water\nSomeone home to let us in", "Parkolóhely a furgonnak\nMeleg folyóvíz\nLegyen otthon valaki")}
-          style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", lineHeight: 1.7 }} />
+          style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", lineHeight: 1.7 }} />
       </div>
 
       {/* ── Billing address. Cleano invoices you the platform fee, and a Hungarian
@@ -5044,7 +5370,7 @@ function CompanySettings() {
 
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, margin: "4px 0 8px" }}>Business details (for verification & invoicing)</div>
       <Field label={L("Tax number (adószám)", "Adószám")} placeholder="12345678-1-42"
-        hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? L("✅ Valid", "✅ Érvényes") : L("❌ Invalid format — 12345678-1-42", "❌ Hibás formátum — 12345678-1-42")) : undefined}
+        hint={f.tax_id?.trim() ? (huTaxIdValid(f.tax_id) ? L("Valid", "Érvényes") : L("Invalid format — 12345678-1-42", "Hibás formátum — 12345678-1-42")) : undefined}
         value={f.tax_id} onChange={set("tax_id")} />
       <Field label={L("Company registration no.", "Cégjegyzékszám")} placeholder="09-09-123456" value={f.reg_number} onChange={set("reg_number")} />
       <PhoneField label={L("Contact phone", "Kapcsolattartó telefonszám")} value={f.contact_phone} onChange={(v) => setF((p) => ({ ...p, contact_phone: v }))} />
@@ -5067,7 +5393,7 @@ function CompanySettings() {
         <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 5 }}>{L("Students see this as a discount at checkout.", "A diákok ezt kedvezményként látják fizetéskor.")}</div>
       </div>
 
-      <div style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+      <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Special offer", "Akció")}</div>
@@ -5090,14 +5416,14 @@ function CompanySettings() {
         )}
       </div>
 
-      <div style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+      <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 16, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{L("Availability", "Elérhetőség")}</div>
         <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2, marginBottom: 12, lineHeight: 1.5 }}>
           {L("Tap the hours you accept bookings. Customers see exactly these times — nothing else.", "Koppints az órákra, amikor vállalsz munkát. Az ügyfelek pontosan ezeket látják.")}
         </div>
 
         {/* fully booked / paused */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: avail.paused ? C.amberSoft : C.bg, borderRadius: 14, padding: "11px 13px", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: avail.paused ? C.amberSoft : C.bg, borderRadius: R.md, padding: "11px 13px", marginBottom: 12 }}>
           <div style={{ flex: 1, paddingRight: 10 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{L("Fully booked — pause new bookings", "Betelt — foglalások szüneteltetése")}</div>
             <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>{L("You stay listed, but nobody can book until you switch this off.", "A profilod látható marad, de nem lehet foglalni.")}</div>
@@ -5106,6 +5432,43 @@ function CompanySettings() {
             style={{ width: 46, height: 26, borderRadius: 99, border: "none", cursor: "pointer", background: avail.paused ? C.amber : C.line, position: "relative", flexShrink: 0 }}>
             <span style={{ position: "absolute", top: 3, left: avail.paused ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,.25)" }} />
           </button>
+        </div>
+
+        {/* Set a whole week in one tap.
+
+            Opening hours were seven toggles and up to fifteen hour buttons
+            each — around sixty taps to describe an ordinary week, before a
+            partner had listed a single service. Almost every cleaning company
+            works one of a handful of patterns, so those are one press, and the
+            per-day rows below stay for anyone whose Thursday is different. */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkFaint, marginBottom: 7 }}>
+            {L("Start from a usual week", "Indulj egy szokásos hétből")}
+          </div>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            {[
+              { k: "wd85", label: L("Weekdays 8–17", "Hétköznap 8–17"), days: ["1","2","3","4","5"], from: "08:00", to: "17:00" },
+              { k: "wd97", label: L("Weekdays 9–19", "Hétköznap 9–19"), days: ["1","2","3","4","5"], from: "09:00", to: "19:00" },
+              { k: "all85", label: L("Every day 8–17", "Minden nap 8–17"), days: ["1","2","3","4","5","6","0"], from: "08:00", to: "17:00" },
+              { k: "sat", label: L("Add Saturdays", "Szombat is"), days: ["6"], from: "09:00", to: "14:00", additive: true },
+            ].map((pre) => (
+              <button key={pre.k} onClick={() => {
+                  const from = HOURS.indexOf(pre.from), to = HOURS.indexOf(pre.to);
+                  const span = HOURS.slice(from, to);
+                  const days = pre.additive ? { ...avail.days } : {};
+                  if (!pre.additive) for (const k of ["0","1","2","3","4","5","6"]) days[k] = { on: false, slots: [] };
+                  for (const k of pre.days) days[k] = { on: true, slots: [...span] };
+                  setAvail({ ...avail, days });
+                }}
+                style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "8px 13px", borderRadius: R.pill,
+                         border: `1px solid ${C.line}`, background: C.bg, color: C.navySoft, cursor: "pointer" }}>
+                {pre.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 7, lineHeight: 1.5 }}>
+            {L("Pick the closest one, then adjust any day below.", "Válaszd a legközelebbit, majd igazítsd bármelyik napot lentebb.")}
+          </div>
         </div>
 
         {/* per-weekday hours */}
@@ -5136,7 +5499,7 @@ function CompanySettings() {
                       const on = sel.includes(h);
                       return (
                         <button key={h} onClick={() => toggleHour(h)}
-                          style={{ padding: "7px 0", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11,
+                          style={{ padding: "7px 0", borderRadius: R.sm, border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11,
                             background: on ? C.navy : C.bg, color: on ? "#fff" : C.inkFaint }}>
                           {h.slice(0, 2)}
                         </button>
@@ -5167,7 +5530,7 @@ function CompanySettings() {
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{L("Days off", "Szabadnapok")}</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input type="date" value={closedDate} onChange={(e) => setClosedDate(e.target.value)}
-              style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none" }} />
+              style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none" }} />
             <Btn small disabled={!closedDate} onClick={() => {
               if (!closedDate || avail.closed.includes(closedDate)) return;
               setAvail({ ...avail, closed: [...avail.closed, closedDate].sort() });
@@ -5204,7 +5567,7 @@ function CompanySettings() {
           </div>
           <input type="date" value={busyDate} onChange={(e) => setBusyDate(e.target.value)}
             min={todayISO()} max={maxBookISO()}
-            style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none", marginBottom: 9 }} />
+            style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink, outline: "none", marginBottom: 9 }} />
           {busyDate && myServices.length > 0 && (
             <div style={{ marginBottom: 9 }}>
               <div style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.inkFaint, marginBottom: 5 }}>
@@ -5257,7 +5620,7 @@ function CompanySettings() {
                         if (next.length) busy[busyDate] = next; else delete busy[busyDate];
                         setAvail({ ...avail, busy });
                       }
-                    }} style={{ padding: "9px 0", borderRadius: 12, border: "none", cursor: booked ? "not-allowed" : "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5,
+                    }} style={{ padding: "9px 0", borderRadius: R.md, border: "none", cursor: booked ? "not-allowed" : "pointer", fontFamily: B, fontWeight: 700, fontSize: 11.5,
                       background: booked ? C.navyChip : isBusy ? C.coral : C.bg, color: booked ? C.navy : isBusy ? "#fff" : C.inkSoft }}>
                     {sl}{booked ? " ✓" : ""}
                   </button>
@@ -5283,9 +5646,9 @@ function CompanySettings() {
 
       <Btn full disabled={busy} onClick={save}>{busy ? L("Saving…", "Mentés…") : L("Save company profile", "Cégprofil mentése")}</Btn>
 
-      <div style={{ marginTop: 22, padding: "14px 16px", background: co?.is_approved ? C.mintSoft : C.amberSoft, borderRadius: 16 }}>
+      <div style={{ marginTop: 22, padding: "14px 16px", background: co?.is_approved ? C.mintSoft : C.amberSoft, borderRadius: R.lg }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 5 }}>
-          {co?.is_approved ? L("✅ Approved & live", "✅ Jóváhagyva és élő") : L("⏳ Pending admin approval", "⏳ Adminra vár")}
+          {co?.is_approved ? L("Approved & live", "Jóváhagyva és élő") : L("⏳ Pending admin approval", "⏳ Adminra vár")}
         </div>
         <div style={{ fontFamily: B, fontSize: 11.5, color: co?.is_approved ? C.greenDeep : C.amber, lineHeight: 1.6 }}>
           {co?.is_approved
@@ -5360,10 +5723,10 @@ function AnnouncementComposer() {
     setTitle(""); setBody(""); setCity(""); setCountry(""); setPerson(null); setQ(""); setOpen(false);
   };
 
-  const inputS = { width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" };
+  const inputS = { width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" };
 
   return (
-    <div className="cl-card" style={{ background: C.card, borderRadius: 20, padding: 18, marginBottom: 14 }}>
+    <div className="cl-card" style={{ background: C.card, borderRadius: R.lg, padding: 18, marginBottom: 14 }}>
       <button onClick={() => setOpen(!open)} style={{ background: "none", border: "none", padding: 0, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
         <div style={{ textAlign: "left" }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{L("Send announcement", "Hirdetmény küldése")}</div>
@@ -5386,7 +5749,7 @@ function AnnouncementComposer() {
 
           {/* one person */}
           {person ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.navySoft, borderRadius: 13, padding: "10px 14px", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.navySoft, borderRadius: R.md, padding: "10px 14px", marginBottom: 10 }}>
               <div>
                 <div style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{person.name}</div>
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft }}>{person.email}</div>
@@ -5397,7 +5760,7 @@ function AnnouncementComposer() {
             <div style={{ position: "relative", marginBottom: 10 }}>
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("…or send to one person — search name or email", "…vagy küldd egy embernek — keress névre vagy e-mailre")} style={inputS} />
               {matches.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20, background: C.card, borderRadius: 13, boxShadow: "0 8px 24px rgba(20,28,58,.16)", overflow: "hidden", marginTop: 4 }}>
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20, background: C.card, borderRadius: R.md, boxShadow: "0 8px 24px rgba(20,28,58,.16)", overflow: "hidden", marginTop: 4 }}>
                   {matches.map((u) => (
                     <button key={u.id} onClick={() => { setPerson({ id: u.id, name: u.name, email: u.email }); setQ(""); }}
                       style={{ display: "block", width: "100%", textAlign: "left", border: "none", background: "none", cursor: "pointer", padding: "10px 14px", fontFamily: B, fontSize: 12.5, color: C.ink }}>
@@ -5419,7 +5782,7 @@ function AnnouncementComposer() {
       {/* confirmation — the last stop before a few thousand phones buzz */}
       {confirm && (
         <div onClick={() => setConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 340 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: R.lg, padding: 22, width: "100%", maxWidth: 340 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>Send to {confirm.count} {confirm.count === 1 ? "person" : "people"}?</div>
             <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.6 }}>
               {describe()}<br /><b style={{ color: C.ink }}>{title}</b>{body ? <><br />{body}</> : null}
@@ -5456,12 +5819,12 @@ function AdminDashboard() {
 
   const s = adminStats;
   const kpis = [
-    { k: L("Total users", "Összes felhasználó"), v: s.totalUsers, icon: "👤" },
-    { k: L("Companies", "Cégek"), v: s.totalCompanies, icon: "🏢" },
-    { k: L("Bookings", "Foglalások"), v: s.totalBookings, icon: "📅" },
-    { k: L("Completed", "Teljesítve"), v: s.completedBookings, icon: "✅" },
-    { k: L("Active now", "Most aktív"), v: s.activeBookings, icon: "🔥" },
-    { k: L("Platform revenue", "Platform bevétel"), v: huf(s.totalRevenue || 0), icon: "💰" },
+    { k: L("Total users", "Összes felhasználó"), v: s.totalUsers, icon: "" },
+    { k: L("Companies", "Cégek"), v: s.totalCompanies, icon: "" },
+    { k: L("Bookings", "Foglalások"), v: s.totalBookings, icon: "" },
+    { k: L("Completed", "Teljesítve"), v: s.completedBookings, icon: "" },
+    { k: L("Active now", "Most aktív"), v: s.activeBookings, icon: "" },
+    { k: L("Platform revenue", "Platform bevétel"), v: huf(s.totalRevenue || 0), icon: "" },
   ];
 
   const maxRev = Math.max(...(adminRevenue || []).map((r) => r.revenue || 0), 1);
@@ -5473,7 +5836,7 @@ function AdminDashboard() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
         {kpis.map((k) => (
-          <div key={k.k} style={{ background: C.card, borderRadius: 16, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+          <div key={k.k} style={{ background: C.card, borderRadius: R.lg, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
             <div style={{ fontSize: 20, marginBottom: 6 }}>{k.icon}</div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.navy }}>{k.v}</div>
             <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>{k.k}</div>
@@ -5484,10 +5847,10 @@ function AdminDashboard() {
       {adminRevenue && adminRevenue.length > 0 && (
         <>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 12 }}>Revenue — last 30 days</div>
-          <div style={{ background: C.card, borderRadius: 16, padding: "16px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+          <div style={{ background: C.card, borderRadius: R.lg, padding: "16px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 80 }}>
               {adminRevenue.map((r, i) => (
-                <div key={i} title={`${r.date}: ${huf(r.revenue)}`} style={{ flex: 1, background: `linear-gradient(180deg,${C.navySoft},${C.navy})`, borderRadius: "4px 4px 0 0", height: `${Math.max(4, (r.revenue / maxRev) * 100)}%`, opacity: r.revenue > 0 ? 1 : .15 }} />
+                <div key={i} title={`${r.date}: ${huf(r.revenue)}`} style={{ flex: 1, background: `${C.navySoft}`, borderRadius: "4px 4px 0 0", height: `${Math.max(4, (r.revenue / maxRev) * 100)}%`, opacity: r.revenue > 0 ? 1 : .15 }} />
               ))}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 9.5, color: C.inkFaint, marginTop: 6 }}>
@@ -5506,8 +5869,8 @@ function AdminDashboard() {
             return (
               <div key={st} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
                 <div style={{ width: 80, fontFamily: B, fontSize: 11.5, color: C.inkSoft }}>{label}</div>
-                <div style={{ flex: 1, height: 8, borderRadius: 9, background: C.line, overflow: "hidden" }}>
-                  <div style={{ height: "100%", background: C.navySoft, borderRadius: 9, width: `${Math.max(2, (cnt / s.totalBookings) * 100)}%` }} />
+                <div style={{ flex: 1, height: 8, borderRadius: R.sm, background: C.line, overflow: "hidden" }}>
+                  <div style={{ height: "100%", background: C.navySoft, borderRadius: R.sm, width: `${Math.max(2, (cnt / s.totalBookings) * 100)}%` }} />
                 </div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.navy, minWidth: 24, textAlign: "right" }}>{cnt}</div>
               </div>
@@ -5587,7 +5950,7 @@ function CompanyDossier({ co, close }) {
       <Row k={L("Invoice email", "Számla e-mail")} v={co.billing_email || co.owner_email || dash}
            warn={!co.billing_email && !co.owner_email} />
       {!hasBilling && (
-        <div style={{ background: C.coralSoft, borderRadius: 13, padding: "10px 13px", marginTop: 10,
+        <div style={{ background: C.coralSoft, borderRadius: R.md, padding: "10px 13px", marginTop: 10,
                       fontFamily: B, fontSize: 11.5, color: C.coral, lineHeight: 1.5 }}>
           {L("This partner has not filled in a billing address. Ask them to complete it in Settings before you invoice — their registered city is shown below but is not the same field.",
              "Ez a partner nem adott meg számlázási címet. Kérd meg, hogy töltse ki a Beállításokban, mielőtt számlázol — a bejegyzett város lentebb látható, de az nem ugyanaz az adat.")}
@@ -5654,7 +6017,7 @@ function AdminCompanies() {
         const offers = (adminAllCompanies || []).filter((c) => promoOf(c));
         if (!offers.length) return null;
         return (
-          <div style={{ background: C.mintSoft, borderRadius: 18, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ background: C.mintSoft, borderRadius: R.lg, padding: "14px 16px", marginBottom: 14 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.greenDeep, marginBottom: 8 }}>Active offers ({offers.length})</div>
             {offers.map((c) => {
               const p = promoOf(c);
@@ -5669,16 +6032,16 @@ function AdminCompanies() {
         );
       })()}
       {(adminAllCompanies || []).map((co) => (
-        <div key={co.id} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: co.is_approved ? 1 : .65 }}>
+        <div key={co.id} style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 12, boxShadow: "0 2px 12px rgba(20,28,58,.06)", opacity: co.is_approved ? 1 : .65 }}>
           <div onClick={() => setDossier(co)} style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
             <CompanyLogo co={co} size={42} radius={13} />
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, display: "flex", alignItems: "center", gap: 7 }}>{co.name}{promoOf(co) && <Pill bg={C.mintSoft} color={C.greenDeep}>−{promoOf(co).pct}%</Pill>}</div>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2 }}>
-                ★ {co.rating} · {co.booking_count} bookings · {huf(co.revenue || 0)}
+                {co.rating} · {co.booking_count} bookings · {huf(co.revenue || 0)}
               </div>
               <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 1 }}>Owner: {co.owner_name || "—"} · {co.owner_email || "—"}</div>
-              {(co.tax_id || co.reg_number) && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 1 }}>🧾 Tax ID: {co.tax_id || "—"}{co.reg_number ? ` · Reg: ${co.reg_number}` : ""}</div>}
+              {(co.tax_id || co.reg_number) && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 1 }}>Tax ID: {co.tax_id || "—"}{co.reg_number ? ` · Reg: ${co.reg_number}` : ""}</div>}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
@@ -5709,7 +6072,7 @@ function AdminCompanies() {
               {L("Listings", "Szolgáltatások")}
             </button>
             <button onClick={() => setViewDocs({ title: `${co.name} — documents`, docs: co.documents || [] })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
-              📄 Docs ({(co.documents || []).length})
+              Docs ({(co.documents || []).length})
             </button>
           </div>
         </div>
@@ -5724,7 +6087,7 @@ function AdminCompanies() {
         <Sheet title={`${svcOpen.name} — listings (${svcOpen.list.length})`} close={() => setSvcOpen(null)}>
           {svcOpen.list.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("This company has no service listings yet.", "Ennek a cégnek még nincs szolgáltatása.")}</div>}
           {svcOpen.list.map((sv) => (
-            <div key={sv.id} style={{ background: C.bg, borderRadius: 14, padding: "12px 14px", marginBottom: 9 }}>
+            <div key={sv.id} style={{ background: C.bg, borderRadius: R.md, padding: "12px 14px", marginBottom: 9 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{sv.name}</div>
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(sv)}</div>
@@ -5759,17 +6122,17 @@ function ComplaintThread({ complaint, role, close, onChange }) {
   const doResolve = async () => { const r = await adminUpdateComplaint(complaint.id, { status: "resolved", resolution: note }); if (r?.error) toast(r.error, "error"); else { setStatus("resolved"); toast(L("Marked resolved", "Megoldottnak jelölve")); onChange && onChange(); } };
   const doAssign = async () => { if (!assignTo) return; const r = await assignComplaint(complaint.id, assignTo); if (r?.error) toast(r.error, "error"); else { const co = (adminAllCompanies || []).find((c) => c.id === assignTo); setAssigned(co?.name || "company"); setStatus("in_progress"); toast(L("Assigned to ", "Kiosztva: ") + (co?.name || L("company", "cég"))); onChange && onChange(); } };
   return (
-    <Sheet title={`🛟 ${complaint.subject}`} close={close}>
+    <Sheet title={`${complaint.subject}`} close={close}>
       <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 10 }}>
         {complaint.user_name ? `From ${complaint.user_name} · ` : ""}{new Date(complaint.created_at).toLocaleString()}
-        {assigned && <div style={{ marginTop: 4, color: C.navySoft, fontWeight: 700 }}>➡ Assigned to {assigned}</div>}
+        {assigned && <div style={{ marginTop: 4, color: C.navySoft, fontWeight: 700 }}>Assigned to {assigned}</div>}
       </div>
-      {complaint.body && <div style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, lineHeight: 1.6, marginBottom: 10 }}>{complaint.body}</div>}
+      {complaint.body && <div style={{ background: C.bg, borderRadius: R.md, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, lineHeight: 1.6, marginBottom: 10 }}>{complaint.body}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12, maxHeight: 280, overflowY: "auto" }}>
         {msgs.map((m) => {
           const mine = m.sender_role === role;
           return (
-            <div key={m.id} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", background: mine ? C.mint : C.card, borderRadius: 13, padding: "9px 12px", boxShadow: "0 1px 4px rgba(20,28,58,.06)" }}>
+            <div key={m.id} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", background: mine ? C.mint : C.card, borderRadius: R.md, padding: "9px 12px", boxShadow: "0 1px 4px rgba(20,28,58,.06)" }}>
               <div style={{ fontFamily: B, fontWeight: 700, fontSize: 10, color: mine ? C.navyDeep : C.navySoft, marginBottom: 2, textTransform: "capitalize" }}>{mine ? "You" : (m.sender_name || m.sender_role)}</div>
               <div style={{ fontFamily: B, fontSize: 12.5, color: mine ? C.navyDeep : C.ink, lineHeight: 1.5 }}>{m.body}</div>
             </div>
@@ -5780,15 +6143,15 @@ function ComplaintThread({ complaint, role, close, onChange }) {
 
       {/* ── who is talking to the customer ── */}
       {role === "admin" && (
-        <div style={{ background: C.card, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+        <div style={{ background: C.card, borderRadius: R.lg, padding: 14, marginBottom: 12 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Who replies to the customer?", "Ki válaszol az ügyfélnek?")}</div>
           <div style={{ display: "flex", gap: 8 }}>
-            {[["admin", L("🛡️ Cleano handles it", "🛡️ A Cleano intézi")], ["company", L("🏢 Hand to the company", "🏢 Átadás a cégnek")]].map(([id, label]) => (
+            {[["admin", L("️ Cleano handles it", "️ A Cleano intézi")], ["company", L("Hand to the company", "Átadás a cégnek")]].map(([id, label]) => (
               <button key={id} onClick={async () => {
                 const r = await setComplaintHandler(complaint.id, id);
                 if (r?.error) toast(r.error, "error");
                 else { setHandledBy(id); toast(id === "company" ? L("Handed to the company", "Átadva a cégnek") : L("Cleano is handling it", "A Cleano intézi")); onChange && onChange(); }
-              }} style={{ flex: 1, fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "9px 10px", borderRadius: 12, cursor: "pointer",
+              }} style={{ flex: 1, fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "9px 10px", borderRadius: R.md, cursor: "pointer",
                 border: handledBy === id ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`,
                 background: handledBy === id ? C.navyChip : C.bg, color: handledBy === id ? C.navy : C.inkSoft }}>{label}</button>
             ))}
@@ -5806,7 +6169,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
 
       {/* ── the company picks how to handle it ── */}
       {role === "company" && (complaint.handled_by === "company" || handledBy === "company") && (
-        <div style={{ background: coAction ? C.mintSoft : C.amberSoft, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+        <div style={{ background: coAction ? C.mintSoft : C.amberSoft, borderRadius: R.lg, padding: 14, marginBottom: 12 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 4 }}>
             {coAction ? (coAction === "callback" ? L("You chose to call the customer", "Azt választottad, hogy felhívod az ügyfelet") : L("You're solving this in chat", "Ezt chatben oldod meg")) : L("Cleano passed this report to you", "A Cleano átadta neked ezt a bejelentést")}
           </div>
@@ -5820,11 +6183,11 @@ function ComplaintThread({ complaint, role, close, onChange }) {
                 <Btn small style={{ flex: 1 }} onClick={async () => {
                   const r = await setCompanyAction(complaint.id, "chat", cbNote);
                   if (r?.error) toast(r.error, "error"); else { setCoAction("chat"); toast(L("Replying here", "Válasz itt")); load(); onChange && onChange(); }
-                }}>💬 {L("Solve in chat", "Megoldás chatben")}</Btn>
+                }}>{L("Solve in chat", "Megoldás chatben")}</Btn>
                 <Btn small ghost style={{ flex: 1 }} onClick={async () => {
                   const r = await setCompanyAction(complaint.id, "callback", cbNote);
                   if (r?.error) toast(r.error, "error"); else { setCoAction("callback"); toast(L("Customer told you'll call", "Az ügyfél értesítve, hogy telefonálsz")); load(); onChange && onChange(); }
-                }}>📞 {L("Call back", "Visszahívás")}</Btn>
+                }}>{L("Call back", "Visszahívás")}</Btn>
               </div>
             </>
           )}
@@ -5833,7 +6196,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
       {status !== "resolved" ? (
 
         <div style={{ display: "flex", gap: 8, marginBottom: (role === "admin" || role === "company") ? 14 : 0 }}>
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={L("Write a reply…", "Írj választ…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={L("Write a reply…", "Írj választ…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "10px 13px", fontFamily: B, fontSize: 13, background: C.card, color: C.ink, outline: "none" }} />
           <Btn small mint disabled={!text.trim()} onClick={send}>Send</Btn>
         </div>
       ) : (
@@ -5843,7 +6206,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
         <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 12, marginBottom: 12 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink, marginBottom: 8 }}>{L("Move to a company to resolve", "Céghez rendelés megoldásra")}</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink }}>
+            <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink }}>
               <option value="">Select a company…</option>
               {(adminAllCompanies || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -5853,7 +6216,7 @@ function ComplaintThread({ complaint, role, close, onChange }) {
       )}
       {(role === "admin" || role === "company") && status !== "resolved" && (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={L("Resolution note…", "Megoldás leírása…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink, outline: "none" }} />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={L("Resolution note…", "Megoldás leírása…")} style={{ flex: 1, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "9px 11px", fontFamily: B, fontSize: 12.5, background: C.card, color: C.ink, outline: "none" }} />
           <Btn small mint onClick={doResolve}>✓ Resolve</Btn>
         </div>
       )}
@@ -5873,15 +6236,15 @@ function CompanyComplaints() {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 4px" }}>{L("Issues to resolve", "Megoldandó ügyek")}</div>
       <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginBottom: 14 }}>{L("Complaints Cleano assigned to your company.", "A Cleano által a cégedhez rendelt panaszok.")}</div>
-      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>Nothing assigned to you 🎉</div>}
+      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>Nothing assigned to you</div>}
       {list.map((c) => (
-        <div key={c.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+        <div key={c.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{c.subject}</div>
             <Pill bg={stat[c.status]?.bg} color={stat[c.status]?.c}>{stat[c.status]?.l || c.status}</Pill>
           </div>
           <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>{c.user_name || L("Customer", "Ügyfél")} · {new Date(c.created_at).toLocaleDateString()}</div>
-          {c.body && <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 8, background: C.bg, borderRadius: 11, padding: "8px 11px", lineHeight: 1.55 }}>{c.body}</div>}
+          {c.body && <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 8, background: C.bg, borderRadius: R.sm, padding: "8px 11px", lineHeight: 1.55 }}>{c.body}</div>}
           <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>{c.status === "resolved" ? L("View thread", "Beszélgetés megnyitása") : L("Open & resolve →", "Megnyitás és megoldás →")}</Btn>
         </div>
       ))}
@@ -5895,18 +6258,18 @@ function CustomerReports({ close }) {
   const [open, setOpen] = React.useState(null);
   React.useEffect(() => { fetchMyComplaints(); }, []);
   const list = myComplaints || [];
-  const stat = { open: L("🟠 Open", "🟠 Nyitott"), in_progress: L("🔵 In progress", "🔵 Folyamatban"), resolved: L("🟢 Resolved", "🟢 Megoldva") };
+  const stat = { open: L("Open", "Nyitott"), in_progress: L("In progress", "Folyamatban"), resolved: L("Resolved", "Megoldva") };
   return (
-    <Sheet title={`🛟 ${L("My reports", "Bejelentéseim")}`} close={close}>
+    <Sheet title={`${L("My reports", "Bejelentéseim")}`} close={close}>
       {list.length === 0 && <div style={{ fontFamily: B, fontSize: 13, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("You haven't filed any reports.", "Még nem küldtél be bejelentést.")}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {list.map((c) => (
-          <button key={c.id} onClick={() => setOpen(c)} style={{ textAlign: "left", border: "none", cursor: "pointer", background: C.card, borderRadius: 13, padding: "11px 13px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+          <button key={c.id} onClick={() => setOpen(c)} style={{ textAlign: "left", border: "none", cursor: "pointer", background: C.card, borderRadius: R.md, padding: "11px 13px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{c.subject}</span>
               <span style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, whiteSpace: "nowrap" }}>{stat[c.status] || c.status}</span>
             </div>
-            {c.assigned_company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.navySoft, marginTop: 3 }}>➡ {c.assigned_company_name}</div>}
+            {c.assigned_company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.navySoft, marginTop: 3 }}>{c.assigned_company_name}</div>}
           </button>
         ))}
       </div>
@@ -5931,13 +6294,13 @@ function ReviewReports() {
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, marginBottom: 4 }}>Reported reviews · {list.length}</div>
       <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 10 }}>{L("Remove only what breaks the rules. A bad score is not a reason.", "Csak a szabálysértőt töröld. A rossz pontszám nem indok.")}</div>
       {list.map((r) => (
-        <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+        <div key={r.id} style={{ background: C.card, borderRadius: R.lg, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.customer_name || L("Customer", "Ügyfél")} → {r.company_name || "—"}</div>
             <div style={{ color: C.amber, fontSize: 12.5 }}>{stars(r.rating)}</div>
           </div>
           {r.comment && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“<Translated map={r.body_i18n} fallback={r.comment} />”</div>}
-          <div style={{ background: C.amberSoft, borderRadius: 12, padding: "9px 12px", marginTop: 10 }}>
+          <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "9px 12px", marginTop: 10 }}>
             <div style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.amber, letterSpacing: .3 }}>{L("REPORTED BY THE COMPANY", "A CÉG JELENTETTE BE")}</div>
             <div style={{ fontFamily: B, fontSize: 12, color: C.ink, marginTop: 3, lineHeight: 1.5 }}>{r.reported_reason}</div>
           </div>
@@ -5952,14 +6315,14 @@ function ReviewReports() {
       ))}
       {removing && (
         <div onClick={() => setRemoving(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: R.lg, padding: 22, width: "100%", maxWidth: 360 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Remove this review", "Értékelés törlése")}</div>
             <div style={{ fontFamily: B, fontSize: 12, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
               Your reason is logged permanently against your admin account, and the company's rating is recalculated.
             </div>
             <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={400}
               placeholder={L("Why it breaks the rules", "Miért sérti a szabályokat")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <Btn full ghost onClick={() => setRemoving(null)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full danger disabled={reason.trim().length < 5 || busy} onClick={async () => {
@@ -6002,7 +6365,7 @@ function CustomerReportQueue() {
         The customer is never told they were reported. Nobody is suspended automatically — you decide.
       </div>
       {list.slice(0, 40).map((r) => (
-        <div key={r.id} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)", opacity: r.status === "open" ? 1 : .6 }}>
+        <div key={r.id} style={{ background: C.card, borderRadius: R.lg, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)", opacity: r.status === "open" ? 1 : .6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
             <div>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.customer_name || "—"}</div>
@@ -6017,8 +6380,8 @@ function CustomerReportQueue() {
           <div style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.coral, marginTop: 8 }}>{CAT[r.category] || r.category}</div>
           <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 4, lineHeight: 1.55 }}>{r.detail}</div>
           {Number(r.reports_about_them) > 1 && (
-            <div style={{ background: C.coralSoft, borderRadius: 10, padding: "7px 10px", marginTop: 8, fontFamily: B, fontWeight: 700, fontSize: 11, color: C.coral }}>
-              ⚠ {r.reports_about_them} reports about this customer
+            <div style={{ background: C.coralSoft, borderRadius: R.sm, padding: "7px 10px", marginTop: 8, fontFamily: B, fontWeight: 700, fontSize: 11, color: C.coral }}>
+              {r.reports_about_them} reports about this customer
             </div>
           )}
           {r.admin_note && (
@@ -6034,7 +6397,7 @@ function CustomerReportQueue() {
       ))}
       {acting && (
         <div onClick={() => setActing(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: R.lg, padding: 22, width: "100%", maxWidth: 360 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>
               {acting.decision === "reviewed" ? L("Record what you did", "Rögzítsd, mit tettél") : L("Close without action", "Lezárás intézkedés nélkül")}
             </div>
@@ -6043,7 +6406,7 @@ function CustomerReportQueue() {
             </div>
             <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
               placeholder={acting.decision === "reviewed" ? L("e.g. called the customer, warned them, company reassigned", "pl. felhívtuk az ügyfelet, figyelmeztettük, a cég új takarítót adott") : L("e.g. spoke to both sides, misunderstanding", "pl. mindkét féllel beszéltünk, félreértés volt")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 13, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
               <Btn full ghost onClick={() => setActing(null)}>Cancel</Btn>
               <Btn full disabled={busy || note.trim().length < 5} onClick={async () => {
@@ -6072,19 +6435,19 @@ function AdminComplaints() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 14px" }}>Complaints ({list.filter(c => c.status !== "resolved").length} open)</div>
-      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No complaints — happy customers 🎉</div>}
+      {list.length === 0 && <div style={{ textAlign: "center", padding: 50, fontFamily: B, fontSize: 13, color: C.inkSoft }}>No complaints — happy customers</div>}
       {list.map((c) => (
-        <div key={c.id} style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+        <div key={c.id} style={{ background: C.card, borderRadius: R.lg, padding: "14px 16px", marginBottom: 12, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{c.subject}</div>
             <Pill bg={stat[c.status]?.bg} color={stat[c.status]?.c}>{stat[c.status]?.l || c.status}</Pill>
           </div>
           <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4 }}>
-            {c.user_name || L("User", "Felhasználó")} · {new Date(c.created_at).toLocaleString()}{c.assigned_company_name ? ` · ➡ ${c.assigned_company_name}` : ""}
+            {c.user_name || L("User", "Felhasználó")} · {new Date(c.created_at).toLocaleString()}{c.assigned_company_name ? ` · ${c.assigned_company_name}` : ""}
           </div>
-          {c.body && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.6, background: C.bg, borderRadius: 12, padding: "9px 12px" }}>{c.body}</div>}
+          {c.body && <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.6, background: C.bg, borderRadius: R.md, padding: "9px 12px" }}>{c.body}</div>}
           {c.resolution && <div style={{ fontFamily: B, fontSize: 11.5, color: C.green, marginTop: 8 }}>✓ {c.resolution}</div>}
-          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>💬 Manage / assign →</Btn>
+          <Btn small ghost style={{ marginTop: 10 }} onClick={() => setOpen(c)}>Manage / assign →</Btn>
         </div>
       ))}
       {open && <ComplaintThread complaint={open} role="admin" close={() => { setOpen(null); adminFetchComplaints(); }} onChange={adminFetchComplaints} />}
@@ -6130,12 +6493,12 @@ function AdminUserDetail({ userId, close, onChanged }) {
     </div>
   );
   const Sec = ({ t, children }) => (
-    <div style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10 }}>
+    <div style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 10 }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, marginBottom: 6 }}>{t}</div>
       {children}
     </div>
   );
-  const inputS = { width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 };
+  const inputS = { width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.sm, padding: "10px 12px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none", marginBottom: 7 };
   const dt = (x) => { try { return new Date(x).toLocaleDateString(LOC()); } catch { return "—"; } };
 
   return (
@@ -6284,13 +6647,13 @@ function AdminUsers() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 12px" }}>Users ({(adminAllUsers || []).length})</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: 14, padding: "11px 14px", marginBottom: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
-        <span style={{ opacity: .45 }}>🔍</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, borderRadius: R.md, padding: "11px 14px", marginBottom: 16, boxShadow: "0 1px 6px rgba(20,28,58,.05)" }}>
+        <span style={{ opacity: .45 }}></span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("Search name or email…", "Keresés név vagy e-mail alapján…")} style={{ flex: 1, border: "none", outline: "none", fontFamily: B, fontSize: 13.5, color: C.ink, background: "transparent" }} />
         {q && <button onClick={() => setQ("")} style={{ border: "none", background: "none", color: C.inkFaint, cursor: "pointer" }}>✕</button>}
       </div>
       {filtered.map((u) => (
-        <div key={u.id} style={{ background: C.card, borderRadius: 16, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)", opacity: u.is_active === false ? .6 : 1 }}>
+        <div key={u.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)", opacity: u.is_active === false ? .6 : 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Avatar name={u.full_name || "?"} size={38} color={roleColor[u.role] || C.navySoft} />
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -6316,23 +6679,23 @@ function AdminUsers() {
               ? <Pill color={u.is_super ? "#fff" : C.navy} bg={u.is_super ? C.navy : C.navyChip}>{u.is_super ? "CEO" : L("Admin", "Adminisztrátor")}</Pill>
               : <Pill color={roleColor[u.role] || C.navySoft} bg={roleColor[u.role] + "18" || C.navyChip} style={{ textTransform: "capitalize" }}>{u.role}</Pill>}
           </div>
-          {u.company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, marginLeft: 48 }}>🏢 {u.company_name}</div>}
+          {u.company_name && <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, marginLeft: 48 }}>{u.company_name}</div>}
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
             <button onClick={() => setDetail(u.id)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: "none", background: C.navyChip, color: C.navy, cursor: "pointer" }}>
-              📋 Full record
+              Full record
             </button>
             {(u.documents || []).length > 0 && (
               <button onClick={() => setViewDocs({ title: `${u.full_name} — documents`, docs: u.documents })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
-                🪪 Docs ({u.documents.length})
+                Docs ({u.documents.length})
               </button>
             )}
             {u.student_upgrade && (
               <>
-                <Pill bg={C.amberSoft} color={C.amber}>🎓 {L("Upgrade requested", "Igényelt átsorolás")}</Pill>
+                <Pill bg={C.amberSoft} color={C.amber}>{L("Upgrade requested", "Igényelt átsorolás")}</Pill>
                 <button onClick={async () => {
                   const res = await adminUpdateUser(u.id, { upgradeDecision: "approve" });
                   if (res?.error) toast(res.error, "error");
-                  else { toast(L("Student discount activated for them 🎓", "Diákkedvezmény aktiválva 🎓")); adminFetchUsers(); }
+                  else { toast(L("Student discount activated for them", "Diákkedvezmény aktiválva")); adminFetchUsers(); }
                 }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.green}`, background: C.card, color: C.green, cursor: "pointer" }}>
                   ✓ Approve card
                 </button>
@@ -6347,11 +6710,11 @@ function AdminUsers() {
             )}
             {u.approval_status === "pending" && (
               <>
-                <Pill bg={C.amberSoft} color={C.amber}>🎓 {L("Pending review", "Elbírálás alatt")}</Pill>
+                <Pill bg={C.amberSoft} color={C.amber}>{L("Pending review", "Elbírálás alatt")}</Pill>
                 <button onClick={async () => {
                   const res = await adminUpdateUser(u.id, { approvalStatus: "approved" });
                   if (res?.error) toast(res.error, "error");
-                  else { toast(L("Student approved — email sent ✉️", "Diák jóváhagyva — e-mail elküldve ✉️")); adminFetchUsers(); }
+                  else { toast(L("Student approved — email sent️", "Diák jóváhagyva — e-mail elküldve️")); adminFetchUsers(); }
                 }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 14px", borderRadius: 99, border: `1.5px solid ${C.green}`, background: C.card, color: C.green, cursor: "pointer" }}>
                   ✓ Approve
                 </button>
@@ -6370,7 +6733,7 @@ function AdminUsers() {
                 if (res?.error) toast(res.error, "error");
                 else { toast(u.role !== "admin" ? L("Admin access granted", "Admin jogosultság megadva") : L("Admin access removed", "Admin jogosultság visszavonva")); adminFetchUsers(); }
               }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${u.role === "admin" ? C.coral : C.navySoft}`, background: C.card, color: u.role === "admin" ? C.coral : C.navySoft, cursor: "pointer" }}>
-                {u.role === "admin" ? L("🛡️ Remove admin", "🛡️ Admin visszavonása") : L("🛡️ Make admin", "🛡️ Adminná tesz")}
+                {u.role === "admin" ? L("️ Remove admin", "️ Admin visszavonása") : L("️ Make admin", "️ Adminná tesz")}
               </button>
             )}
             {(u.role !== "admin" || isCeo) && !u.is_super && <button onClick={async () => {
@@ -6381,7 +6744,7 @@ function AdminUsers() {
               {u.is_active === false ? L("Activate", "Aktiválás") : L("Deactivate", "Deaktiválás")}
             </button>}
             {(u.role !== "admin" || isCeo) && !u.is_super && <button onClick={() => setConfirmDel(u)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.coral}`, background: C.coral + "12", color: C.coral, cursor: "pointer" }}>
-              🗑️ Delete
+             ️ Delete
             </button>}
           </div>
         </div>
@@ -6439,7 +6802,7 @@ function AdminBookings() {
         const total = p.orders.reduce((sum, b) => sum + (Number(b.total_huf) || 0), 0);
         const open = openCust === key;
         return (
-          <div key={key} style={{ background: C.card, borderRadius: 16, marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)", overflow: "hidden" }}>
+          <div key={key} style={{ background: C.card, borderRadius: R.lg, marginBottom: 10, boxShadow: "0 1px 8px rgba(20,28,58,.05)", overflow: "hidden" }}>
             <button onClick={() => setOpenCust(open ? null : key)} style={{ width: "100%", border: "none", background: "none", cursor: "pointer", padding: "13px 15px", display: "flex", alignItems: "center", gap: 11, textAlign: "left" }}>
               <Avatar name={p.name} size={38} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -6453,14 +6816,14 @@ function AdminBookings() {
                 {p.orders.slice().sort((a, b) => (b.order_no || 0) - (a.order_no || 0)).map((b) => {
                   const svc = b.service_snapshot || {};
                   return (
-                    <div key={b.id} style={{ background: C.bg, borderRadius: 12, padding: "10px 12px", marginBottom: 7, opacity: b.status === 9 ? .7 : 1 }}>
+                    <div key={b.id} style={{ background: C.bg, borderRadius: R.md, padding: "10px 12px", marginBottom: 7, opacity: b.status === 9 ? .7 : 1 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.ink }}>{b.order_no ? "#" + b.order_no + " · " : ""}{svc.icon} {svc.name || L("Order", "Megrendelés")}</div>
                           <div style={{ fontFamily: B, fontSize: 10, color: C.inkSoft, marginTop: 3, lineHeight: 1.6 }}>
-                            🏢 {b.company_name}<br />
-                            📅 {dayLabel(b.scheduled_date)} {b.scheduled_slot} · 📍 {b.address || "—"}<br />
-                            💳 {b.payment_status || "unpaid"}
+                            {b.company_name}<br />
+                            {dayLabel(b.scheduled_date)} {b.scheduled_slot} · {b.address || "—"}<br />
+                            {b.payment_status || "unpaid"}
                           </div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -6487,21 +6850,21 @@ function AdminLog() {
   const rows = adminLog || [];
   const fmt = (ts) => { try { return new Date(ts).toLocaleString(); } catch { return String(ts); } };
   const LBL = {
-    company_approved: L("✅ Approved company", "✅ Cég jóváhagyva"),
-    company_rejected: L("⛔ Rejected company", "⛔ Cég elutasítva"),
-    company_listed: L("👁️ Listed company", "👁️ Cég listázva"),
-    company_unlisted: L("🚫 Unlisted company", "🚫 Cég levéve a listáról"),
-    student_approved: L("🎓 Approved student", "🎓 Diák jóváhagyva"),
-    student_rejected: L("⛔ Rejected student", "⛔ Diák elutasítva"),
+    company_approved: L("Approved company", "Cég jóváhagyva"),
+    company_rejected: L("Rejected company", "Cég elutasítva"),
+    company_listed: L("️ Listed company", "️ Cég listázva"),
+    company_unlisted: L("Unlisted company", "Cég levéve a listáról"),
+    student_approved: L("Approved student", "Diák jóváhagyva"),
+    student_rejected: L("Rejected student", "Diák elutasítva"),
     student_pending: L("↩️ Reset student to pending", "↩️ Diák visszaállítva függőbe"),
-    admin_granted: L("🛡️ Granted admin access", "🛡️ Admin jog megadva"),
-    admin_revoked: L("🛡️ Revoked admin access", "🛡️ Admin jog visszavonva"),
-    user_activated: L("🔓 Reactivated account", "🔓 Fiók újraaktiválva"),
-    user_deactivated: L("🔒 Deactivated account", "🔒 Fiók letiltva"),
-    complaint_resolved: L("🛟 Resolved complaint", "🛟 Panasz megoldva"),
-    complaint_in_progress: L("🛟 Complaint in progress", "🛟 Panasz folyamatban"),
-    complaint_open: L("🛟 Reopened complaint", "🛟 Panasz újranyitva"),
-    account_deleted: L("🗑️ Deleted account", "🗑️ Fiók törölve"),
+    admin_granted: L("️ Granted admin access", "️ Admin jog megadva"),
+    admin_revoked: L("️ Revoked admin access", "️ Admin jog visszavonva"),
+    user_activated: L("Reactivated account", "Fiók újraaktiválva"),
+    user_deactivated: L("Deactivated account", "Fiók letiltva"),
+    complaint_resolved: L("Resolved complaint", "Panasz megoldva"),
+    complaint_in_progress: L("Complaint in progress", "Panasz folyamatban"),
+    complaint_open: L("Reopened complaint", "Panasz újranyitva"),
+    account_deleted: L("️ Deleted account", "️ Fiók törölve"),
   };
   return (
     <div style={{ padding: "16px 18px 40px" }}>
@@ -6510,7 +6873,7 @@ function AdminLog() {
       {rows.length === 0 && <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 24 }}>{L("No decisions logged yet.", "Még nincs naplózott döntés.")}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {rows.map((e) => (
-          <div key={e.id} style={{ background: C.card, borderRadius: 14, padding: "11px 14px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+          <div key={e.id} style={{ background: C.card, borderRadius: R.md, padding: "11px 14px", boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
             <div style={{ fontFamily: B, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{LBL[e.action] || e.action}{e.detail ? <span style={{ fontWeight: 500, color: C.inkSoft }}> · {e.detail}</span> : null}</div>
             <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3 }}>{e.admin_name || "?"} · {e.admin_email || "?"} · {fmt(e.created_at)}</div>
           </div>
@@ -6624,19 +6987,19 @@ function BillingList() {
         ))}
         {data.companies.length > 0 && (
           <button onClick={downloadCsv} style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: C.card, color: C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
-            ⬇ {L("Spreadsheet", "Táblázat")}
+            {L("Spreadsheet", "Táblázat")}
           </button>
         )}
       </div>
 
       {data.companies.length === 0 && (
-        <div style={{ background: C.card, borderRadius: 18, padding: 28, textAlign: "center", fontFamily: B, fontSize: 12.5, color: C.inkSoft, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>
+        <div style={{ background: C.card, borderRadius: R.lg, padding: 28, textAlign: "center", fontFamily: B, fontSize: 12.5, color: C.inkSoft, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>
           {settled ? L("Nothing recorded yet.", "Még nincs rögzítve semmi.") : L("Nothing to invoice. Finished, paid jobs appear here.", "Nincs kiszámlázandó. A befejezett, kifizetett munkák itt jelennek meg.")}
         </div>
       )}
 
       {data.companies.map((c) => (
-        <div key={c.companyId} style={{ background: C.card, borderRadius: 18, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
+        <div key={c.companyId} style={{ background: C.card, borderRadius: R.lg, padding: 15, marginBottom: 10, boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{c.name}</div>
@@ -6652,7 +7015,7 @@ function BillingList() {
             </div>
           </div>
 
-          <div style={{ background: C.bg, borderRadius: 12, padding: "9px 11px", marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.ink, lineHeight: 1.75 }}>
+          <div style={{ background: C.bg, borderRadius: R.md, padding: "9px 11px", marginTop: 10, fontFamily: B, fontSize: 11.5, color: C.ink, lineHeight: 1.75 }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span>{L("Net", "Nettó")}</span><b>{money(c.net)} Ft</b></div>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span>{L("VAT", "ÁFA")} {data.vatPct}%</span><b>{money(c.vat)} Ft</b></div>
             <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.line}`, marginTop: 4, paddingTop: 4 }}><span>{L("Gross", "Bruttó")}</span><b>{money(c.gross)} Ft</b></div>
@@ -6678,7 +7041,7 @@ function BillingList() {
           </details>
 
           {!c.billable && !settled && (
-            <div style={{ background: C.coralSoft, borderRadius: 10, padding: "7px 10px", marginTop: 9, fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.coralText || C.coral }}>
+            <div style={{ background: C.coralSoft, borderRadius: R.sm, padding: "7px 10px", marginTop: 9, fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.coralText || C.coral }}>
               {L("Ask this partner for their billing address before invoicing.", "Kérd el a partner számlázási címét a számlázás előtt.")}
             </div>
           )}
@@ -6693,7 +7056,7 @@ function BillingList() {
           {openCo === c.companyId && (
             <div style={{ marginTop: 10 }}>
               <input value={num} onChange={(e) => setNum(e.target.value)} placeholder={L("Invoice number you issued", "A kiállított számla száma")}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: `1px solid ${C.line}`, fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink }} />
+                style={{ width: "100%", padding: "10px 12px", borderRadius: R.md, border: `1px solid ${C.line}`, fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink }} />
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <Btn full ghost onClick={() => setOpenCo(null)}>{L("Cancel", "Mégse")}</Btn>
                 <Btn full disabled={busy} onClick={() => doMark(c)}>{busy ? L("Saving...", "Mentés...") : L("Save", "Mentés")}</Btn>
@@ -6713,13 +7076,13 @@ function AdminPanel({ tab }) {
     <div className="cl-fade" style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
       <div style={{ background: `radial-gradient(140% 100% at 20% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, padding: "calc(22px + env(safe-area-inset-top)) 20px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛡️</div>
+          <div style={{ width: 46, height: 46, borderRadius: R.md, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>️</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{L("Admin panel", "Admin felület")}</div>
             <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 1 }}>{isCeo ? L("CEO admin · Cleano Hungary", "CEO admin · Cleano Magyarország") : L("Company review team", "Cégellenőrző csapat")}</div>
           </div>
           <button onClick={logout} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 99, padding: "7px 14px", fontFamily: B, fontWeight: 700, fontSize: 11, color: "#C9D2F5", cursor: "pointer" }}>
-            🚪 Log out
+            Log out
           </button>
         </div>
       </div>
@@ -6765,7 +7128,7 @@ const css = `
 function Shell() {
   const store = useStore();
   const { session, loading, error, clearError, notices, logout, demoSwitchRole, t } = store;
-  // 🌗 follow the phone's day/night mode live
+  // follow the phone's day/night mode live
   const [dark, setDark] = useState(() => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   React.useEffect(() => {
     if (!window.matchMedia) return;
@@ -6780,7 +7143,7 @@ function Shell() {
   // banner *and* a toast for the same failure.
   const shellToast = useToast();
   React.useEffect(() => { if (error) { shellToast(error, "error"); clearError(); } }, [error]);
-  // 🔄 Live refresh: pull fresh data every 20s and whenever the app returns to
+  // Live refresh: pull fresh data every 20s and whenever the app returns to
   // the foreground, so actions taken elsewhere appear without restarting.
   React.useEffect(() => {
     if (!session || !store.isLive) return;
@@ -6791,7 +7154,7 @@ function Shell() {
     window.addEventListener("focus", onVis);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); };
   }, [session?.userId, store.isLive]);
-  // 🔔 register this device for real push notifications once logged in (native app only)
+  // register this device for real push notifications once logged in (native app only)
   React.useEffect(() => {
     const tok = getToken();
     if (session && tok) initPush(tok, session.userId);
@@ -6800,6 +7163,7 @@ function Shell() {
   const [bookingCo, setBookingCo] = useState(null);
   const [justBooked, setJustBooked] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showManage, setShowManage] = useState(false);
 
   if (loading)
     return (
@@ -6822,7 +7186,14 @@ function Shell() {
   const NAVS = {
     customer: [{ id: "home", label: t("nav.home"), icon: "home" }, { id: "bookings", label: t("nav.bookings"), icon: "calendar" }],
     employee: [{ id: "home", label: L("My jobs", "Munkáim"), icon: "sparkle" }, { id: "notices", label: L("Notices", "Üzenetek"), icon: "bell", badge: unread }],
-    company: [{ id: "home", label: L("Jobs", "Munkák"), icon: "clipboard" }, { id: "schedule", label: L("Schedule", "Naptár"), icon: "calendar" }, { id: "clients", label: L("Clients", "Ügyfelek"), icon: "users" }, { id: "services", label: L("Services", "Szolgáltatások"), icon: "tag" }, { id: "team", label: L("Team", "Csapat"), icon: "briefcase" }, { id: "reviews", label: L("Reviews", "Értékelések"), icon: "sparkle" }, { id: "issues", label: L("Issues", "Bejelentések"), icon: "lifebuoy" }, { id: "settings", label: L("Settings", "Beállítások"), icon: "settings" }],
+    /* Eight tabs on a phone is not a navigation bar, it is a horizontal scroll
+       nobody reaches the end of. A partner opens this app to see today's work;
+       everything else is something they set up once and revisit occasionally.
+       So the bar carries the daily three, and the rest live behind Manage. */
+    company: [{ id: "home", label: L("Jobs", "Munkák"), icon: "clipboard" },
+              { id: "schedule", label: L("Schedule", "Naptár"), icon: "calendar" },
+              { id: "clients", label: L("Clients", "Ügyfelek"), icon: "users" },
+              { id: "__manage", label: L("Manage", "Kezelés"), icon: "settings" }],
     admin: [{ id: "home", label: L("Dashboard", "Irányítópult"), icon: "grid" }, { id: "companies", label: L("Companies", "Cégek"), icon: "building" }, { id: "users", label: L("Users", "Felhasználók"), icon: "user" }, { id: "bookings", label: L("Orders", "Megrendelések"), icon: "calendar" }, { id: "complaints", label: L("Complaints", "Panaszok"), icon: "lifebuoy" }, { id: "log", label: L("Log", "Napló"), icon: "scroll" }],
   };
 
@@ -6832,10 +7203,10 @@ function Shell() {
       <div style={{ width: "100%", maxWidth: SHELL_W, background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", boxShadow: NATIVE ? "none" : "0 0 50px rgba(20,28,58,.14)", position: "relative" }}>
         {demoSwitchRole && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 16px", background: C.navyDeep }}>
-            <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.mint, letterSpacing: .8 }}>🧪 DEMO</span>
+            <span style={{ fontFamily: B, fontSize: 10, fontWeight: 700, color: C.mint, letterSpacing: .8 }}>DEMO</span>
             <select value={role} onChange={(e) => { demoSwitchRole(e.target.value); setTab("home"); }}
               title={L("Demo — switch role", "Demó — szerepváltás")}
-              style={{ background: "rgba(94,230,168,.14)", color: C.mint, border: `1px solid ${C.mint}55`, borderRadius: 9, fontFamily: B, fontSize: 10.5, fontWeight: 700, padding: "4px 6px", cursor: "pointer", outline: "none" }}>
+              style={{ background: "rgba(94,230,168,.14)", color: C.mint, border: `1px solid ${C.mint}55`, borderRadius: R.sm, fontFamily: B, fontSize: 10.5, fontWeight: 700, padding: "4px 6px", cursor: "pointer", outline: "none" }}>
               <option value="customer" style={{ color: "#111" }}>⇄ Customer</option>
               <option value="employee" style={{ color: "#111" }}>⇄ Cleaner</option>
               <option value="company" style={{ color: "#111" }}>⇄ Company</option>
@@ -6868,7 +7239,7 @@ function Shell() {
         {justBooked && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: `radial-gradient(120% 100% at 50% 0%, ${C.navyMid}, ${C.navyDeep} 75%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center" }}>
             <div className="cl-pop" style={{ width: 92, height: 92, borderRadius: "50%", background: C.mint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, boxShadow: `0 0 0 14px ${C.mint}26, 0 0 0 28px ${C.mint}12` }}>✓</div>
-            <div className="cl-rise" style={{ fontFamily: F, fontWeight: 700, fontSize: 24, color: "#fff", marginTop: 26 }}>{justBooked?.pricing_type === "subscription" ? L("Subscription set! 🔁", "Előfizetés beállítva! 🔁") : L("You're booked!", "Lefoglalva!")}</div>
+            <div className="cl-rise" style={{ fontFamily: F, fontWeight: 700, fontSize: 24, color: "#fff", marginTop: 26 }}>{justBooked?.pricing_type === "subscription" ? L("Subscription set!", "Előfizetés beállítva!") : L("You're booked!", "Lefoglalva!")}</div>
             <div className="cl-rise" style={{ fontFamily: B, fontSize: 13, color: "#9FB0E8", marginTop: 10, lineHeight: 1.7, animationDelay: ".15s" }}>
               {/* This used to branch on HUL(): a hand-written Hungarian version and an
                   English one. Every other language fell to the English branch, so a
@@ -6890,12 +7261,21 @@ function Shell() {
         <PhoneVerifyGate />
 
         <NotificationBanner />
-        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: dark ? "rgba(23,30,58,.55)" : "rgba(255,255,255,.55)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: 30, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
+        <div className="cl-nav" style={{ position: "fixed", bottom: "calc(12px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 400, background: dark ? "rgba(23,30,58,.55)" : "rgba(255,255,255,.55)", backdropFilter: "blur(28px) saturate(1.8)", WebkitBackdropFilter: "blur(28px) saturate(1.8)", border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid rgba(255,255,255,.65)", borderRadius: R.xl, display: "flex", alignItems: "center", padding: 6, gap: 4, zIndex: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", boxShadow: dark ? "0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08)" : "0 18px 48px rgba(16,25,74,.18), inset 0 1px 0 rgba(255,255,255,.9)" }}>
           {NAVS[role].map((tb) => {
-            const active = tab === tb.id;
+            /* Manage stays lit while any of the screens behind it is open, so the
+               partner can see where they are rather than which button they last
+               pressed. */
+            const active = tb.id === "__manage"
+              ? MANAGE_TABS().some((m) => m.id === tab)
+              : tab === tb.id;
             return (
-              <button key={tb.id} onClick={(e) => { setTab(tb.id); setBookingCo(null); try { e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {} }}
-                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: 24, padding: "11px 8px", position: "relative", background: active ? `linear-gradient(135deg, ${C.navy}, ${C.navyMid})` : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
+              <button key={tb.id} onClick={(e) => {
+                  if (tb.id === "__manage") { setShowManage(true); return; }
+                  setTab(tb.id); setBookingCo(null);
+                  try { e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {}
+                }}
+                style={{ flex: active ? "1.9 0 auto" : "1 0 auto", minWidth: active ? 86 : 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", borderRadius: R.xl, padding: "11px 8px", position: "relative", background: active ? `${C.navy}` : "transparent", boxShadow: active ? "0 8px 20px rgba(27,42,107,.38), inset 0 1px 0 rgba(255,255,255,.18)" : "none", transition: "all .3s cubic-bezier(.3,.9,.35,1)" }}>
                 <Ic name={tb.icon} size={19} sw={active ? 2 : 1.7} color={active ? "#fff" : C.inkSoft} style={{ opacity: active ? 1 : .8 }} />
                 {active && <span style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap" }}>{tb.label}</span>}
                 {tb.badge > 0 && <span style={{ position: "absolute", top: 4, right: active ? 8 : "50%", marginRight: active ? 0 : -18, width: 16, height: 16, borderRadius: "50%", background: C.coral, color: "#fff", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: B }}>{tb.badge}</span>}
@@ -6903,8 +7283,47 @@ function Shell() {
             );
           })}
         </div>
+        {showManage && role === "company" && (
+          <ManageSheet current={tab} onPick={(id) => { setTab(id); setBookingCo(null); }} close={() => setShowManage(false)} />
+        )}
       </div>
     </div>
+  );
+}
+
+/* What used to be five more tabs. Grouped, labelled, and out of the way until
+   the partner actually wants them. */
+const MANAGE_TABS = () => [
+  { id: "services", label: L("Services", "Szolgáltatások"), icon: "tag", sub: L("What you offer and what it costs", "Mit kínálsz és mennyiért") },
+  { id: "team", label: L("Team", "Csapat"), icon: "briefcase", sub: L("Cleaners, invites and messages", "Takarítók, meghívók és üzenetek") },
+  { id: "reviews", label: L("Reviews", "Értékelések"), icon: "sparkle", sub: L("What customers said about the work", "Mit mondtak az ügyfelek a munkáról") },
+  { id: "issues", label: L("Issues", "Bejelentések"), icon: "lifebuoy", sub: L("Complaints waiting on you", "Rád váró panaszok") },
+  { id: "settings", label: L("Settings", "Beállítások"), icon: "settings", sub: L("Area, hours, billing and your details", "Terület, nyitvatartás, számlázás és adataid") },
+];
+
+function ManageSheet({ current, onPick, close }) {
+  return (
+    <Sheet title={L("Manage", "Kezelés")} close={close}>
+      {MANAGE_TABS().map((t) => {
+        const on = current === t.id;
+        return (
+          <button key={t.id} onClick={() => { onPick(t.id); close(); }}
+            style={{ display: "flex", alignItems: "center", gap: 13, width: "100%", textAlign: "left",
+                     padding: "13px 14px", marginBottom: 9, borderRadius: R.lg, cursor: "pointer",
+                     border: on ? `2px solid ${C.navy}` : "2px solid transparent",
+                     background: C.bg, boxShadow: "0 1px 5px rgba(20,28,58,.05)" }}>
+            <span style={{ width: 38, height: 38, borderRadius: R.md, background: C.navyChip,
+                           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Ic name={t.icon} size={19} sw={1.8} color={C.navySoft} />
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{t.label}</span>
+              <span style={{ display: "block", fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 2, lineHeight: 1.4 }}>{t.sub}</span>
+            </span>
+          </button>
+        );
+      })}
+    </Sheet>
   );
 }
 

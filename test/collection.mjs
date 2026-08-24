@@ -18,10 +18,14 @@ const dPlus = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10)
 
 await j("/api/auth/register", { method: "POST", body: { email: "co@c.hu", password: "secret123", role: "company", fullName: "O", companyName: "Wash Co", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Debrecen", termsAccepted: true } });
 await j("/api/auth/register", { method: "POST", body: { email: "cu@c.hu", password: "secret123", role: "customer", fullName: "Cust", phone: "+36301114455", city: "Debrecen", address: "Kossuth u 1", customerType: "resident", termsAccepted: true } });
+/* A second customer, because capacity is about how many DIFFERENT jobs fit —
+   and the same person asking twice for the same service, hour and address is
+   now correctly treated as retrying one booking rather than wanting two. */
+await j("/api/auth/register", { method: "POST", body: { email: "cu2@c.hu", password: "secret123", role: "customer", fullName: "Másik", phone: "+36301114466", city: "Debrecen", address: "Piac u 9", customerType: "resident", termsAccepted: true } });
 await query("UPDATE users SET approval_status='approved'");
 await query("UPDATE companies SET is_approved=true, is_listed=true");
 const login = async (e) => (await j("/api/auth/login", { method: "POST", body: { email: e, password: "secret123" } })).data;
-const CO = await login("co@c.hu"), CU = await login("cu@c.hu");
+const CO = await login("co@c.hu"), CU = await login("cu@c.hu"), CU2 = await login("cu2@c.hu");
 const cid = CO.user.company_id;
 await query("INSERT INTO users (email, password_hash, full_name, role, company_id, approval_status, is_active) VALUES ('cl@c.hu', $1, 'Driver', 'employee', $2, 'approved', true)", [bcrypt.hashSync("secret123", 8), cid]);
 const CL = await login("cl@c.hu");
@@ -60,7 +64,7 @@ for (let i = 0; i < 5; i++) {
 }
 const madeAt10 = await query("SELECT COUNT(*)::int n FROM bookings WHERE service_id=$1 AND scheduled_slot='10:00' AND status NOT IN (8,9)", [laundry.id]);
 ok("six pickups fit into the same hour", madeAt10.rows[0].n === 6, String(madeAt10.rows[0].n));
-const cleanClash = await j("/api/bookings", { method: "POST", token: CU.token, body: { companyId: cid, serviceId: cleaning.id, scheduledDate: day, scheduledSlot: "11:00", address: "Kossuth u 1" } });
+const cleanClash = await j("/api/bookings", { method: "POST", token: CU2.token, body: { companyId: cid, serviceId: cleaning.id, scheduledDate: day, scheduledSlot: "11:00", address: "Piac u 9" } });
 ok("but the on-site service is still one job per person per hour", cleanClash.status === 400, JSON.stringify(cleanClash.data));
 
 console.log("\n── the collection ladder, in order ──");

@@ -210,6 +210,35 @@ router.post("/", requireAuth, async (req, res) => {
        This runs whether or not the company has set opening hours — a company that
        has not configured availability needs protecting most of all. Cancelled and
        declined bookings (8, 9) do not hold a slot. ── */
+    /* Retrying an abandoned checkout reuses the row it abandoned.
+
+       The booking is created before payment, so a failed or closed card screen
+       leaves an unpaid row behind. Pressing Confirm again used to create a
+       SECOND row for the same slot — which then counted against the company's
+       capacity, so a customer could lock themselves out of the very
+       appointment they were trying to pay for, and be told "that time has just
+       been taken".
+
+       Returning the existing booking keeps one row per intention, keeps the
+       availability count honest for everyone else, and sends the customer
+       straight back to paying for the thing they already chose.
+
+       The address is part of the match on purpose. Same customer, same hour,
+       DIFFERENT address is not a retry — it is a laundry van calling at two
+       houses, which is exactly what a collection service is for. */
+    {
+      const slotStr0 = String(scheduledSlot).slice(0, 5);
+      const mine = await query(
+        `SELECT * FROM bookings
+          WHERE customer_id = $1 AND company_id = $2 AND service_id = $3
+            AND scheduled_date = $4 AND scheduled_slot = $5
+            AND address = $6
+            AND payment_status = 'unpaid' AND status = 0
+          ORDER BY created_at DESC LIMIT 1`,
+        [req.user.id, companyId, serviceId, dOnly, slotStr0, address]);
+      if (mine.rows.length) return res.status(200).json({ booking: mine.rows[0], reused: true });
+    }
+
     {
       const slotStr = String(scheduledSlot).slice(0, 5);
       /* A cleaning slot is exclusive: one team, one house, one hour. A collection
@@ -225,11 +254,66 @@ router.post("/", requireAuth, async (req, res) => {
          people or somewhere else entirely. What it cannot do is take the same
          service twice over with only one team. A company that wants an hour
          blocked outright uses the company-wide busy list instead. */
-      const taken = await query(
-        `SELECT COUNT(*)::int AS n FROM bookings
-          WHERE company_id = $1 AND scheduled_date = $2 AND scheduled_slot = $3
-            AND service_id = $4 AND status NOT IN (8, 9)`, [companyId, dOnly, slotStr, serviceId]);
-      if (taken.rows[0].n >= cap.rows[0].n)
+      /* An abandoned checkout must not hold the slot for ever.
+
+         The booking row is created BEFORE payment, which is right — the price,
+         the address and the time all have to exist before there is anything to
+         pay for. But it meant every failed or abandoned payment attempt left a
+         row occupying the slot, counted here as if it were a real job. Try to
+         pay three times and fail, and you have locked yourself out of your own
+         appointment; the customer is then told "that time has just been taken",
+         which is true and completely baffling.
+
+         Two exclusions:
+           · anyone's unpaid attempt older than the grace period — long enough
+             to finish a card payment, short enough not to squat on a slot;
+           A retry of the customer's OWN abandoned attempt is handled earlier by
+           reusing that row rather than creating a second one — see above. That
+           is better than forgiving it here: excusing a customer's unpaid rows
+           from the count would let one person quietly hold a whole morning. */
+      const graceMin = Math.max(5, Number(process.env.CHECKOUT_GRACE_MIN || 30));
+
+      /* A job occupies the hours it actually lasts, not just the hour it starts.
+
+         This compared scheduled_slot for exact equality, so a three-hour clean
+         booked at 10:00 left 11:00 and 12:00 looking free. One team could be
+         sold the same morning three times over, and nobody found out until a
+         cleaner was expected in two places at once.
+
+         Length comes from the booking where the customer chose it (hourly
+         work) and from the service otherwise. Anything we cannot read falls
+         back to one hour, which is the old behaviour — never worse. */
+      const mins = (b) => {
+        const h = Number(b?.hours);
+        if (Number.isFinite(h) && h > 0) return Math.round(h * 60);
+        const m = Number(b?.service_minutes ?? b?.minutes);
+        return Number.isFinite(m) && m > 0 ? Math.round(m) : 60;
+      };
+      const startMin = (slot) => {
+        const [hh, mm] = String(slot || "").slice(0, 5).split(":").map(Number);
+        return Number.isFinite(hh) ? hh * 60 + (mm || 0) : null;
+      };
+
+      const sameDay = await query(
+        `SELECT b.scheduled_slot, b.hours, s.minutes AS service_minutes
+           FROM bookings b LEFT JOIN services s ON s.id = b.service_id
+          WHERE b.company_id = $1 AND b.scheduled_date = $2
+            AND b.service_id = $3 AND b.status NOT IN (8, 9)
+            AND NOT (b.payment_status = 'unpaid' AND b.created_at < NOW() - ($4 || ' minutes')::interval)`,
+        [companyId, dOnly, serviceId, String(graceMin)]);
+
+      const wantFrom = startMin(slotStr);
+      const wantTo = wantFrom == null ? null : wantFrom + mins({ hours, minutes: svc.minutes });
+      let overlapping = 0;
+      if (wantFrom != null) {
+        for (const r of sameDay.rows) {
+          const from = startMin(r.scheduled_slot);
+          if (from == null) continue;
+          const to = from + mins(r);
+          if (wantFrom < to && from < wantTo) overlapping++;   // half-open ranges
+        }
+      }
+      if (overlapping >= cap.rows[0].n)
         return res.status(400).json({ error: "That time has just been taken — please pick another." });
     }
 

@@ -152,6 +152,9 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
   /* Place names are data, not copy. Translating "Debrecen" is wrong, not
      missing — these sit in the markets table and in field placeholders. */
   if (/^(Budapest|Debrecen|Szeged|Miskolc|Pécs|Győr|Nyíregyháza|Kecskemét|Székesfehérvár|Szombathely|Magyarország)$/.test(raw)) continue;
+  /* Example company name in a placeholder. Translating an invented Hungarian
+     firm is wrong in the same way translating "Debrecen" is. */
+  if (/^Tiszta Otthon Kft$/.test(raw)) continue;
   if (/^(Bearer|Content-Type|Authorization|application\/json)\b/.test(text)) continue;
   if (/^\(prefers-/.test(raw)) continue;                                      // media queries
   if (/^[a-z][\w+.-]*:\/\//.test(text)) continue;                            // itms-apps://, https://

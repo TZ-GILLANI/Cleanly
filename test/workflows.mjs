@@ -326,11 +326,31 @@ const hoursOut = (far ? Date.parse(far) - Date.now() : 0) / 3600e3;
 ok("a job far off gives the company the full response window",
    Math.abs(hoursOut - Number(process.env.ACCEPT_TIMEOUT_H || 12)) < 0.2, String(hoursOut));
 
-/* A job the day after tomorrow at 10:00 must be settled 12h before it starts,
-   which lands sooner than the 12h response window. The earlier one wins. */
+/* This used to assert that a job starting within 12 hours had its deadline
+   pulled back to "12h before it starts" — which for anything booked at short
+   notice was a moment already in the past. The sweep then cancelled and
+   refunded it before the partner's phone had finished buzzing, and short-notice
+   work could never be accepted by anyone.
+
+   The rule now: the company always gets a real window, and it never outlives
+   the job itself. */
+const minH = Number(process.env.ACCEPT_MIN_H || 3);
 const soon = rem.acceptDeadline({ created_at: new Date().toISOString(), scheduled_date: dPlus(1), scheduled_slot: "10:00" });
-ok("but an imminent job is capped 12 hours before it starts",
-   soon && Date.parse(soon) < Date.parse(far), `${soon} vs ${far}`);
+const soonH = (Date.parse(soon) - Date.now()) / 3600e3;
+ok("a job at short notice still leaves time to accept it",
+   soon && soonH >= minH - 0.2, `${soonH.toFixed(1)}h — must be at least ${minH}h`);
+/* No comparison between `soon` and `far` here: both are derived from separate
+   Date.now() calls a few statements apart, so at millisecond precision the
+   result depends on how fast the machine got between two lines. It failed by
+   exactly 1ms. A test that can lose on timing is noise, not evidence. */
+/* Starting in one hour: the window shrinks to the job, and no further. */
+const hourAway = new Date(Date.now() + 60 * 60e3);
+const pad = (n) => String(n).padStart(2, "0");
+const imminent = rem.acceptDeadline({ created_at: new Date().toISOString(),
+  scheduled_date: `${hourAway.getFullYear()}-${pad(hourAway.getMonth() + 1)}-${pad(hourAway.getDate())}`,
+  scheduled_slot: `${pad(hourAway.getHours())}:00` });
+ok("a deadline never outlives the job it belongs to",
+   imminent && Date.parse(imminent) <= hourAway.getTime() + 60e3, imminent);
 ok("an unparseable booking never invents a deadline",
    rem.acceptDeadline({ created_at: "nonsense", scheduled_date: null, scheduled_slot: null }) === null);
 

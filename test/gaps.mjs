@@ -199,9 +199,9 @@ const appR = (await import("fs")).readFileSync("src/App.jsx", "utf8");
    the city is a placeholder rather than baked into the key — spelled the old
    way it could only ever exist in English and Hungarian. */
 ok("there is a one-tap way to serve the whole of your own city",
-   /L\("🏙️ Serve the whole of \{0\}"/.test(appR));
+   /L\("Serve the whole of \{0\}"/.test(appR));
 ok("and it is worded so it can be translated, not interpolated into the key",
-   /fill\(L\("🏙️ Serve the whole of \{0\}"/.test(appR));
+   /fill\(L\("Serve the whole of \{0\}"/.test(appR));
 ok("the km slider no longer pretends a number means a city",
    !/CITY_WIDE_KM/.test(appR));
 ok("cities are named, and more than one can be named",
@@ -844,6 +844,125 @@ ok("every session we create has it, none left to infer",
 /* Specifying both is a Stripe error in itself. */
 ok("and automatic selection is not also switched on",
    !/automatic_payment_methods/.test(paySrcPM));
+
+/* ── A SLOT IS A RANGE, AND AN ABANDONED CHECKOUT IS NOT A BOOKING ────────
+   Reported live: "That time has just been taken" on a slot the partner had
+   never sold. Two faults behind it.
+
+   1. The booking row is created BEFORE payment — correctly, there has to be
+      something to pay for. But every failed attempt left a row occupying the
+      slot, so trying to pay three times locked you out of your own
+      appointment.
+   2. The check compared scheduled_slot for exact equality, so a three-hour
+      clean booked at 10:00 left 11:00 and 12:00 looking free. One team could
+      be sold the same morning three times over. */
+console.log("\n── availability counts real work, for its real length ──");
+const bkAv = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
+/* Retrying is handled by reusing the abandoned row, not by excusing it from
+   the count — excusing a customer's unpaid rows would let one person quietly
+   hold a whole morning. */
+ok("retrying an abandoned checkout reuses that booking rather than making another",
+   /payment_status = 'unpaid' AND status = 0/.test(bkAv) && /reused: true/.test(bkAv));
+ok("matched on the address too, so a van calling at two houses is not mistaken for a retry",
+   /AND address = \$6/.test(bkAv));
+ok("and anyone's abandoned checkout expires out of the count",
+   /NOT \(b\.payment_status = 'unpaid' AND b\.created_at < NOW\(\)/.test(bkAv));
+ok("the grace period is generous enough to finish paying",
+   /CHECKOUT_GRACE_MIN \|\| 30/.test(bkAv));
+ok("a job occupies the hours it lasts, not just the one it starts",
+   /wantFrom < to && from < wantTo/.test(bkAv));
+ok("length is read from the booking, then the service, then an hour",
+   /Number\.isFinite\(h\) && h > 0/.test(bkAv) && /service_minutes \?\? b\?\.minutes/.test(bkAv));
+
+/* Behavioural, on the running server. */
+/* Capacity is pinned to 1 rather than left to the team size: by this point the
+   suite has registered two cleaners, so "one job at a time" would silently
+   become two and the overlap assertions would pass for the wrong reason. */
+const svc3h = (await j("/api/services", { method: "POST", token: CO.token,
+  body: { name: "Long clean", pricingType: "flat", priceHuf: 20000, minutes: 180, slotCapacity: 1 } })).data.service;
+ok("the service records how long it takes", Number(svc3h.minutes) === 180, `${svc3h?.minutes}`);
+ok("and how many can run at once", Number(svc3h.slot_capacity) === 1, `${svc3h?.slot_capacity}`);
+const day3 = dPlus(45);
+const bookAt = (slot, token = CU.token, sid = svc3h.id) => j("/api/bookings", { method: "POST", token,
+  body: { companyId: cid, serviceId: sid, scheduledDate: day3, scheduledSlot: slot, address: "Piac 1" } });
+
+const first = await bookAt("10:00");
+ok("a three-hour job books at 10:00", first.status < 300, JSON.stringify(first.data.error || ""));
+await query("UPDATE bookings SET payment_status='paid' WHERE id=$1", [first.data.booking.id]);
+const clash = await bookAt("11:00", OTHER.token);
+ok("11:00 is now correctly refused — the team is still there", clash.status === 400, `${clash.status}`);
+const clash2 = await bookAt("12:00", OTHER.token);
+ok("and so is 12:00", clash2.status === 400, `${clash2.status}`);
+const free = await bookAt("13:00", OTHER.token);
+ok("13:00 is free again, once the job has ended", free.status < 300, JSON.stringify(free.data.error || ""));
+
+console.log("\n── the company decides how many it can run at once ──");
+await j(`/api/services/${svc3h.id}`, { method: "PUT", token: CO.token, body: { slotCapacity: 2 } });
+const second = await bookAt("10:00", OTHER.token);
+ok("raising the capacity to two lets a second job share the slot",
+   second.status < 300, JSON.stringify(second.data.error || ""));
+const appCap = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+ok("and the company can set it from the service editor",
+   /Jobs at the same time/.test(appCap));
+
+console.log("\n── the date picker is a calendar, not a rail ──");
+ok("a month grid replaced the horizontal strip",
+   /function MonthCalendar/.test(appCap) && !/scrollSnapType: "x proximity"/.test(appCap));
+ok("weeks start on Monday", /\(firstOf\.getDay\(\) \+ 6\) % 7/.test(appCap));
+ok("closed and fully-booked days are shown but not pressable",
+   /isClosed\(iso\) \|\| isFull\(iso\)/.test(appCap));
+
+console.log("\n── the company's tabs are grouped ──");
+ok("the bar carries the daily work plus one Manage button",
+   /id: "__manage"/.test(appCap));
+ok("and the rest live behind it", /function ManageSheet/.test(appCap) && /MANAGE_TABS/.test(appCap));
+ok("Manage stays lit while one of its screens is open",
+   /MANAGE_TABS\(\)\.some\(\(m\) => m\.id === tab\)/.test(appCap));
+
+/* ── ONE LIST DECIDES WHERE A FIELD LIVES ─────────────────────────────────
+   Company setup was twenty-three fields in a single scroll with three save
+   buttons in it. Splitting "who you are" onto the Profile and "how you
+   operate" onto Setup is only safe if the split is DATA — otherwise the next
+   move cuts JSX out of one component, pastes it into another, and the field
+   quietly stops being saved because its handler stayed behind.
+
+   COMPANY_FIELDS is that data. These checks exist so it stays that way. */
+console.log("\n── company setup is described by a list, not by layout ──");
+const appReg = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+
+ok("there is a single registry of company fields", /const COMPANY_FIELDS = \[/.test(appReg));
+ok("every entry says which screen it belongs to",
+   (appReg.match(/screen: "(profile|setup)"/g) || []).length >= 12,
+   `${(appReg.match(/screen: "(profile|setup)"/g) || []).length} entries`);
+ok("both screens render from it rather than hand-written fields",
+   (appReg.match(/<CompanyFields /g) || []).length >= 2);
+ok("moving a field between screens is a one-word change",
+   /const fieldsFor = \(screen, group\)/.test(appReg));
+
+/* Every profile field must be forwarded by the save that owns that screen —
+   the exact failure this structure exists to prevent. */
+const profileIds = [...appReg.matchAll(/\{ id: "(\w+)",\s*screen: "profile"/g)].map((m) => m[1]);
+ok("the registry actually holds the business identity fields",
+   profileIds.includes("tax_id") && profileIds.includes("billing_address") && profileIds.includes("name"),
+   profileIds.join(","));
+const saveCo = (appReg.match(/const saveCompany = async \(\) => \{[\s\S]*?\n  \};/) || [""])[0];
+const camel = (x) => x.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+const dropped = profileIds.filter((id) => !saveCo.includes(id) && !saveCo.includes(camel(id)));
+ok("and every one of them is sent when the profile is saved", dropped.length === 0,
+   `dropped: ${dropped.join(", ")}`);
+
+/* The two halves must not both claim the same field, or one screen silently
+   overwrites the other. */
+const allIds = [...appReg.matchAll(/\{ id: "(\w+)",\s*screen:/g)].map((m) => m[1]);
+ok("no field is claimed by both screens", new Set(allIds).size === allIds.length,
+   `${allIds.length - new Set(allIds).size} duplicated`);
+
+console.log("\n── and the week can be set in one tap ──");
+ok("opening-hours presets exist", /Start from a usual week/.test(appReg));
+ok("a preset writes whole days, not single hours", /days\[k\] = \{ on: true, slots: \[\.\.\.span\] \}/.test(appReg));
+ok("the checklist names what is still missing", /function SetupChecklist/.test(appReg));
+ok("and only nags about things that actually block a booking",
+   /req: true/.test(appReg) && /At least one service/.test(appReg));
 
 console.log(`\n════ GAPS: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

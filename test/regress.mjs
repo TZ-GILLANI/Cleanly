@@ -20,6 +20,10 @@ const j = async (p, o = {}) => {
 /* ── cast ── */
 await j("/api/auth/register", { method: "POST", body: { email: "co@r.hu", password: "secret123", role: "company", fullName: "Owner", companyName: "Regress Co", taxId: "12345676-1-02", regNumber: "09-09-123456", city: "Debrecen", termsAccepted: true } });
 await j("/api/auth/register", { method: "POST", body: { email: "cu@r.hu", password: "secret123", role: "customer", fullName: "Cust", phone: "+36301112233", city: "Debrecen", address: "Kossuth u 1", customerType: "resident", termsAccepted: true } });
+/* A second customer. Capacity is about how many DIFFERENT jobs fit into an
+   hour; the same person asking twice for the same service, hour and address is
+   now treated as retrying one booking, which is what they meant. */
+await j("/api/auth/register", { method: "POST", body: { email: "cu2@r.hu", password: "secret123", role: "customer", fullName: "Masik", phone: "+36301119911", city: "Debrecen", address: "Piac ter 9", customerType: "resident", termsAccepted: true } });
 await query("UPDATE users SET approval_status='approved'");
 await query("UPDATE companies SET is_approved=true, is_listed=true");
 const bcrypt = (await import("bcryptjs")).default;
@@ -27,6 +31,7 @@ await query("INSERT INTO users (email, password_hash, full_name, role, is_super,
 await query("INSERT INTO users (email, password_hash, full_name, role, is_super, approval_status, city) VALUES ('plainadmin@r.hu', $1, 'Plain Admin', 'admin', false, 'approved', 'Debrecen')", [bcrypt.hashSync("secret123", 8)]);
 const co = (await j("/api/auth/login", { method: "POST", body: { email: "co@r.hu", password: "secret123" } })).data;
 const cu = (await j("/api/auth/login", { method: "POST", body: { email: "cu@r.hu", password: "secret123" } })).data;
+const cu2 = (await j("/api/auth/login", { method: "POST", body: { email: "cu2@r.hu", password: "secret123" } })).data;
 const ceo = (await j("/api/auth/login", { method: "POST", body: { email: "ceo@r.hu", password: "secret123" } })).data;
 const cid = co.user.company_id;
 
@@ -103,29 +108,33 @@ ok("today is still allowed", todayOk.status === 201, JSON.stringify(todayOk.data
 const farOff = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(500), scheduledSlot: "10:00", address: "Kossuth u 1" } });
 ok("a booking 500 days out is refused as a typo", farOff.status === 400, JSON.stringify(farOff.data));
 
+/* Each booking below uses a DISTINCT address on purpose. Same customer, same
+   service, same hour, same address is now understood as retrying one booking
+   rather than wanting two — so capacity has to be tested with jobs that are
+   genuinely different, which is what it measures. */
 /* capacity: a one-person company cannot be in two places at once */
 const slotDay = dPlus(40);
 const first = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Kossuth u 1" } });
 ok("the first booking of a slot is accepted", first.status === 201, JSON.stringify(first.data).slice(0, 120));
-const second = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Kossuth u 1" } });
+const second = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Teszt utca 1" } });
 ok("a second booking of the same slot is refused", second.status === 400, JSON.stringify(second.data));
 /* Capacity is the size of the team, minimum one. A one-person business can take
    one job at 11:00; a two-person team can take two. Hiring one cleaner keeps the
    cap at one, because that cleaner IS the one person doing the work. */
 const bcrypt2 = (await import("bcryptjs")).default;
 await query("INSERT INTO users (email, password_hash, full_name, role, company_id, approval_status, is_active) VALUES ('hire@r.hu', $1, 'Hired', 'employee', $2, 'approved', true)", [bcrypt2.hashSync("secret123", 8), cid]);
-const stillOne = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Kossuth u 1" } });
+const stillOne = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Teszt utca 2" } });
 ok("one cleaner still means one job at a time", stillOne.status === 400, JSON.stringify(stillOne.data).slice(0, 120));
 await query("INSERT INTO users (email, password_hash, full_name, role, company_id, approval_status, is_active) VALUES ('hire2@r.hu', $1, 'Hired Two', 'employee', $2, 'approved', true)", [bcrypt2.hashSync("secret123", 8), cid]);
-const third = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Kossuth u 1" } });
+const third = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Teszt utca 3" } });
 ok("a second cleaner opens the slot for a second booking", third.status === 201, JSON.stringify(third.data).slice(0, 120));
 /* a pending cleaner is not staff yet and must not raise the cap */
 await query("INSERT INTO users (email, password_hash, full_name, role, company_id, approval_status, is_active) VALUES ('pend@r.hu', $1, 'Pending', 'employee', $2, 'pending', true)", [bcrypt2.hashSync("secret123", 8), cid]);
-const pendBlocked = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Kossuth u 1" } });
+const pendBlocked = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Teszt utca 4" } });
 ok("a cleaner still awaiting approval does not raise capacity", pendBlocked.status === 400, JSON.stringify(pendBlocked.data).slice(0, 120));
 /* a cancelled booking must release its slot */
 await query("UPDATE bookings SET status = 9 WHERE id = $1", [third.data.booking.id]);
-const fourth = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Kossuth u 1" } });
+const fourth = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: slotDay, scheduledSlot: "11:00", address: "Teszt utca 5" } });
 ok("cancelling frees the slot again", fourth.status === 201, JSON.stringify(fourth.data).slice(0, 120));
 
 /* services validation */
@@ -146,7 +155,7 @@ ok("and they come back when the company is listed again",
 
 /* a zero-priced service cannot become an unchargéable booking */
 const freeSvc = (await j("/api/services", { method: "POST", token: co.token, body: { name: "Free", pricingType: "flat", priceHuf: 0 } })).data.service;
-const freeBk = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: freeSvc.id, scheduledDate: dPlus(45), scheduledSlot: "12:00", address: "Kossuth u 1" } });
+const freeBk = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: freeSvc.id, scheduledDate: dPlus(45), scheduledSlot: "12:00", address: "Teszt utca 6" } });
 ok("a zero-total booking is refused rather than left unpayable", freeBk.status === 400, JSON.stringify(freeBk.data));
 
 /* the schema loader must survive semicolons inside SQL comments */
@@ -158,14 +167,14 @@ console.log("\n── per-service availability: one service full, the others sti
 const svcB = (await j("/api/services", { method: "POST", token: co.token, body: { name: "Laundry", pricingType: "flat", priceHuf: 8000 } })).data.service;
 const psDay = dPlus(50);
 /* Cleaning at 13:00 fills up. Laundry at 13:00 must stay bookable. */
-const cA = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Kossuth u 1" } });
+const cA = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Teszt utca 7" } });
 ok("first booking of a service takes its slot", cA.status === 201, JSON.stringify(cA.data).slice(0, 120));
 /* The team is two cleaners by now, so two of the same service fit — the third
    must not, because there is nobody left to send. */
-await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Kossuth u 1" } });
-const cB = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Kossuth u 1" } });
+await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Teszt utca 8" } });
+const cB = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Teszt utca 9" } });
 ok("the SAME service stops once the team is fully committed", cB.status === 400, JSON.stringify(cB.data).slice(0, 120));
-const lA = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svcB.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Kossuth u 1" } });
+const lA = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svcB.id, scheduledDate: psDay, scheduledSlot: "13:00", address: "Teszt utca 10" } });
 ok("a DIFFERENT service is still bookable at the same hour", lA.status === 201, JSON.stringify(lA.data).slice(0, 140));
 
 /* Blocking one service by hand must not close the hour for the others. */
@@ -176,9 +185,9 @@ await j("/api/companies/" + cid, { method: "PUT", token: co.token, body: { name:
   days: { "0": { on: true, slots: ["13:00","14:00"] }, "1": { on: true, slots: ["13:00","14:00"] }, "2": { on: true, slots: ["13:00","14:00"] }, "3": { on: true, slots: ["13:00","14:00"] }, "4": { on: true, slots: ["13:00","14:00"] }, "5": { on: true, slots: ["13:00","14:00"] }, "6": { on: true, slots: ["13:00","14:00"] } } } } });
 const savedAv = (await j("/api/companies/" + cid)).data.company?.availability;
 ok("the per-service block is stored", !!savedAv?.busyServices?.[svc.id]?.[psDay2], JSON.stringify(savedAv?.busyServices));
-const blocked = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay2, scheduledSlot: "14:00", address: "Kossuth u 1" } });
+const blocked = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay2, scheduledSlot: "14:00", address: "Teszt utca 11" } });
 ok("the blocked service is refused at that hour", blocked.status === 400, JSON.stringify(blocked.data));
-const notBlocked = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svcB.id, scheduledDate: psDay2, scheduledSlot: "14:00", address: "Kossuth u 1" } });
+const notBlocked = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svcB.id, scheduledDate: psDay2, scheduledSlot: "14:00", address: "Teszt utca 12" } });
 ok("the other service is still bookable at that hour", notBlocked.status === 201, JSON.stringify(notBlocked.data).slice(0, 140));
 
 /* A company-wide block still shuts everything. */
@@ -186,13 +195,13 @@ const psDay3 = dPlus(52);
 await j("/api/companies/" + cid, { method: "PUT", token: co.token, body: { name: "Regress Co", availability: {
   paused: false, closed: [], busyServices: {}, busy: { [psDay3]: ["13:00"] },
   days: { "0": { on: true, slots: ["13:00","14:00"] }, "1": { on: true, slots: ["13:00","14:00"] }, "2": { on: true, slots: ["13:00","14:00"] }, "3": { on: true, slots: ["13:00","14:00"] }, "4": { on: true, slots: ["13:00","14:00"] }, "5": { on: true, slots: ["13:00","14:00"] }, "6": { on: true, slots: ["13:00","14:00"] } } } } });
-ok("a company-wide block stops service A", (await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay3, scheduledSlot: "13:00", address: "K 1" } })).status === 400);
-ok("and service B too", (await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svcB.id, scheduledDate: psDay3, scheduledSlot: "13:00", address: "K 1" } })).status === 400);
+ok("a company-wide block stops service A", (await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: psDay3, scheduledSlot: "13:00", address: "Teszt utca 13" } })).status === 400);
+ok("and service B too", (await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: svcB.id, scheduledDate: psDay3, scheduledSlot: "13:00", address: "Teszt utca 14" } })).status === 400);
 
 console.log("\n── the per-service discount is no longer a dead input ──");
 const withDisc = await j("/api/services", { method: "POST", token: co.token, body: { name: "Disc", pricingType: "flat", priceHuf: 10000, promoPct: 20 } });
 ok("a service can be created with a discount", Number(withDisc.data.service?.promo_pct) === 20, JSON.stringify(withDisc.data.service?.promo_pct));
-const dBk = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: withDisc.data.service.id, scheduledDate: dPlus(53), scheduledSlot: "13:00", address: "K 1" } });
+const dBk = await j("/api/bookings", { method: "POST", token: cu2.token, body: { companyId: cid, serviceId: withDisc.data.service.id, scheduledDate: dPlus(53), scheduledSlot: "13:00", address: "Teszt utca 15" } });
 /* 10000 less 20% = 8000, plus 10% fee = 8800 */
 ok("the discount is applied to the price the customer pays",
    Number(dBk.data.booking?.total_huf) === 8800, String(dBk.data.booking?.total_huf));
