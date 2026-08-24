@@ -171,6 +171,114 @@ function PhoneField({ label, value, onChange }) {
   );
 }
 
+/* ── Changing your number, with proof ─────────────────────────────
+   The profile screen used to hand customers and cleaners an editable phone
+   box wired straight to the save button. Type anything, press Save, done —
+   and phone_verified stayed true, so the account still claimed a number had
+   been proved when it hadn't.
+
+   That number is what a cleaner rings when they're standing outside the
+   wrong door. So it is now read-only, and changing it means holding the new
+   SIM: we send a code there and write nothing until it comes back. */
+function ChangePhoneSheet({ current, onClose, onDone }) {
+  const { phoneChangeStart, phoneChangeCheck } = useStore();
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState("enter");     // enter → code
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const send = async () => {
+    if (!phone) return;
+    setBusy(true); setErr("");
+    const r = await phoneChangeStart(phone);
+    setBusy(false);
+    if (r?.error) return setErr(errText(r.error));
+    setStep("code");
+  };
+  const confirm = async () => {
+    setBusy(true); setErr("");
+    const r = await phoneChangeCheck(phone, code);
+    setBusy(false);
+    if (r?.error || !r?.verified) return setErr(errText(r?.error) || L("That code didn't match.", "A kód nem egyezik."));
+    onDone?.(r.phone || phone);
+    onClose();
+  };
+
+  return (
+    <Sheet close={onClose} title={L("Change phone number", "Telefonszám módosítása")}>
+      <div style={{ padding: "2px 2px 8px" }}>
+        {step === "enter" ? (
+          <>
+            <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.55, marginBottom: 14 }}>
+              {L("We'll text a code to the new number to make sure it's yours. Your number only changes once you enter that code.",
+                 "SMS-ben kódot küldünk az új számra, hogy biztosan a tiéd legyen. A számod csak a kód megadása után változik meg.")}
+            </div>
+            {current && (
+              <div style={{ background: C.bg, borderRadius: R.md, padding: "10px 13px", marginBottom: 14 }}>
+                <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint }}>{L("Current number", "Jelenlegi szám")}</div>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginTop: 2 }}>{current}</div>
+              </div>
+            )}
+            <PhoneField label={L("New phone number", "Új telefonszám")} value={phone} onChange={setPhone} />
+            {err && <div style={{ fontFamily: B, fontSize: 12, color: C.coralText, marginBottom: 10 }}>{err}</div>}
+            <Btn full disabled={!phone || busy} onClick={send}>
+              {busy ? L("Sending…", "Küldés…") : L("Send code", "Kód küldése")}
+            </Btn>
+          </>
+        ) : (
+          <>
+            <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.55, marginBottom: 14 }}>
+              {fill(L("Enter the 6-digit code we sent to {0}.", "Add meg a {0} számra küldött 6 jegyű kódot."), phone)}
+            </div>
+            <input value={code} inputMode="numeric" maxLength={6} placeholder="123456"
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "13px 15px", fontFamily: F, fontWeight: 700, fontSize: 20, letterSpacing: 6, textAlign: "center", background: C.bg, color: C.ink, outline: "none", marginBottom: 12 }} />
+            {err && <div style={{ fontFamily: B, fontSize: 12, color: C.coralText, marginBottom: 10 }}>{err}</div>}
+            <Btn full disabled={code.length < 4 || busy} onClick={confirm}>
+              {busy ? L("Checking…", "Ellenőrzés…") : L("Confirm new number", "Új szám megerősítése")}
+            </Btn>
+            <button onClick={() => { setStep("enter"); setCode(""); setErr(""); }}
+              style={{ width: "100%", marginTop: 10, background: "none", border: "none", cursor: "pointer", fontFamily: B, fontSize: 12, color: C.inkSoft }}>
+              {L("Use a different number", "Másik szám megadása")}
+            </button>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+/* The number on file, shown but not typed into. */
+function PhoneRow({ label, value, verified, onChange }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 13 }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "11px 13px", background: C.bg }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: B, fontSize: 13.5, color: value ? C.ink : C.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {value || L("No number yet", "Még nincs szám")}
+          </div>
+          {value && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+              <Ic name={verified ? "check" : "clock"} size={11} sw={2.2} color={verified ? C.green : C.amber} />
+              <span style={{ fontFamily: B, fontSize: 10.5, color: verified ? C.green : C.amber }}>
+                {verified ? L("Verified", "Ellenőrizve") : L("Not verified", "Nincs ellenőrizve")}
+              </span>
+            </div>
+          )}
+        </div>
+        <button onClick={() => setOpen(true)}
+          style={{ background: C.navyChip, border: `1.5px solid ${C.navy}33`, borderRadius: R.sm, padding: "7px 12px", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 12, color: C.navy, whiteSpace: "nowrap" }}>
+          {value ? L("Change", "Módosítás") : L("Add", "Hozzáadás")}
+        </button>
+      </div>
+      {open && <ChangePhoneSheet current={value} onClose={() => setOpen(false)} onDone={onChange} />}
+    </div>
+  );
+}
+
 /* ── 2.1 Force-update gate ─────────────────────────────────────────
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
@@ -184,35 +292,30 @@ const verLt = (a, b) => {
 
 /* ── Theme: follows the phone's light/dark mode automatically ── */
 /* ── Palette ──────────────────────────────────────────────────────────────
-   Narrowed on purpose. The old set carried five accent colours — navy, mint,
-   gold, coral and amber — plus a soft tint of each, which is how a screen ends
-   up looking like a template: every element gets its own hue and nothing reads
-   as more important than anything else.
+   The Cleano blue, kept. I narrowed this to a slate blue on the theory that
+   the indigo read as generic — Musa looked at it on a real screen and it made
+   the app worse, which is the only test of a colour that counts.
 
-   What is left: one accent, a neutral grey ramp, and two status colours that
-   exist because they carry meaning a customer must not misread — money coming
-   back, and something going wrong. Everything else is grey.
-
-   The accent is a deep slate blue rather than the previous indigo: close
-   enough that the brand still reads as itself, far enough from the
-   purple-blue that generated apps default to. */
+   What DID change and stays changed: the five competing accents are down to
+   navy plus two status colours, so a screen no longer has gold, coral, amber
+   and mint all shouting at once. The blue is the original. */
 const LIGHT = {
-  navy: "#243B53", navyDeep: "#102A43", navyMid: "#334E68", navySoft: "#486581",
-  mint: "#2A9D6E", mintSoft: "#E6F4EE",
-  bg: "#F7F8FA", card: "#FFFFFF", ink: "#102A43", inkSoft: "#627D98", inkFaint: "#9FB3C8",
-  line: "#E4E9EF", gold: "#B98900", coral: "#C2410C",
-  green: "#2A9D6E", greenDeep: "#1F7A55", coralText: "#9A3412", coralSoft: "#FDF0E7",
-  amber: "#B45309", amberSoft: "#FBF3E8", navyChip: "#EEF1F5",
-  shell: "#EDF0F4", navBg: "rgba(255,255,255,.94)",
+  navy: "#1B2A6B", navyDeep: "#10194A", navyMid: "#27379B", navySoft: "#4A5BBF",
+  mint: "#5EE6A8", mintSoft: "#DCFAEC",
+  bg: "#F4F6FC", card: "#FFFFFF", ink: "#141C3A", inkSoft: "#69718F", inkFaint: "#9AA2C0",
+  line: "#E7EAF6", gold: "#FFC555", coral: "#FF7A6B",
+  green: "#118A5C", greenDeep: "#0F7A50", coralText: "#B33A2B", coralSoft: "#FFE9E5",
+  amber: "#D96A2B", amberSoft: "#FFF1E8", navyChip: "#EEF1FB",
+  shell: "#E7EBF6", navBg: "rgba(255,255,255,.9)",
 };
 const DARK = {
-  navy: "#7B98B5", navyDeep: "#0B1620", navyMid: "#334E68", navySoft: "#9FB3C8",
-  mint: "#4FBF8B", mintSoft: "rgba(79,191,139,.14)",
-  bg: "#0F1A24", card: "#17242F", ink: "#E8EDF2", inkSoft: "#9FB3C8", inkFaint: "#7089A0",
-  line: "#243642", gold: "#D9A441", coral: "#E8845C",
-  green: "#4FBF8B", greenDeep: "#4FBF8B", coralText: "#E8845C", coralSoft: "rgba(232,132,92,.14)",
-  amber: "#D9A441", amberSoft: "rgba(217,164,65,.14)", navyChip: "#1E2E3B",
-  shell: "#0A121A", navBg: "rgba(18,29,39,.94)",
+  navy: "#4A5BBF", navyDeep: "#0B1128", navyMid: "#27379B", navySoft: "#8E9CE8",
+  mint: "#5EE6A8", mintSoft: "rgba(94,230,168,.16)",
+  bg: "#111832", card: "#1B2444", ink: "#EDF0FF", inkSoft: "#A6AFD6", inkFaint: "#7079A6",
+  line: "#2A3560", gold: "#FFC555", coral: "#FF8A7C",
+  green: "#7FEFC0", greenDeep: "#7FEFC0", coralText: "#FF9A8C", coralSoft: "rgba(255,122,107,.14)",
+  amber: "#FFB067", amberSoft: "rgba(255,180,90,.14)", navyChip: "#232D52",
+  shell: "#0B1023", navBg: "rgba(24,31,60,.9)",
 };
 
 /* ── Corner radii ─────────────────────────────────────────────────────────
@@ -278,6 +381,20 @@ const servesCityClient = (co, cityRaw) => {
    Hungarian and no other language, while the drift checker, which only looked
    for quoted literals, reported them as nothing at all. Keep the sentence
    fixed, put the value in afterwards. */
+/* The server sends sentences, except for two machine-readable codes. Showing
+   a customer "verification_not_configured" tells them nothing and looks
+   broken — it is broken, but it is our fault, not theirs. */
+const errText = (e) => {
+  if (!e) return "";
+  if (e === "verification_not_configured")
+    return L("We can't send codes right now. Please try again shortly — we've been told.",
+             "Most nem tudunk kódot küldeni. Kérlek, próbáld újra kicsit később — értesítettük magunkat.");
+  if (e === "phone_change_needs_verification")
+    return L("To change your phone number, tap Change next to it and confirm the code we send.",
+             "A telefonszám módosításához koppints mellette a Módosítás gombra, és add meg a kapott kódot.");
+  return e;
+};
+
 const fill = (str, ...vals) =>
   vals.reduce((acc, v, i) => acc.split("{" + i + "}").join(String(v ?? "")), str);
 
@@ -441,8 +558,8 @@ const dayClosed = (av, iso) => openSlots(av, iso).length === 0;
    nothing is rewritten in the database and a partner who picked one still has
    it until they choose again. */
 const COVER_PRESETS = [
-  "#334E68", "#2A6B5E", "#5B4B7A", "#8A5A3C",
-  "#1F4E5F", "#6B4A4A", "#3D5A46", "#4A4E69",
+  "#1B2A6B", "#27379B", "#2A7F62", "#1F6F8B",
+  "#7B4DE0", "#C2410C", "#B98900", "#4A5BBF",
 ];
 const coverOf = (co) => co.cover || COVER_PRESETS[0];
 
@@ -872,6 +989,11 @@ const ICON_PATHS = {
   banknote: "M2.5 7.5h19v9h-19Z M12 14.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z",
   chat: "M20.5 12c0 4-3.8 7.2-8.5 7.2a10 10 0 0 1-2.8-.4L4 20.5l1.4-3.6A6.8 6.8 0 0 1 3.5 12C3.5 8 7.3 4.8 12 4.8s8.5 3.2 8.5 7.2Z",
   star: "M12 3.6 14.6 9l5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.8 1-5.9L3.5 9.8 9.4 9Z",
+  /* The password reveal. It was an emoji, which the emoji sweep removed and
+     left as an empty button — a control that was there, took a tap, and did
+     nothing visible. */
+  eye: "M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12Z M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z",
+  eyeOff: "M4 4 20 20 M9.6 9.7A2.6 2.6 0 0 0 12 14.6c.7 0 1.3-.25 1.8-.68 M6.5 6.7C3.9 8.3 2 12 2 12s3.8 6.5 10 6.5c1.7 0 3.2-.32 4.5-.84 M9.9 5.7A11 11 0 0 1 12 5.5c6.2 0 10 6.5 10 6.5a17 17 0 0 1-2.9 3.6",
   bell: "M18 8.5a6 6 0 0 0-12 0c0 6.5-2.5 8-2.5 8h17S18 15 18 8.5M13.8 20.5a2.1 2.1 0 0 1-3.6 0",
   clipboard: "M9 4.5h6M9 3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Zm7 1.5h1.5A1.5 1.5 0 0 1 19 6v13.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5V6a1.5 1.5 0 0 1 1.5-1.5H8",
   users: "M16.5 20.5v-1.8a3.6 3.6 0 0 0-3.6-3.6H6.1a3.6 3.6 0 0 0-3.6 3.6v1.8M9.3 11.5a3.9 3.9 0 1 0 0-7.8 3.9 3.9 0 0 0 0 7.8ZM21.5 20.5v-1.8a3.6 3.6 0 0 0-2.7-3.5M15.3 3.9a3.9 3.9 0 0 1 0 7.55",
@@ -911,9 +1033,9 @@ const Btn = ({ children, onClick, full, ghost, mint, small, disabled, danger, st
   <button onClick={onClick} disabled={disabled} className="cl-btn" style={{
     fontFamily: F, fontWeight: 700, fontSize: small ? 13 : 15.5,
     padding: small ? "9px 16px" : "15px 22px", borderRadius: R.lg,
-    border: ghost ? `1.5px solid ${C.line}` : "none",
-    background: disabled ? "#C9CFE6" : ghost ? C.card : mint ? C.mint : danger ? C.coral : C.navy,
-    color: ghost ? (danger ? C.coral : C.navy) : mint ? C.navyDeep : "#fff",
+    border: ghost ? `1.5px solid ${danger ? C.coral + "55" : C.navy + "33"}` : "none",
+    background: disabled ? C.line : ghost ? (danger ? C.coralSoft : C.navyChip) : mint ? C.mint : danger ? C.coral : C.navy,
+    color: disabled ? C.inkFaint : ghost ? (danger ? C.coral : C.navy) : mint ? C.navyDeep : "#fff",
     width: full ? "100%" : "auto", cursor: disabled ? "default" : "pointer",
     boxShadow: disabled || ghost ? "none" : mint ? "0 6px 18px rgba(94,230,168,.4)" : danger ? "0 6px 18px rgba(255,122,107,.35)" : "0 6px 18px rgba(27,42,107,.28)",
     ...style,
@@ -938,8 +1060,8 @@ const Field = ({ label, hint, area, ...props }) => {
               style={{ width: "100%", boxSizing: "border-box", padding: "13px 15px", paddingRight: isPw ? 46 : 15, borderRadius: R.md, border: `1.5px solid ${C.line}`, fontFamily: B, fontSize: 14, outline: "none", background: C.card, color: C.ink }} />
             {isPw && (
               <button type="button" tabIndex={-1} onClick={() => setShowPw((v) => !v)} aria-label={showPw ? L("Hide password", "Jelszó elrejtése") : L("Show password", "Jelszó mutatása")}
-                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 17, opacity: .7, padding: 6 }}>
-                {showPw ? "" : "️"}
+                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", opacity: .7, padding: 6 }}>
+                <Ic name={showPw ? "eyeOff" : "eye"} size={18} sw={1.7} color={C.inkSoft} />
               </button>
             )}
           </div>
@@ -1472,7 +1594,7 @@ function AddressPicker({ value, onChange }) {
   }, []);
   const canSave = !!rawSession; // save-as needs a logged-in profile
 
-  const labelIcon = (lbl) => (/home|otthon/i.test(lbl) ? "" : /office|iroda|work|munka/i.test(lbl) ? "" : "");
+  const labelIcon = (lbl) => (/home|otthon/i.test(lbl) ? "house" : /office|iroda|work|munka/i.test(lbl) ? "building" : "pin");
 
   const removeSaved = async (addr) => {
     const next = saved.filter((a) => a.address !== addr.address);
@@ -1595,7 +1717,7 @@ function AddressPicker({ value, onChange }) {
             {[L("Home", "Otthon"), L("Office", "Iroda")].map((lbl) => (
               <button key={lbl} onClick={() => setSaveAs(saveAs === lbl ? "" : lbl)}
                 style={{ border: saveAs === lbl ? `2px solid ${C.navy}` : `1.5px solid ${C.line}`, background: C.card, color: C.ink, borderRadius: 99, padding: "7px 14px", fontFamily: F, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                {labelIcon(lbl)} {lbl}
+                <Ic name={labelIcon(lbl)} size={14} sw={1.8} color={saveAs === lbl ? C.navy : C.inkSoft} style={{ marginRight: 5, verticalAlign: "-2px" }} />{lbl}
               </button>
             ))}
             <input value={/^(Home|Otthon|Office|Iroda)$/.test(saveAs) ? "" : saveAs} onChange={(e) => setSaveAs(e.target.value)} placeholder={L("Custom…", "Egyéni…")}
@@ -1674,7 +1796,7 @@ function PhoneVerifyGate() {
         ) : (
           <>
             <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))} inputMode="numeric" placeholder="• • • • • •"
-              style={{ textAlign: "center", letterSpacing: 8, fontSize: 22, fontFamily: F, fontWeight: 700, padding: "14px 10px", borderRadius: R.md, border: `1.5px solid ${C.line}`, background: C.card, color: C.ink, outline: "none" }} />
+              style={{ textAlign: "center", letterSpacing: 8, fontSize: 22, fontFamily: F, fontWeight: 700, padding: "14px 10px", borderRadius: R.md, border: `1.5px solid ${C.line}`, background: C.bg, color: C.ink, outline: "none" }} />
             <Btn full disabled={busy || code.length < 4} onClick={check}>{busy ? "..." : L("Verify", "Megerősítés")}</Btn>
             <Btn ghost full disabled={busy} onClick={() => send(mode === "email" ? undefined : "sms")}>{mode === "email" ? L("Resend code", "Kód újraküldése") : L("Resend as SMS", "Újraküldés SMS-ben")}</Btn>
           </>
@@ -1806,7 +1928,8 @@ function ProfileSheet({ close }) {
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 7 }}>{t("profile.homeAddress")}</div>
             <AddressPicker value={f.address} onChange={(v) => setF({ ...f, address: v })} />
           </div>
-          <PhoneField label={t("profile.phone")} value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
+          <PhoneRow label={t("profile.phone")} value={f.phone} verified={session.phoneVerified}
+            onChange={(v) => setF((p) => ({ ...p, phone: v }))} />
           <div style={{ marginBottom: 13 }}>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{t("profile.paymentMethod")}</div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -1823,7 +1946,8 @@ function ProfileSheet({ close }) {
 
       {session.role === "employee" && (
         <>
-          <PhoneField label={L("Phone number", "Telefonszám")} value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
+          <PhoneRow label={L("Phone number", "Telefonszám")} value={f.phone} verified={session.phoneVerified}
+            onChange={(v) => setF((p) => ({ ...p, phone: v }))} />
           <DocUpload
             label={L("Identity documents", "Személyazonosító okmányok")}
             hint={L("ID card or residence card — your company and the platform admin can verify you.", "Személyi vagy lakcímkártya — a céged és a platform adminja tudja ellenőrizni.")}
@@ -1976,10 +2100,7 @@ function VerifiedField({ kind, label, hint, placeholder, type, value, onChange, 
        sentence. Showing "verification_not_configured" to a customer tells them
        nothing and looks broken, which it is, but it is our fault not theirs. */
     if (r?.error) {
-      setErr(r.error === "verification_not_configured"
-        ? L("We can't send codes right now. Please try again shortly — we've been told.",
-            "Most nem tudunk kódot küldeni. Kérlek, próbáld újra kicsit később — értesítettük magunkat.")
-        : r.error);
+      setErr(errText(r.error));
       return;
     }
     if (r?.ticket) setTicket(r.ticket);
@@ -2140,7 +2261,9 @@ function Auth() {
         {/* Three different people reach this screen and only one of them is a
             student. A cleaner reading "we are verifying your student card"
             reasonably concludes something has gone wrong. */}
-        <div className="cl-pop" style={{ fontSize: 58 }}>{role === "employee" ? "" : role === "company" ? "" : ""}</div>
+        <div className="cl-pop" style={{ width: 74, height: 74, borderRadius: R.lg, background: C.navyChip, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Ic name={role === "employee" ? "sparkle" : role === "company" ? "building" : "house"} size={34} sw={1.6} color={C.navy} />
+        </div>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>
           {role === "employee" ? L("You're in — pending approval", "Kész — jóváhagyásra vár") : L("Application received!", "Jelentkezés beérkezett!")}
         </div>
@@ -2207,9 +2330,9 @@ function Auth() {
     );
 
   const h = {
-    customer: { icon: "️", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Book a verified cleaner in a few taps.", "Foglalj ellenőrzött takarítót pár koppintással.") },
-    employee: { icon: "", title: L("Cleaner sign-up", "Takarító regisztráció"), sub: L("Use the invite code your company gave you.", "Használd a cégedtől kapott meghívókódot.") },
-    company: { icon: "", title: L("Register your company", "Cég regisztrálása"), sub: L("Free to list — manage your team and bookings.", "A listázás ingyenes — kezeld a csapatod és a foglalásaid.") },
+    customer: { icon: "house", title: mode === "login" ? L("Welcome back", "Üdv újra!") : L("Create your account", "Fiók létrehozása"), sub: L("Book a verified cleaner in a few taps.", "Foglalj ellenőrzött takarítót pár koppintással.") },
+    employee: { icon: "sparkle", title: L("Cleaner sign-up", "Takarító regisztráció"), sub: L("Use the invite code your company gave you.", "Használd a cégedtől kapott meghívókódot.") },
+    company: { icon: "building", title: L("Register your company", "Cég regisztrálása"), sub: L("Free to list — manage your team and bookings.", "A listázás ingyenes — kezeld a csapatod és a foglalásaid.") },
   }[role];
 
   /* With verification on, the account must not be creatable until both proofs
@@ -2231,7 +2354,21 @@ function Auth() {
         <button onClick={() => setRole(null)} style={{ background: C.card, border: "none", width: 38, height: 38, borderRadius: R.md, fontSize: 16, cursor: "pointer", boxShadow: "0 2px 8px rgba(20,28,58,.08)" }}>←</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", paddingTop: 24 }}>
-        <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: R.lg, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>{h.icon}</div>
+        {/* The emoji that used to sit in this navy tile went with the rest of
+            them, and a blank square is worse than what it replaced. Musa drew
+            an octopus for it — it is the brand, it is warm, and a sign-in
+            screen is the one place a bit of character costs nothing.
+
+            Only on the customer's sign-in: a company owner or a cleaner opening
+            this app is at work, not being welcomed. */}
+        {role === "customer" ? (
+          <img src="/octopus-hello.png" alt="" width={104} height={104}
+            style={{ display: "block", marginLeft: -6, objectFit: "contain" }} />
+        ) : (
+          <div className="cl-pop" style={{ width: 72, height: 72, borderRadius: R.lg, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 30px rgba(27,42,107,.25)" }}>
+            <Ic name={role === "company" ? "building" : "sparkle"} size={30} sw={1.7} color="#fff" />
+          </div>
+        )}
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 18 }}>{h.title}</div>
         <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.6 }}>{h.sub}</div>
         <div style={{ marginTop: 22 }}>
@@ -2245,10 +2382,10 @@ function Auth() {
               <Field label={L("Your name", "A neved")} placeholder={L("e.g. Musa Gillani", "pl. Kovács Anna")} value={f.name} onChange={set("name")} />
               <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("I am a…", "Én egy…")}</div>
               <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                {[{ id: "student", icon: "", t: L("Student", "Diák"), s: L("Uni email verification · save up to 20%", "Egyetemi e-mail igazolás · akár 20% kedvezmény") },
-                  { id: "resident", icon: "", t: L("Resident", "Lakos"), s: L("Standard pricing, full service", "Normál árazás, teljes szolgáltatás") }].map((o) => (
+                {[{ id: "student", icon: "cap", t: L("Student", "Diák"), s: L("Uni email verification · save up to 20%", "Egyetemi e-mail igazolás · akár 20% kedvezmény") },
+                  { id: "resident", icon: "house", t: L("Resident", "Lakos"), s: L("Standard pricing, full service", "Normál árazás, teljes szolgáltatás") }].map((o) => (
                   <button key={o.id} onClick={() => setF({ ...f, custType: o.id })} style={{ flex: 1, textAlign: "left", padding: 14, borderRadius: R.lg, cursor: "pointer", border: f.custType === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)" }}>
-                    <div style={{ fontSize: 22 }}>{o.icon}</div>
+                    <Ic name={o.icon} size={22} sw={1.7} color={f.custType === o.id ? C.navy : C.inkSoft} />
                     <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, marginTop: 6 }}>{o.t}</div>
                     <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 4, lineHeight: 1.45 }}>{o.s}</div>
                   </button>
@@ -2405,7 +2542,7 @@ function CityPickerSheet({ close, city, onPick }) {
             {m.cities.map((c) => (
               <button key={c} onClick={() => { onPick(c); close(); }}
                 style={{ padding: "13px 10px", borderRadius: R.md, border: city === c ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.05)", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>
-                {city === c ? "" : ""}{c}
+                {city === c && <Ic name="check" size={13} sw={2} color={C.navy} style={{ marginRight: 5, verticalAlign: "-1px" }} />}{c}
               </button>
             ))}
           </div>
@@ -2418,16 +2555,6 @@ function CityPickerSheet({ close, city, onPick }) {
   );
 }
 
-function MiniLang({ light }) {
-  const { lang, setLang } = useStore();
-  return (
-    <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ flexShrink: 0, fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "5px 9px", borderRadius: 99, cursor: "pointer", appearance: "none", WebkitAppearance: "none", outline: "none",
-      border: light ? "1px solid rgba(255,255,255,.3)" : `1.5px solid ${C.line}`,
-      background: light ? "rgba(255,255,255,.14)" : C.bg, color: light ? "#fff" : C.ink }}>
-      {LANGS.map((o) => <option key={o.id} value={o.id} style={{ color: "#1B2A6B" }}>{o.label}</option>)}
-    </select>
-  );
-}
 
 function CustomerHome({ openBooking, openProfile }) {
   const { session, companies, services, reviews, t } = useStore();
@@ -2484,8 +2611,12 @@ function CustomerHome({ openBooking, openProfile }) {
               </div>
             </div>
           </button>
+          {/* The language picker used to sit here, in the corner of the home
+              screen. It is a thing you set once and never touch again, so it
+              was taking permanent space at the top of the screen people look
+              at most. It lives in the profile now, next to the other settings
+              that behave the same way. */}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <MiniLang light />
             <Pill bg={isStudent ? "rgba(94,230,168,.18)" : "rgba(255,255,255,.12)"} color={isStudent ? C.mint : "#C9D2F5"}>
               {isStudent ? t("home.student") : t("home.resident")}
             </Pill>
@@ -2989,7 +3120,7 @@ function CustomerBookings({ openBooking }) {
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 18px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("My bookings", "Foglalásaim")}</div>
-        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>{L("My reports", "Bejelentéseim")}</button>
+        <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>{L("My reports", "Bejelentéseim")}</button>
       </div>
       {showReports && <CustomerReports close={() => setShowReports(false)} />}
       {trackId && <TrackSheet bookingId={trackId} booking={(bookings || []).find((x) => x.id === trackId)} close={() => setTrackId(null)} />}
@@ -3978,10 +4109,10 @@ function CompanyServices() {
 
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Pricing model", "Árazás módja")}</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[{ id: "flat", t: L("Flat", "Fix"), icon: "" }, { id: "hourly", t: L("Hourly", "Óradíj"), icon: "️" },
-              { id: "unit", t: L("Per unit", "Egységár"), icon: "️" }, { id: "subscription", t: L("Plan", "Bérlet"), icon: "" }].map((o) => (
+            {[{ id: "flat", t: L("Flat", "Fix"), icon: "tag" }, { id: "hourly", t: L("Hourly", "Óradíj"), icon: "clock" },
+              { id: "unit", t: L("Per unit", "Egységár"), icon: "box" }, { id: "subscription", t: L("Plan", "Bérlet"), icon: "" }].map((o) => (
               <button key={o.id} onClick={() => setF({ ...f, pricing_type: o.id })} style={{ flex: 1, padding: "10px 4px", borderRadius: R.md, cursor: "pointer", border: (f.pricing_type || "flat") === o.id ? `2px solid ${C.navy}` : "2px solid transparent", background: C.card, boxShadow: "0 1px 6px rgba(20,28,58,.06)", textAlign: "center" }}>
-                <div style={{ fontSize: 18 }}>{o.icon}</div>
+                <Ic name={o.icon} size={19} sw={1.7} color={f.pricing_type === o.id ? C.navy : C.inkSoft} />
                 <div style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.ink, marginTop: 3 }}>{o.t}</div>
               </button>
             ))}
@@ -4331,7 +4462,7 @@ function PayoutSetup() {
   return (
     <div style={{ background: C.card, borderRadius: R.lg, padding: 16, marginBottom: 14, boxShadow: "0 1px 8px rgba(20,28,58,.05)", border: ready ? `1.5px solid ${C.mint}` : `1.5px dashed ${C.line}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 22 }}>{ready ? "" : ""}</span>
+        <Ic name={ready ? "check" : "card"} size={21} sw={1.8} color={ready ? C.green : C.amber} />
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>
             {ready ? L("Automatic payouts active", "Automatikus kifizetés aktív") : L("Set up automatic payouts", "Automatikus kifizetés beállítása")}
@@ -4523,7 +4654,7 @@ function AddToCalendar({ booking, small = true }) {
         catch { toast(L("Could not open the calendar file", "Nem sikerült megnyitni a naptárfájlt"), "error"); }
         finally { setBusy(false); }
       }}
-      style={{ border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer",
+      style={{ border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer",
         fontFamily: B, fontWeight: 700, fontSize: small ? 11 : 12.5, padding: small ? "6px 12px" : "9px 15px",
         borderRadius: 99, opacity: busy ? .6 : 1 }}>
       {busy ? "…" : L("Add to calendar", "Naptárhoz adom")}
@@ -5819,25 +5950,30 @@ function AdminDashboard() {
 
   const s = adminStats;
   const kpis = [
-    { k: L("Total users", "Összes felhasználó"), v: s.totalUsers, icon: "" },
-    { k: L("Companies", "Cégek"), v: s.totalCompanies, icon: "" },
-    { k: L("Bookings", "Foglalások"), v: s.totalBookings, icon: "" },
-    { k: L("Completed", "Teljesítve"), v: s.completedBookings, icon: "" },
-    { k: L("Active now", "Most aktív"), v: s.activeBookings, icon: "" },
-    { k: L("Platform revenue", "Platform bevétel"), v: huf(s.totalRevenue || 0), icon: "" },
+    { k: L("Total users", "Összes felhasználó"), v: s.totalUsers, icon: "users" },
+    { k: L("Companies", "Cégek"), v: s.totalCompanies, icon: "building" },
+    { k: L("Bookings", "Foglalások"), v: s.totalBookings, icon: "calendar" },
+    { k: L("Completed", "Teljesítve"), v: s.completedBookings, icon: "check" },
+    { k: L("Active now", "Most aktív"), v: s.activeBookings, icon: "clock" },
+    { k: L("Platform revenue", "Platform bevétel"), v: huf(s.totalRevenue || 0), icon: "banknote" },
   ];
 
   const maxRev = Math.max(...(adminRevenue || []).map((r) => r.revenue || 0), 1);
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
-      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 18px" }}>{L("Platform dashboard", "Platform áttekintés")}</div>
+      {/* The empty square that used to sit here was an emoji the sweep removed.
+          The Cleano mark belongs on the operator's own screen anyway. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 11, margin: "8px 0 18px" }}>
+        <img src="/logo.png" alt="" width={30} height={30} style={{ borderRadius: R.sm, objectFit: "contain" }} />
+        <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, flex: 1 }}>{L("Platform dashboard", "Platform áttekintés")}</div>
+      </div>
       {useStore().session?.isSuper === true && <AnnouncementComposer />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
         {kpis.map((k) => (
           <div key={k.k} style={{ background: C.card, borderRadius: R.lg, padding: "13px 14px", boxShadow: "0 2px 10px rgba(20,28,58,.05)" }}>
-            <div style={{ fontSize: 20, marginBottom: 6 }}>{k.icon}</div>
+            <div style={{ marginBottom: 6 }}><Ic name={k.icon} size={19} sw={1.7} color={C.navySoft} /></div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 17, color: C.navy }}>{k.v}</div>
             <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 2 }}>{k.k}</div>
           </div>
@@ -6062,16 +6198,16 @@ function AdminCompanies() {
               const res = await adminUpdateCompany(co.id, { is_listed: !co.is_listed });
               if (res?.error) toast(res.error, "error");
               else { toast(co.is_listed ? L("Company unlisted", "Cég levéve a listáról") : L("Company listed", "Cég listázva")); adminFetchAllCompanies(); }
-            }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
+            }} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>
               {co.is_listed ? L("Unlist", "Levétel a listáról") : L("Re-list", "Visszatétel a listára")}
             </button>
             <button onClick={() => setDossier(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navySoft}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
               {L("Details", "Adatok")}
             </button>
-            <button onClick={() => openListings(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer", marginRight: 6 }}>
+            <button onClick={() => openListings(co)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer", marginRight: 6 }}>
               {L("Listings", "Szolgáltatások")}
             </button>
-            <button onClick={() => setViewDocs({ title: `${co.name} — documents`, docs: co.documents || [] })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
+            <button onClick={() => setViewDocs({ title: `${co.name} — documents`, docs: co.documents || [] })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>
               Docs ({(co.documents || []).length})
             </button>
           </div>
@@ -6685,7 +6821,7 @@ function AdminUsers() {
               Full record
             </button>
             {(u.documents || []).length > 0 && (
-              <button onClick={() => setViewDocs({ title: `${u.full_name} — documents`, docs: u.documents })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.line}`, background: C.card, color: C.navySoft, cursor: "pointer" }}>
+              <button onClick={() => setViewDocs({ title: `${u.full_name} — documents`, docs: u.documents })} style={{ fontFamily: B, fontWeight: 700, fontSize: 11, padding: "6px 12px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>
                 Docs ({u.documents.length})
               </button>
             )}
@@ -7107,8 +7243,33 @@ const css = `
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   body.cl-modal-open .cl-nav { display: none !important; }
   .cl-nav::-webkit-scrollbar { display: none; }
-  .cl-btn:active { transform: scale(.97); } .cl-btn { transition: transform .12s; }
-  .cl-card { transition: transform .18s; } .cl-card:active { transform: scale(.985); }
+  /* Press feedback.
+
+     The tap-highlight rule above removes the grey flash the OS draws when you
+     touch something. That flash is ugly, but it was the ONLY signal a tap had
+     registered — and what replaced it was a 3% shrink that EASED IN over
+     120ms. Tap quickly and the button has barely begun to move before it
+     springs back, so every button in the app felt dead under the thumb.
+
+     So: the press is instant (transition-duration 0 while held) and visible
+     (it shrinks, darkens and drops its shadow), and only the release eases.
+     The same goes for cards and for the many plain <button>s that were never
+     given the .cl-btn class — bare buttons had no feedback at all. */
+  .cl-btn { transition: transform .16s ease, filter .16s ease, box-shadow .16s ease; }
+  .cl-btn:not(:disabled):active {
+    transition-duration: 0s;
+    transform: scale(.955);
+    filter: brightness(.88);
+    box-shadow: none;
+  }
+  button:not(:disabled):not(.cl-btn):active, .cl-tap:active {
+    transition-duration: 0s;
+    transform: scale(.96);
+    filter: brightness(.93);
+  }
+  button:not(.cl-btn) { transition: transform .16s ease, filter .16s ease; }
+  .cl-card { transition: transform .18s ease, filter .18s ease; }
+  .cl-card:active { transition-duration: 0s; transform: scale(.975); filter: brightness(.97); }
   .cl-noscroll::-webkit-scrollbar { display: none; } .cl-noscroll { scrollbar-width: none; }
   button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2.5px solid #5EE6A8; outline-offset: 2px; }
   input:focus, textarea:focus { border-color: #4A5BBF !important; }

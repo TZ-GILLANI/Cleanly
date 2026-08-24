@@ -836,6 +836,32 @@ export function StoreProvider({ children }) {
     } catch (e) { return { error: e.message }; }
   };
 
+  /* ── Changing the number on an existing account ──
+     The code goes to the NEW number. Only /phone-change/check writes it, and
+     it writes phone_verified in the same statement, so the flag can never
+     describe a number nobody proved. */
+  const phoneChangeStart = async (phone, channel) => {
+    if (!isApiMode) return { sent: true };   // demo mode has no SMS provider
+    try { return await api("/verify/phone-change/start", { method: "POST", body: { phone, channel } }); }
+    catch (e) { return { error: e.message }; }
+  };
+  const phoneChangeCheck = async (phone, code) => {
+    if (!isApiMode) {
+      setSession((s) => ({ ...s, phone, phoneVerified: true }));
+      if (session?.role === "employee") setDb((d) => ({ ...d, employees: d.employees.map((e) => e.id === session.userId ? { ...e, phone } : e) }));
+      return { verified: true, phone };
+    }
+    try {
+      const r = await api("/verify/phone-change/check", { method: "POST", body: { phone, code } });
+      if (r.verified) {
+        setSession((s) => ({ ...s, phone: r.phone || phone, phoneVerified: true }));
+        if (session?.role === "employee") setDb((d) => ({ ...d, employees: d.employees.map((e) => e.id === session.userId ? { ...e, phone: r.phone || phone } : e) }));
+        setDataVersion((v) => v + 1);   // every joined view re-reads the number
+      }
+      return r;
+    } catch (e) { return { error: e.message }; }
+  };
+
   /* ── Stripe Connect (company payouts) ── */
   const connectDashboard = async () => {
     if (!isApiMode) return { error: "Live mode only" };
@@ -1031,6 +1057,7 @@ export function StoreProvider({ children }) {
     submitComplaint, adminFetchComplaints, adminUpdateComplaint, postLocation, fetchLocation,
     myComplaints, fetchMyComplaints, assignComplaint, fetchComplaintThread, sendComplaintMessage,
     verifyConfig, verifyStart, verifyCheck, emailVerifyStart, emailVerifyCheck,
+    phoneChangeStart, phoneChangeCheck,
     signupCodeSend, signupCodeCheck,
     forgotPassword, resetPassword,
     connectStatus, connectOnboard, connectDashboard,

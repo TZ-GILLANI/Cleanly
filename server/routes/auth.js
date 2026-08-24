@@ -243,15 +243,31 @@ router.put("/profile", requireAuth, async (req, res) => {
     }
   }
   try {
-    let phoneParam = phone;
+    /* The phone number is NOT editable here.
+
+       It used to be: this endpoint wrote whatever number was posted and left
+       phone_verified alone, so an account could end up "verified" against a
+       number nobody had ever proved they owned. The number is what a cleaner
+       is called on when they are standing outside the wrong door, and what we
+       fall back to for account recovery — it has to be proved, not typed.
+
+       Changing it now goes through /api/verify/phone-change/*, which sends a
+       code to the NEW number and only writes it once that code comes back.
+       A number that matches the one already on file is a no-op, because the
+       profile screen posts the whole form back including the unchanged phone. */
+    let phoneParam = null;
     if (phone) {
       const np = String(phone).replace(/[^0-9+]/g, "").slice(0, 20);
       const mine = await query("SELECT phone FROM users WHERE id = $1", [req.user.id]);
-      if ((mine.rows[0]?.phone || "") === np) {
-        phoneParam = null;   // unchanged — saving language/name must never trip the uniqueness check
-      } else {
+      const current = mine.rows[0]?.phone || "";
+      if (current && np !== current)
+        return res.status(400).json({ error: "phone_change_needs_verification" });
+      if (!current) {
+        // No number on the account at all (older accounts, admin-created): let
+        // them set one, but it starts unverified until they confirm a code.
         const taken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true AND id <> $2", [np, req.user.id]);
         if (taken.rows.length) return res.status(400).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+        phoneParam = np;
       }
     }
     const result = await query(

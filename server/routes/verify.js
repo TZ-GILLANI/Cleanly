@@ -74,6 +74,98 @@ router.post("/check", requireAuth, async (req, res) => {
   }
 });
 
+/* ── Changing the number on an existing account ──────────────────
+
+   Two steps, and the code goes to the NEW number, never the old one. That is
+   the whole point: possession of the new number is what we are testing.
+
+   /phone-change/start   sends a code to the number they want to move to
+   /phone-change/check   verifies it, then writes it
+
+   Everything that displays a customer's or cleaner's number reads
+   users.phone through a JOIN — bookings, the cleaner's call button, the
+   calendar feed, the ICS attachment — so one UPDATE moves it everywhere at
+   once. Nothing keeps a copy. */
+
+function normPhone(raw) { return String(raw || "").replace(/[^0-9+]/g, "").slice(0, 20); }
+
+router.post("/phone-change/start", requireAuth, async (req, res) => {
+  const phone = normPhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ error: "Phone required" });
+  if (phoneIsWrong(phone)) return res.status(400).json({ error: badPhoneMsg });
+
+  try {
+    const me = await query("SELECT phone FROM users WHERE id = $1", [req.user.id]);
+    if ((me.rows[0]?.phone || "") === phone)
+      return res.status(400).json({ error: "That is already the number on your account" });
+    const taken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true AND id <> $2", [phone, req.user.id]);
+    if (taken.rows.length)
+      return res.status(409).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+
+    // Same hard caps as signup — a change form is just as good an SMS pump.
+    if (!rateLimit("pc:u:" + req.user.id, 3, 60 * 60e3))
+      return res.status(429).json({ error: "Too many codes requested — try again in an hour" });
+    if (!rateLimit("pc:t:" + phone, 3, 60 * 60e3))
+      return res.status(429).json({ error: "Too many codes for this number — try again in an hour" });
+    if (!rateLimit("pc:uday:" + req.user.id, 6, 24 * 3600e3))
+      return res.status(429).json({ error: "Daily limit reached — try again tomorrow" });
+
+    if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
+    const body = new URLSearchParams({ To: phone, Channel: req.body?.channel === "whatsapp" ? "whatsapp" : "sms" });
+    const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/Verifications`, {
+      method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body });
+    const data = await r.json();
+    if (!r.ok) return sendFailure(res, data, "phone-change-start");
+    res.json({ sent: true, channel: data.channel });
+  } catch (err) {
+    console.error("phone change start:", err.message);
+    res.status(500).json({ error: "Could not send the code" });
+  }
+});
+
+router.post("/phone-change/check", requireAuth, async (req, res) => {
+  const phone = normPhone(req.body?.phone);
+  const code = String(req.body?.code || "").trim();
+  if (!phone || !code) return res.status(400).json({ error: "Phone and code required" });
+  if (!rateLimit("pcc:u:" + req.user.id, 10, 10 * 60e3))
+    return res.status(429).json({ error: "Too many attempts — try again later" });
+  if (!configured()) return res.status(503).json({ error: "verification_not_configured" });
+
+  try {
+    /* Re-check ownership here, not only in start. Between sending the code and
+       typing it back, somebody else may have signed up with that number. The
+       unique index would then reject the UPDATE with a 500; this turns it into
+       an answer they can act on. */
+    const taken = await query("SELECT 1 FROM users WHERE phone = $1 AND is_active = true AND id <> $2", [phone, req.user.id]);
+    if (taken.rows.length)
+      return res.status(409).json({ error: "This phone number is already linked to another account. Delete that account first to reuse the number." });
+
+    const body = new URLSearchParams({ To: phone, Code: code });
+    const r = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SID}/VerificationCheck`, {
+      method: "POST", headers: { Authorization: auth(), "Content-Type": "application/x-www-form-urlencoded" }, body });
+    const data = await r.json();
+    if (!r.ok || data.status !== "approved") return res.status(400).json({ error: "Wrong or expired code" });
+
+    const upd = await query(
+      "UPDATE users SET phone = $1, phone_verified = true WHERE id = $2 RETURNING id, phone",
+      [phone, req.user.id]);
+    if (!upd.rows.length) return res.status(400).json({ error: "Could not save the new number" });
+
+    // Tell them on the number they just left, so a stolen session cannot move
+    // an account away quietly. Best-effort: the change itself already stands.
+    try {
+      const { notify } = await import("../lib/notify.js");
+      await notify(req.user.id, "security", "Your phone number was changed",
+        "Your Cleano account now uses " + phone + ". If this was not you, contact support straight away.");
+    } catch {}
+
+    res.json({ verified: true, phone });
+  } catch (err) {
+    console.error("phone change check:", err.message);
+    res.status(500).json({ error: "Verification check failed" });
+  }
+});
+
 /* ── Email verification codes (dormant until Resend is configured) ── */
 router.post("/email/start", requireAuth, async (req, res) => {
   if (!rateLimit("evstart:" + req.user.id, 3, 10 * 60e3)) return res.status(429).json({ error: "Too many codes requested — try again later" });
