@@ -81,6 +81,35 @@ const email = inputs((i) => i.getAttribute("inputmode") === "email" || i.type ==
            || inputs((i) => /mail/i.test(i.placeholder || ""))[0];
 const pw = inputs((i) => i.type === "password")[0];
 ok("the login form has an email and a password box", !!email && !!pw);
+/* The eye. My emoji sweep left this as {showPw ? "" : ""} — a real button,
+   correctly wired, rendering nothing. It was invisible for a whole release and
+   no test noticed, because every test drove the input directly. So: click the
+   thing a person clicks, and check the password actually becomes readable. */
+{
+  const wrap = pw.parentElement;
+  const eyeOf = () => [...wrap.querySelectorAll("button")]
+    .find((b) => /password|jelsz/i.test(b.getAttribute("aria-label") || ""));
+  const eye = eyeOf();
+  ok("there is a show-password button beside the box", !!eye, wrap.innerHTML.slice(0, 100));
+  if (eye) {
+    ok("it draws an actual icon, not an empty box",
+       (eye.querySelector("svg path")?.getAttribute("d") || "").length > 5, eye.innerHTML.slice(0, 60));
+    ok("and it is labelled for screen readers", /show password|jelszó megjelen/i.test(eye.getAttribute("aria-label")));
+    const iconBefore = eye.querySelector("svg path").getAttribute("d");
+    const k = Object.keys(eye).find((x) => x.startsWith("__reactProps$"));
+    eye[k].onClick({ preventDefault() {}, stopPropagation() {} });
+    await wait(300);
+    ok("clicking it makes the password readable", wrap.querySelector("input")?.type === "text",
+       wrap.querySelector("input")?.type);
+    ok("the icon flips to the crossed-out eye",
+       eyeOf()?.querySelector("svg path")?.getAttribute("d") !== iconBefore);
+    const eye2 = eyeOf();
+    eye2[Object.keys(eye2).find((x) => x.startsWith("__reactProps$"))].onClick({ preventDefault() {}, stopPropagation() {} });
+    await wait(300);
+    ok("clicking again hides it", wrap.querySelector("input")?.type === "password");
+  }
+}
+
 await type(email, "customer@demo.hu");
 await type(pw, "demo1234");
 const submitted = await click(/Log in|Sign in|Belép/i, 2600);

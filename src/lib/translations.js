@@ -6,6 +6,17 @@
 
 export const EXTRA = {
   de: {
+    /* time off + admin roles */
+    "Time off": "Freie Zeit",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Tippe auf einen Tag, um ihn zu schließen oder einzelne Stunden zu sperren. Was du hier sperrst, kann niemand buchen.",
+    "Closed all day": "Ganztägig geschlossen",
+    "Close all day": "Ganzen Tag schließen",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "An diesem Tag kann niemand bei dir buchen. Tippe erneut auf die Schaltfläche, um ihn wieder zu öffnen.",
+    "All services": "Alle Leistungen",
+    "Only this service is blocked at these times.": "Nur diese Leistung ist zu diesen Zeiten gesperrt.",
+    "Red hours are blocked. Grey ones stay bookable.": "Rote Stunden sind gesperrt. Graue bleiben buchbar.",
+    "CEO admin": "CEO-Admin",
+    "Platform admin": "Plattform-Admin",
     /* changing the number on an account */
     "Change": "Ändern",
     "Change phone number": "Telefonnummer ändern",
@@ -1033,6 +1044,17 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    /* time off + admin roles */
+    "Time off": "Timp liber",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Apasă pe o zi ca să o închizi sau să blochezi câteva ore. Ce blochezi aici nu poate fi rezervat.",
+    "Closed all day": "Închis toată ziua",
+    "Close all day": "Închide toată ziua",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "În această zi nimeni nu poate rezerva. Apasă din nou pe buton ca să o redeschizi.",
+    "All services": "Toate serviciile",
+    "Only this service is blocked at these times.": "Doar acest serviciu este blocat la aceste ore.",
+    "Red hours are blocked. Grey ones stay bookable.": "Orele roșii sunt blocate. Cele gri rămân disponibile.",
+    "CEO admin": "Admin CEO",
+    "Platform admin": "Admin platformă",
     /* changing the number on an account */
     "Change": "Modifică",
     "Change phone number": "Modifică numărul de telefon",
@@ -2061,6 +2083,17 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    /* time off + admin roles */
+    "Time off": "Voľno",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Klepni na deň, aby si ho zavrel alebo zablokoval pár hodín. Čo tu zablokuješ, nikto nerezervuje.",
+    "Closed all day": "Celý deň zatvorené",
+    "Close all day": "Zavrieť celý deň",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "V tento deň si u teba nikto nerezervuje. Opätovným klepnutím na tlačidlo ho znova otvoríš.",
+    "All services": "Všetky služby",
+    "Only this service is blocked at these times.": "V týchto časoch je zablokovaná len táto služba.",
+    "Red hours are blocked. Grey ones stay bookable.": "Červené hodiny sú zablokované. Sivé zostávajú rezervovateľné.",
+    "CEO admin": "CEO admin",
+    "Platform admin": "Admin platformy",
     /* changing the number on an account */
     "Change": "Zmeniť",
     "Change phone number": "Zmeniť telefónne číslo",
@@ -3088,6 +3121,17 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    /* time off + admin roles */
+    "Time off": "Czas wolny",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Dotknij dnia, aby go zamknąć lub zablokować kilka godzin. Tego, co tu zablokujesz, nikt nie zarezerwuje.",
+    "Closed all day": "Zamknięte cały dzień",
+    "Close all day": "Zamknij cały dzień",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "W tym dniu nikt nie może zarezerwować. Dotknij przycisku ponownie, aby go otworzyć.",
+    "All services": "Wszystkie usługi",
+    "Only this service is blocked at these times.": "W tych godzinach zablokowana jest tylko ta usługa.",
+    "Red hours are blocked. Grey ones stay bookable.": "Czerwone godziny są zablokowane. Szare pozostają dostępne.",
+    "CEO admin": "Administrator CEO",
+    "Platform admin": "Administrator platformy",
     /* changing the number on an account */
     "Change": "Zmień",
     "Change phone number": "Zmień numer telefonu",
@@ -4115,6 +4159,17 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    /* time off + admin roles */
+    "Time off": "Вихідні",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Натисніть на день, щоб закрити його або заблокувати кілька годин. Те, що ви тут заблокуєте, ніхто не забронює.",
+    "Closed all day": "Зачинено весь день",
+    "Close all day": "Закрити весь день",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "Цього дня ніхто не зможе забронювати. Натисніть кнопку ще раз, щоб відкрити його.",
+    "All services": "Усі послуги",
+    "Only this service is blocked at these times.": "У цей час заблоковано лише цю послугу.",
+    "Red hours are blocked. Grey ones stay bookable.": "Червоні години заблоковані. Сірі залишаються доступними.",
+    "CEO admin": "CEO-адмін",
+    "Platform admin": "Адмін платформи",
     /* changing the number on an account */
     "Change": "Змінити",
     "Change phone number": "Змінити номер телефону",
@@ -5142,6 +5197,17 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    /* time off + admin roles */
+    "Time off": "Temps libre",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Touche un jour pour le fermer ou bloquer quelques heures. Ce que tu bloques ici ne peut pas être réservé.",
+    "Closed all day": "Fermé toute la journée",
+    "Close all day": "Fermer toute la journée",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "Personne ne peut réserver ce jour-là. Touche à nouveau le bouton pour le rouvrir.",
+    "All services": "Tous les services",
+    "Only this service is blocked at these times.": "Seul ce service est bloqué à ces heures-là.",
+    "Red hours are blocked. Grey ones stay bookable.": "Les heures en rouge sont bloquées. Les grises restent réservables.",
+    "CEO admin": "Admin CEO",
+    "Platform admin": "Admin plateforme",
     /* changing the number on an account */
     "Change": "Modifier",
     "Change phone number": "Modifier le numéro de téléphone",
@@ -6169,6 +6235,17 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    /* time off + admin roles */
+    "Time off": "Tiempo libre",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Toca un día para cerrarlo o bloquear algunas horas. Lo que bloquees aquí no se puede reservar.",
+    "Closed all day": "Cerrado todo el día",
+    "Close all day": "Cerrar todo el día",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "Nadie puede reservar ese día. Toca el botón de nuevo para volver a abrirlo.",
+    "All services": "Todos los servicios",
+    "Only this service is blocked at these times.": "A esas horas solo se bloquea este servicio.",
+    "Red hours are blocked. Grey ones stay bookable.": "Las horas en rojo están bloqueadas. Las grises siguen disponibles.",
+    "CEO admin": "Admin CEO",
+    "Platform admin": "Admin de plataforma",
     /* changing the number on an account */
     "Change": "Cambiar",
     "Change phone number": "Cambiar número de teléfono",
@@ -7196,6 +7273,17 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    /* time off + admin roles */
+    "Time off": "İzin zamanı",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Bir güne dokunarak kapat ya da birkaç saati blokla. Burada blokladığını kimse rezerve edemez.",
+    "Closed all day": "Tüm gün kapalı",
+    "Close all day": "Tüm günü kapat",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "Bu gün kimse senden randevu alamaz. Tekrar açmak için düğmeye yeniden dokun.",
+    "All services": "Tüm hizmetler",
+    "Only this service is blocked at these times.": "Bu saatlerde yalnızca bu hizmet bloklu.",
+    "Red hours are blocked. Grey ones stay bookable.": "Kırmızı saatler bloklu. Griler rezerve edilebilir kalır.",
+    "CEO admin": "CEO yöneticisi",
+    "Platform admin": "Platform yöneticisi",
     /* changing the number on an account */
     "Change": "Değiştir",
     "Change phone number": "Telefon numarasını değiştir",
@@ -8151,6 +8239,17 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    /* time off + admin roles */
+    "Time off": "休息时间",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "点击某一天可整天关闭，或屏蔽几个小时。你在这里屏蔽的时间，客户无法预约。",
+    "Closed all day": "全天关闭",
+    "Close all day": "整天关闭",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "这一天没有人能预约你。再次点击该按钮即可重新开放。",
+    "All services": "所有服务",
+    "Only this service is blocked at these times.": "这些时段只屏蔽该项服务。",
+    "Red hours are blocked. Grey ones stay bookable.": "红色时段已屏蔽，灰色时段仍可预约。",
+    "CEO admin": "CEO 管理员",
+    "Platform admin": "平台管理员",
     /* changing the number on an account */
     "Change": "更改",
     "Change phone number": "更改手机号码",
@@ -9106,6 +9205,17 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    /* time off + admin roles */
+    "Time off": "Tempo libero",
+    "Tap a day to close it or block a few hours. Customers can't book what you block here.": "Tocca un giorno per chiuderlo o bloccare qualche ora. Ciò che blocchi qui non è prenotabile.",
+    "Closed all day": "Chiuso tutto il giorno",
+    "Close all day": "Chiudi tutto il giorno",
+    "Nobody can book you on this day. Tap the button again to reopen it.": "In questo giorno nessuno può prenotare. Tocca di nuovo il pulsante per riaprirlo.",
+    "All services": "Tutti i servizi",
+    "Only this service is blocked at these times.": "A quegli orari è bloccato solo questo servizio.",
+    "Red hours are blocked. Grey ones stay bookable.": "Le ore in rosso sono bloccate. Quelle grigie restano prenotabili.",
+    "CEO admin": "Admin CEO",
+    "Platform admin": "Admin piattaforma",
     /* changing the number on an account */
     "Change": "Modifica",
     "Change phone number": "Modifica numero di telefono",

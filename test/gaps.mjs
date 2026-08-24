@@ -475,18 +475,40 @@ ok("and still drops it for a city it does not serve and cannot reach",
 
 /* One rule, written twice — once on the server, once in the client filter.
    Two copies drift; a test is the cheapest thing that notices. */
-const coSrc2 = (await import("fs")).readFileSync("server/routes/companies.js", "utf8");
+/* Client and server each decide whether a company serves your city, and they
+   must never disagree — one saying yes and the other no is a company that
+   appears in the list and then refuses the booking.
+
+   This used to compare the two function bodies as TEXT, which broke the moment
+   I refactored the server's into a helper even though the behaviour was
+   identical. Compare what they DO instead: same inputs, same answers. */
 const appSrc2 = (await import("fs")).readFileSync("src/App.jsx", "utf8");
-const body = (t, name) => {
-  const i = t.indexOf(name);
-  if (i < 0) return "";
-  const j2 = t.indexOf("some(", i);
-  return j2 < 0 ? "" : t.slice(j2, t.indexOf("\n", j2)).replace(/\s+/g, " ").trim();
-};
-const sv = body(coSrc2, "export function servesCity");
-const cl = body(appSrc2, "const servesCityClient");
-ok("client and server agree on what counts as a match", sv.length > 20 && sv === cl,
-   `server: ${sv.slice(0, 70)} | client: ${cl.slice(0, 70)}`);
+const { servesCity: svFn } = await import("../server/routes/companies.js");
+const clFn = (() => {
+  const m = appSrc2.match(/const servesCityClient = \(co, cityRaw\) => \{[\s\S]*?\n\};/);
+  if (!m) return null;
+  return eval("(" + m[0].replace("const servesCityClient = ", "") .replace(/;$/, "") + ")");
+})();
+ok("the client's servesCity is still findable", typeof clFn === "function");
+const CASES = [
+  [{ service_cities: ["Debrecen"] }, "Debrecen"],
+  [{ service_cities: ["Debrecen"] }, "debrecen"],
+  [{ service_cities: ["Debrecen"] }, "  DEBRECEN  "],
+  [{ service_cities: ["Debrecen"] }, "Budapest"],
+  [{ service_cities: ["Debrecen"] }, ""],
+  [{ service_cities: ["Debrecen"] }, undefined],
+  [{ service_cities: [" Szeged ", "Pécs"] }, "szeged"],
+  [{ service_cities: [] }, "Debrecen"],
+  [{ service_cities: null }, "Debrecen"],
+  [{ service_cities: '["Debrecen"]' }, "Debrecen"],
+  [{ service_cities: "not json" }, "Debrecen"],
+  [{}, "Debrecen"],
+  [{ service_cities: [null, "", "Eger"] }, "Eger"],
+  [{ service_cities: ["Pest"] }, "Budapest"],
+];
+const disagreements = clFn ? CASES.filter(([co, c]) => svFn(co, c) !== clFn(co, c)) : [];
+ok("client and server give the same answer for every case", disagreements.length === 0,
+   JSON.stringify(disagreements.map(([co, c]) => ({ co, c, server: svFn(co, c), client: clFn(co, c) }))));
 
 /* And the field must survive the client's own whitelist — the failure this
    codebase repeats: a column added, a UI built, and the store dropping the

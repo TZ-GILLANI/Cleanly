@@ -10,12 +10,38 @@ const router = Router();
 /* GET /api/companies — public: all approved+listed companies */
 /* Does this company serve that city outright? Case- and accent-tolerant, so
    "DEBRECEN", "Debrecen" and a stray trailing space all match. */
+function cityList(co) {
+  let list = co?.service_cities;
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = []; } }
+  return Array.isArray(list) ? list.map((c) => String(c || "").trim()).filter(Boolean) : [];
+}
+
 export function servesCity(co, cityRaw) {
   const city = String(cityRaw || "").trim().toLowerCase();
   if (!city) return false;
-  let list = co?.service_cities;
-  if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = []; } }
-  return Array.isArray(list) && list.some((c) => String(c || "").trim().toLowerCase() === city);
+  return cityList(co).some((c) => c.toLowerCase() === city);
+}
+
+/* Fallback for when the app did not tell us the city.
+
+   It is supposed to arrive as ?city=, but every build before this one left it
+   off, and those builds stay on people's phones for weeks. Without it a
+   company that serves a whole city was judged purely on how far its pin is —
+   TZ Gillani's pin sits 38.6 km from the centre of Debrecen with a 39 km
+   radius, so the university district, at 40.0 km, fell outside and the company
+   vanished from the list.
+
+   So if the city is missing, look for the company's own city names inside the
+   address the customer typed. "Kassai út 26, Debrecen" contains "Debrecen";
+   that is enough, and it can only ever keep a company in, never drop one. */
+export function addressNamesCity(co, addressRaw) {
+  const addr = String(addressRaw || "").toLowerCase();
+  if (!addr) return false;
+  return cityList(co).some((c) => {
+    const n = c.toLowerCase();
+    // whole word, so "Pest" does not match inside "Budapest"
+    return new RegExp("(^|[^\\p{L}])" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^\\p{L}]|$)", "u").test(addr);
+  });
 }
 
 router.get("/", async (req, res) => {
@@ -47,7 +73,8 @@ router.get("/", async (req, res) => {
              serves Nyíregyháza serves it whether that is 4 km or 50 km from
              the pin they dropped, and no radius expresses "these three towns,
              not the villages between them". */
-          .filter((c) => servesCity(c, myCity) || c.distance_km == null
+          .filter((c) => servesCity(c, myCity) || (!myCity && addressNamesCity(c, near))
+                      || c.distance_km == null
                       || c.distance_km <= (Number(c.service_radius_km) || 10))
           .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
       }

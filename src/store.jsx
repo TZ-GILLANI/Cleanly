@@ -249,6 +249,12 @@ export function StoreProvider({ children }) {
     emailVerified: user.email_verified === true,
     isSuper: user.is_super === true,
     address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || "en",
+    /* The city. /companies reads this to decide whether a company that serves
+       your whole city should be kept regardless of how far its pin is — and it
+       was never put on the session, so the query string never carried it, so
+       "serves the whole city" never did anything. users.city was in the schema
+       the whole time. */
+    city: user.city || "",
     documents: user.documents || [],
     /* Normalise once, at the boundary. Every screen below assumes an array. */
     savedAddresses: Array.isArray(user.saved_addresses) ? user.saved_addresses
@@ -402,7 +408,7 @@ export function StoreProvider({ children }) {
     if (isApiMode) {
       try {
         const { user } = await api("/auth/profile", { method: "PUT", body: { fullName: full_name, phone, customerType: customer_type, address, paymentMethod: payment_method, lang, documents, savedAddresses: saved_addresses } });
-        setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [], savedAddresses: Array.isArray(user.saved_addresses) ? user.saved_addresses : [] }));
+        setSession(s => ({ ...s, name: user.full_name, phone: user.phone, custType: user.customer_type, address: user.address || "", city: user.city || s.city || "", paymentMethod: user.payment_method || "cash", lang: user.lang || s.lang, documents: user.documents || [], savedAddresses: Array.isArray(user.saved_addresses) ? user.saved_addresses : [] }));
         if (session?.role === "employee") {
           setDb(d => ({ ...d, employees: d.employees.map(e => e.id === session.userId ? { ...e, full_name: user.full_name, phone: user.phone } : e) }));
         }
