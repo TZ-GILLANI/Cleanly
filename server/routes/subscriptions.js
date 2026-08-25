@@ -22,7 +22,32 @@ router.get("/", requireAuth, async (req, res) => {
           AND scheduled_date >= CURRENT_DATE AND status NOT IN (8,9)
         GROUP BY subscription_id`, [req.user.id]);
     const nextBy = Object.fromEntries(nx.rows.map((x) => [x.subscription_id, x.next_date]));
-    res.json({ subscriptions: r.rows.map((x) => ({ ...x, next_date: nextBy[x.id] || null })) });
+    const chargeDays = Math.max(1, Number(process.env.SUB_CHARGE_DAYS || 5));
+    res.json({ subscriptions: r.rows.map((x) => {
+      const next = nextBy[x.id] || null;
+      /* Whether the plan can actually charge itself is the single most useful
+         thing on this card, and the customer had no way to see it. A plan with
+         no saved card is not automatic — it will ask, every time, and the
+         customer only finds out when the reminder arrives. */
+      /* A DATE column comes back as a Date object, not a string. String(next)
+         on one gives "Tue Sep 01 2026 …", whose first ten characters are
+         "Tue Sep 01" — an invalid date, and toISOString() then throws and takes
+         the whole endpoint down with it. Handle both shapes. */
+      const iso = next instanceof Date ? next.toISOString().slice(0, 10) : String(next).slice(0, 10);
+      const t = Date.parse(iso + "T00:00:00Z");
+      const chargeOn = next && Number.isFinite(t)
+        ? new Date(t - chargeDays * 864e5).toISOString().slice(0, 10)
+        : null;
+      return {
+        ...x,
+        payment_method_id: undefined,      // never leave the account by the front door
+        stripe_customer_id: undefined,
+        next_date: next ? iso : null,
+        has_card: !!x.payment_method_id,
+        charge_days: chargeDays,
+        charge_on: chargeOn,
+      };
+    }) });
   } catch (e) { res.status(500).json({ error: "Could not load plans" }); }
 });
 

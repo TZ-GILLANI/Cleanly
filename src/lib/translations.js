@@ -6,6 +6,15 @@
 
 export const EXTRA = {
   de: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Kartenzahlung nicht verfügbar — dein Plan startet, sobald die erste Zahlung durchgeht.",
+    "Card saved · charges automatically on {0}": "Karte gespeichert · automatische Abbuchung am {0}",
+    "Card saved · charges {0} days before each visit": "Karte gespeichert · Abbuchung {0} Tage vor jedem Termin",
+    "Next on {0}": "Nächster Termin: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Noch keine Karte gespeichert — bezahle den nächsten Termin, dann läuft es automatisch",
+    "Plan started — your card is saved for the next visits": "Plan gestartet — deine Karte ist für die nächsten Termine gespeichert",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Diese Karte wird für die folgenden Termine gespeichert. Jeder wird 5 Tage vorher automatisch abgebucht, und du kannst den Plan jederzeit kündigen.",
+    "{0} more booked": "{0} weitere gebucht",
     "You save {0}": "Du sparst {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Nicht gestartet — zum Beginnen bezahlen",
@@ -1141,6 +1150,15 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Plata cu cardul indisponibilă — abonamentul începe după prima plată reușită.",
+    "Card saved · charges automatically on {0}": "Card salvat · se debitează automat pe {0}",
+    "Card saved · charges {0} days before each visit": "Card salvat · se debitează cu {0} zile înainte de fiecare vizită",
+    "Next on {0}": "Următoarea: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Încă niciun card salvat — plătește următoarea vizită și devine automat",
+    "Plan started — your card is saved for the next visits": "Abonament pornit — cardul e salvat pentru vizitele următoare",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Acest card se salvează pentru vizitele următoare. Fiecare se debitează automat cu 5 zile înainte, iar abonamentul poate fi anulat oricând.",
+    "{0} more booked": "încă {0} rezervate",
     "You save {0}": "Economisești {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Neînceput — plătește pentru a începe",
@@ -2276,6 +2294,15 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Platba kartou nie je dostupná — plán sa spustí po prvej úspešnej platbe.",
+    "Card saved · charges automatically on {0}": "Karta uložená · automatická platba {0}",
+    "Card saved · charges {0} days before each visit": "Karta uložená · platba {0} dní pred každou návštevou",
+    "Next on {0}": "Ďalšia: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Zatiaľ žiadna uložená karta — zaplať ďalšiu návštevu a bude to automatické",
+    "Plan started — your card is saved for the next visits": "Plán spustený — karta je uložená na ďalšie návštevy",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Táto karta sa uloží na ďalšie návštevy. Každá sa automaticky zaplatí 5 dní vopred a plán môžeš kedykoľvek zrušiť.",
+    "{0} more booked": "ďalšie {0} objednané",
     "You save {0}": "Ušetríš {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Nezačalo sa — zaplať a začni",
@@ -3411,6 +3438,15 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Płatność kartą niedostępna — plan ruszy po pierwszej udanej płatności.",
+    "Card saved · charges automatically on {0}": "Karta zapisana · automatyczne obciążenie {0}",
+    "Card saved · charges {0} days before each visit": "Karta zapisana · obciążenie {0} dni przed każdą wizytą",
+    "Next on {0}": "Następna: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Brak zapisanej karty — zapłać następną wizytę, a będzie automatycznie",
+    "Plan started — your card is saved for the next visits": "Plan uruchomiony — karta zapisana na kolejne wizyty",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Ta karta zostanie zapisana na kolejne wizyty. Każda jest obciążana automatycznie 5 dni wcześniej, a plan możesz anulować w każdej chwili.",
+    "{0} more booked": "jeszcze {0} zarezerwowane",
     "You save {0}": "Oszczędzasz {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Nie rozpoczęto — zapłać, aby zacząć",
@@ -4546,6 +4582,15 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Оплата карткою недоступна — план почнеться після першого успішного платежу.",
+    "Card saved · charges automatically on {0}": "Картку збережено · автоматичне списання {0}",
+    "Card saved · charges {0} days before each visit": "Картку збережено · списання за {0} днів до кожного візиту",
+    "Next on {0}": "Наступний: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Картку ще не збережено — оплатіть наступний візит, і далі буде автоматично",
+    "Plan started — your card is saved for the next visits": "План запущено — картку збережено для наступних візитів",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Ця картка збережеться для наступних візитів. Кожен списується автоматично за 5 днів, а план можна скасувати будь-коли.",
+    "{0} more booked": "ще {0} заброньовано",
     "You save {0}": "Ви заощаджуєте {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Не розпочато — оплатіть, щоб почати",
@@ -5681,6 +5726,15 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Paiement par carte indisponible — votre abonnement démarre dès le premier paiement accepté.",
+    "Card saved · charges automatically on {0}": "Carte enregistrée · prélèvement automatique le {0}",
+    "Card saved · charges {0} days before each visit": "Carte enregistrée · prélèvement {0} jours avant chaque intervention",
+    "Next on {0}": "Prochaine : {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Aucune carte enregistrée — payez la prochaine intervention et ce sera automatique",
+    "Plan started — your card is saved for the next visits": "Abonnement lancé — votre carte est enregistrée pour les prochaines interventions",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Cette carte est enregistrée pour les interventions suivantes. Chacune est prélevée automatiquement 5 jours avant, et vous pouvez résilier à tout moment.",
+    "{0} more booked": "{0} autres réservées",
     "You save {0}": "Vous économisez {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Pas encore lancé — payez pour commencer",
@@ -6816,6 +6870,15 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Pago con tarjeta no disponible — tu plan empieza en cuanto se realice el primer pago.",
+    "Card saved · charges automatically on {0}": "Tarjeta guardada · cobro automático el {0}",
+    "Card saved · charges {0} days before each visit": "Tarjeta guardada · cobro {0} días antes de cada visita",
+    "Next on {0}": "Próxima: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Aún no hay tarjeta guardada — paga la próxima visita y será automático",
+    "Plan started — your card is saved for the next visits": "Plan iniciado — tu tarjeta queda guardada para las próximas visitas",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Esta tarjeta se guarda para las visitas siguientes. Cada una se cobra automáticamente 5 días antes, y puedes cancelar el plan cuando quieras.",
+    "{0} more booked": "{0} más reservadas",
     "You save {0}": "Ahorras {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Sin empezar — paga para comenzar",
@@ -7951,6 +8014,15 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Kartla ödeme kullanılamıyor — planın ilk ödeme geçtiğinde başlar.",
+    "Card saved · charges automatically on {0}": "Kart kaydedildi · {0} tarihinde otomatik çekilir",
+    "Card saved · charges {0} days before each visit": "Kart kaydedildi · her ziyaretten {0} gün önce çekilir",
+    "Next on {0}": "Sıradaki: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Henüz kayıtlı kart yok — sonraki ziyareti öde, sonrası otomatik olsun",
+    "Plan started — your card is saved for the next visits": "Plan başladı — kartın sonraki ziyaretler için kaydedildi",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Bu kart sonraki ziyaretler için kaydedilir. Her biri 5 gün önce otomatik çekilir ve planı istediğin zaman iptal edebilirsin.",
+    "{0} more booked": "{0} tane daha ayarlandı",
     "You save {0}": "{0} tasarruf edersin",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Başlamadı — başlatmak için öde",
@@ -9026,6 +9098,15 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "暂时无法用银行卡支付 — 首次付款成功后套餐即开始。",
+    "Card saved · charges automatically on {0}": "已保存银行卡 · {0} 自动扣款",
+    "Card saved · charges {0} days before each visit": "已保存银行卡 · 每次上门前 {0} 天扣款",
+    "Next on {0}": "下次：{0}",
+    "No card saved yet — pay the next visit to make this automatic": "尚未保存银行卡 — 支付下次上门后即可自动扣款",
+    "Plan started — your card is saved for the next visits": "套餐已开始 — 银行卡已保存，供后续上门使用",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "此卡将保存用于后续上门。每次提前 5 天自动扣款，你可以随时取消套餐。",
+    "{0} more booked": "另有 {0} 次已预约",
     "You save {0}": "为你省下 {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "尚未开始 — 付款后启动",
@@ -10101,6 +10182,15 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    /* v7.2.0 — the subscription rework */
+    "Card payment unavailable — your plan starts once the first payment goes through.": "Pagamento con carta non disponibile — il piano parte al primo pagamento andato a buon fine.",
+    "Card saved · charges automatically on {0}": "Carta salvata · addebito automatico il {0}",
+    "Card saved · charges {0} days before each visit": "Carta salvata · addebito {0} giorni prima di ogni intervento",
+    "Next on {0}": "Prossimo: {0}",
+    "No card saved yet — pay the next visit to make this automatic": "Nessuna carta salvata — paga il prossimo intervento e diventa automatico",
+    "Plan started — your card is saved for the next visits": "Piano avviato — la tua carta è salvata per i prossimi interventi",
+    "This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.": "Questa carta viene salvata per gli interventi successivi. Ognuno viene addebitato automaticamente 5 giorni prima e puoi annullare il piano quando vuoi.",
+    "{0} more booked": "altri {0} prenotati",
     "You save {0}": "Risparmi {0}",
     /* v7.1.2 — when a payment fails */
     "Not started — pay to begin": "Non avviato — paga per iniziare",

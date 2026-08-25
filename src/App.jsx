@@ -289,7 +289,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.1.3";
+const APP_VERSION = "7.2.0";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -508,6 +508,40 @@ const bestServiceDeal = (services, companyId) => {
   }
   return best;
 };
+
+/* ONE VISIT AT A TIME.
+
+   The scheduler keeps the next four occurrences of a plan existing as ordinary
+   bookings, because the company has to be able to roster them and the charge
+   runs five days ahead. That is right for the database and wrong for a list:
+   subscribe to a weekly clean and four identical cards appeared at once, so
+   "my bookings" read like four separate jobs instead of one arrangement.
+
+   So the lists collapse a plan down to the visit that is actually next, and
+   the one after it appears when that one is done. History is untouched —
+   finished, declined and cancelled visits stay exactly where they are, because
+   those are things that happened rather than things that are coming.
+
+   The company's CALENDAR deliberately does not use this. Seeing the whole
+   run of a plan laid out is the point of a calendar. */
+const nextVisitOnly = (list) => {
+  const best = new Map();          // subscription_id → earliest upcoming
+  for (const b of list) {
+    if (!b.subscription_id) continue;
+    if (b.status >= 4) continue;   // 4 done · 8 declined · 9 cancelled
+    const cur = best.get(b.subscription_id);
+    const d = String(b.scheduled_date).slice(0, 10) + (b.scheduled_slot || "");
+    if (!cur || d < cur.key) best.set(b.subscription_id, { key: d, id: b.id });
+  }
+  const keep = new Set([...best.values()].map((x) => x.id));
+  return list.filter((b) => !b.subscription_id || b.status >= 4 || keep.has(b.id));
+};
+
+/* How many more visits are already booked behind this one. */
+const laterVisits = (list, b) =>
+  !b?.subscription_id ? 0
+  : list.filter((x) => x.subscription_id === b.subscription_id && x.status < 4
+                    && String(x.scheduled_date) > String(b.scheduled_date)).length;
 
 const promoOf = (co) => {
   const p = co && co.promo;
@@ -2064,7 +2098,7 @@ function PhoneVerifyGate() {
 }
 
 /* ── Card payment wait overlay (payment gateway opened in browser) ── */
-function PaymentWait({ url, check, onPaid, onCancel }) {
+function PaymentWait({ url, check, onPaid, onCancel, isSub }) {
   const [dots, setDots] = useState("");
   React.useEffect(() => {
     let alive = true;
@@ -2084,6 +2118,14 @@ function PaymentWait({ url, check, onPaid, onCancel }) {
         <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, marginTop: 8, lineHeight: 1.6 }}>
           {L("Finish paying in the secure payment window that just opened. This screen updates automatically.", "Fejezd be a fizetést a most megnyílt biztonságos fizetési ablakban. Ez a képernyő automatikusan frissül.")}
         </div>
+        {isSub && (
+          /* Saying it here, at the moment the card is typed, is the only place
+             it is not a surprise. */
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 10, lineHeight: 1.55, background: C.bg, borderRadius: R.md, padding: "9px 12px" }}>
+            {L("This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.",
+               "Ezt a kártyát elmentjük a további alkalmakra. Mindegyiket 5 nappal előtte automatikusan terheljük, a csomagot pedig bármikor lemondhatod.")}
+          </div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 20 }}>
           <Btn full onClick={() => window.open(url, "_blank")}>{L("Reopen payment page", "Fizetési oldal újranyitása")}</Btn>
           <Btn ghost full onClick={onCancel}>{L("Cancel booking", "Foglalás lemondása")}</Btn>
@@ -3371,9 +3413,15 @@ function BookingFlow({ company, close, onBooked }) {
 
         {payWait && (
           <PaymentWait
+            isSub={isSub}
             url={payWait.url}
             check={() => getPaymentStatus(payWait.row.id)}
-            onPaid={() => { toast(L("Payment received", "Sikeres fizetés")); onBooked(payWait.row); }}
+            onPaid={() => {
+              toast(isSub
+                ? L("Plan started — your card is saved for the next visits", "A csomag elindult — a kártyád elmentve a következő alkalmakra")
+                : L("Payment received", "Sikeres fizetés"));
+              onBooked(payWait.row);
+            }}
             onCancel={async () => {
               const r = await cancelBooking(payWait.row.id);
               if (!r?.error) toast(L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés"));
@@ -3389,15 +3437,29 @@ function BookingFlow({ company, close, onBooked }) {
             const row = await createBooking({ companyId: company.id, service: svc, date: day.iso, slot, address: addr, note, total, pricingType: svc.pricing_type, hours: isHourly ? hours : null, units: isUnit ? units : null, period: isSub ? svc.period : null, requirementsAck: reqList.length > 0 ? reqAck : undefined });
             setBusy(false);
             if (!row) { toast(L("Booking failed — try again", "A foglalás nem sikerült — próbáld újra"), "error"); return; }
-            // Card + live backend + one-off booking → provider checkout (Stripe/SimplePay/Barion) in the browser
-            if (isLive && !isSub) { // live = card only (no cash handling on the platform)
+            /* Straight to the card screen — for a plan MORE than for a one-off.
+
+               This said `isLive && !isSub`, so a subscription was the one thing
+               that did NOT open checkout. Subscribing created the plan, dropped
+               you back on the list, and left you to find "Pay now" yourself.
+
+               Worse, and invisibly: that first checkout is where the card gets
+               SAVED. setup_future_usage rides on the subscription's session and
+               nowhere else. Skip it and there is no card on file, so every
+               automatic renewal afterwards has nothing to charge — the whole
+               point of a recurring plan, broken at its first step. */
+            if (isLive) { // live = card only (no cash handling on the platform)
               const pay = await startPayment(row.id);
               if (pay?.gatewayUrl) {
                 window.open(pay.gatewayUrl, "_blank");
                 setPayWait({ row, url: pay.gatewayUrl });
                 return;
               }
-              toast(L("Card payment unavailable — pay on completion instead", "A kártyás fizetés most nem elérhető — fizess a szolgáltatás után"), "error");
+              toast(isSub
+                ? L("Card payment unavailable — your plan starts once the first payment goes through.",
+                    "A kártyás fizetés most nem elérhető — a csomagod az első fizetés után indul.")
+                : L("Card payment unavailable — pay on completion instead",
+                    "A kártyás fizetés most nem elérhető — fizess a szolgáltatás után"), "error");
             }
             onBooked(row);
           }}>
@@ -3412,7 +3474,8 @@ function BookingFlow({ company, close, onBooked }) {
 function CustomerBookings({ openBooking }) {
   const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment, fetchSubscriptions, subscriptionAction } = useStore();
   const toast = useToast();
-  const mine = bookings.filter((b) => b.customer_id === session.userId || b.customer_name === session.name);
+  const allMine = bookings.filter((b) => b.customer_id === session.userId || b.customer_name === session.name);
+  const mine = nextVisitOnly(allMine);
   const [plans, setPlans] = useState([]);
   const [cancelPlan, setCancelPlan] = useState(null);
   const reloadPlans = React.useCallback(() => { fetchSubscriptions().then(setPlans); }, []);
@@ -3452,8 +3515,22 @@ function CustomerBookings({ openBooking }) {
                   <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 3 }}>
                     {p.status === "paused"
                       ? L("Paused", "Szüneteltetve")
-                      : p.next_date ? L("Next: ", "Következő: ") + String(p.next_date).slice(0, 10) : L("Scheduling…", "Ütemezés…")}
+                      : p.next_date ? L("Next: ", "Következő: ") + dayLabel(p.next_date) : L("Scheduling…", "Ütemezés…")}
                   </div>
+                  {/* Automatic or not — the one fact that decides whether this
+                      plan will quietly keep working or start asking. */}
+                  {p.status !== "paused" && (
+                    p.has_card
+                      ? <div style={{ fontFamily: B, fontSize: 10.5, color: C.green, fontWeight: 700, marginTop: 4 }}>
+                          {p.charge_on
+                            ? fill(L("Card saved · charges automatically on {0}", "Kártya elmentve · automatikus terhelés: {0}"), dayLabel(p.charge_on))
+                            : fill(L("Card saved · charges {0} days before each visit", "Kártya elmentve · {0} nappal minden alkalom előtt terhelünk"), p.charge_days || 5)}
+                        </div>
+                      : <div style={{ fontFamily: B, fontSize: 10.5, color: C.coral, fontWeight: 700, marginTop: 4 }}>
+                          {L("No card saved yet — pay the next visit to make this automatic",
+                             "Még nincs mentett kártya — fizesd ki a következő alkalmat, és onnantól automatikus")}
+                        </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <button onClick={async () => {
@@ -3526,6 +3603,24 @@ function CustomerBookings({ openBooking }) {
                   ? <Pill bg={C.amberSoft} color={C.amber}>{L("Not started — pay to begin", "Nem indult el — fizess a kezdéshez")}</Pill>
                   : <StatusPill status={b.status} fulfilment={b.fulfilment} />}</>
             </div>
+
+            {/* The plan banner. One card stands for the whole arrangement now,
+                so the card has to say which visit it is and what follows. */}
+            {b.subscription_id && b.status < 4 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap",
+                            background: C.navyChip, borderRadius: R.md, padding: "8px 12px", marginTop: 11 }}>
+                <span style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.navySoft }}>
+                  {fill(L("Next on {0}", "Következő: {0}"), dayLabel(b.scheduled_date))}
+                  {b.scheduled_slot ? ` · ${b.scheduled_slot}` : ""}
+                </span>
+                <span style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft }}>
+                  {everyP(svc.period)}
+                  {laterVisits(allMine, b) > 0
+                    ? ` · ${fill(L("{0} more booked", "még {0} lefoglalva"), laterVisits(allMine, b))}`
+                    : ""}
+                </span>
+              </div>
+            )}
 
             {b.status !== 9 && b.status !== 8 && (
               <>
@@ -3942,7 +4037,11 @@ function CompanyJobs({ openProfile }) {
   const [reason, setReason] = useState("");
   const [filter, setFilter] = useState("all"); // all · new · unassigned · today · subs
   const co = companies.find((c) => c.id === session.companyId);
-  const mine = bookings.filter((b) => b.company_id === session.companyId);
+  const allMine = bookings.filter((b) => b.company_id === session.companyId);
+  /* Same collapse as the customer sees, for the same reason: a job list is a
+     list of work to do next, not an inventory of a plan. The Schedule tab is
+     where the whole run of a plan belongs. */
+  const mine = nextVisitOnly(allMine);
   const open = mine.filter((b) => b.status < 4 && b.status !== 9);
   const done = mine.filter((b) => b.status === 4 && !b.archived_by_company);
   const cancelled = mine.filter((b) => b.status === 9 || b.status === 8);
@@ -4100,6 +4199,21 @@ function CompanyJobs({ openProfile }) {
                   {b.customer_name || L("Customer", "Ügyfél")} {b.customer_type === "student" && ""} · {dayLabel(b.scheduled_date)}, {b.scheduled_slot}<br />
                   {b.address}
                 </div>
+                {/* A recurring customer is worth more than one job, and the
+                    owner should be able to see that at a glance. The rest of
+                    the run is on the Schedule tab. */}
+                {b.subscription_id && (
+                  <div style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 6, background: C.navyChip, borderRadius: 99, padding: "4px 10px" }}>
+                    <span style={{ fontFamily: F, fontWeight: 700, fontSize: 10.5, color: C.navySoft }}>
+                      ↻ {everyP(svc.period)}
+                    </span>
+                    {laterVisits(allMine, b) > 0 && (
+                      <span style={{ fontFamily: B, fontSize: 10, color: C.inkSoft }}>
+                        {fill(L("{0} more booked", "még {0} lefoglalva"), laterVisits(allMine, b))}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: "right" }}>
                 <StatusPill status={b.status} fulfilment={b.fulfilment} />

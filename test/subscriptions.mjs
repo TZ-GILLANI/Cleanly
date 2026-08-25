@@ -129,7 +129,24 @@ ok("on a 5,500 Ft renewal the partner still receives exactly 5,000",
    String((total - netOnRenewal - pay2.stripeFeeMinor(total)) / 100));
 
 console.log("\n── cancelling: one rule, no sliding scale ──");
-ok("the charge fires exactly when the cancellation right expires", /scheduled_date <= CURRENT_DATE \+ \$1/.test(subSrc2) && /CANCEL_FREE_H \|\| 48/.test(subSrc2));
+/* This used to assert the opposite: charge at the exact moment the free
+   cancellation window closes, so a refund could never be owed. Tidy, and too
+   tight to run a business on — a card that fails 48 hours out gets one retry
+   and then it is the night before with a cleaner rostered and nothing paid.
+
+   Five days is the rule now. It is only safe because cancelling a plan refunds
+   every paid future visit in full, which the two checks below prove. */
+{
+  const code = subSrc2.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  ok("the charge runs five days ahead, from one setting",
+     /Number\(process\.env\.SUB_CHARGE_DAYS \|\| 5\)/.test(code));
+  ok("and no longer borrows the cancellation window", !/CANCEL_FREE_H/.test(code));
+  const subsRoute = (await import("fs")).readFileSync("server/routes/subscriptions.js", "utf8");
+  ok("so a charge taken ahead of a cancellation is refunded in full",
+     /refundBookingPayment\(b, 100\)/.test(subsRoute));
+  ok("and the visits never charged are simply dropped",
+     /payment_status IN \('scheduled','retry'\)/.test(subsRoute));
+}
 const mkBooking = (hoursAway) => {
   const t = new Date(Date.now() + hoursAway * 3600e3);
   return { scheduled_date: localDate(t),

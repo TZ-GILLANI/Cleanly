@@ -827,6 +827,20 @@ export async function stripeWebhook(req, res) {
                 "UPDATE users SET stripe_customer_id = $1, default_payment_method = $2, card_brand = $3, card_last4 = $4 WHERE id = (SELECT customer_id FROM bookings WHERE id = $5)",
                 [String(sess.customer), String(pmId), pm.card?.brand || null, pm.card?.last4 || null, bookingId]
               );
+              /* If this booking belongs to a PLAN, the plan's own saved card
+                 has to move too.
+
+                 A renewal charges subscriptions.payment_method_id, not the
+                 customer's default. So when a card expired, the renewal failed,
+                 and the customer paid that visit by hand with a new card, the
+                 plan kept the dead card — and failed again a period later, and
+                 the one after that. The only way out was to cancel and start
+                 again. Paying a failed renewal now re-arms the plan. */
+              await query(
+                `UPDATE subscriptions SET stripe_customer_id = $1, payment_method_id = $2
+                  WHERE id = (SELECT subscription_id FROM bookings WHERE id = $3)`,
+                [String(sess.customer), String(pmId), bookingId]
+              );
             }
           }
           // 3.4: first subscription payment succeeded → create the schedule.

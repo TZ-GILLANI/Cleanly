@@ -76,13 +76,30 @@ export async function chargeDue() {
      WHERE b.payment_status IN ('scheduled','retry')
        AND s.status = 'active'
        AND cu.is_active = true
-       AND b.scheduled_date <= CURRENT_DATE + $1
+       AND b.scheduled_date <= $1
        AND b.scheduled_date >= CURRENT_DATE
        AND b.status NOT IN (8,9)`,
-    /* Charge exactly when the customer loses the right to cancel — never before.
-       Derived from CANCEL_FREE_H so the two can never drift apart: if the window
-       is widened to 72 hours, the charge moves with it automatically. */
-    [Math.max(1, Math.ceil(Number(process.env.CANCEL_FREE_H || 48) / 24))]);
+    /* Five days before the visit, not two.
+
+       This used to be derived from CANCEL_FREE_H — charge at the moment the
+       customer loses the right to cancel, so a refund could never be owed.
+       Neat, but it left the business no room: a card that fails 48 hours out
+       gets one retry and then it is the night before, with a cleaner rostered
+       and nothing paid.
+
+       Five days gives a declined card four more chances and gives the company
+       time to re-roster if the plan lapses. A cancellation after the charge is
+       already handled — /subscriptions/:id/cancel refunds every paid future
+       occurrence in full, and a plan ending is not a late cancellation.
+
+       The cutoff is worked out here rather than as `CURRENT_DATE + $1`.
+       A bare parameter has no type until the database guesses one, and
+       "date + text" is not an operator either engine will accept — the whole
+       charging pass would have thrown on its first real run. Nothing caught it
+       because chargeDue() returns early without a Stripe key, so every test to
+       date walked straight past the query. A plain date has no such ambiguity. */
+    [new Date(Date.now() + Math.max(1, Number(process.env.SUB_CHARGE_DAYS || 5)) * 864e5)
+      .toISOString().slice(0, 10)]);
   for (const b of due.rows) {
     try {
       const stripe = await getStripe();
@@ -135,6 +152,13 @@ export async function chargeDue() {
         await query("UPDATE bookings SET platform_net_minor = $1 WHERE id = $2", [subFeeNet, b.id]);
         await notify(b.customer_id, "payment_confirmed", "Recurring cleaning charged 💳",
           `Your next visit on ${String(b.scheduled_date).slice(0, 10)} is confirmed.`, b.id);
+        /* The company is told too. A plan that renews silently is a job the
+           partner has no reason to look at until the morning it happens. */
+        try {
+          const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
+          if (oc.rows[0]) await notify(oc.rows[0].owner_id, "booking", "Recurring visit paid 🧽",
+            `A plan renewed for ${String(b.scheduled_date).slice(0, 10)} at ${b.scheduled_slot || ""}.`, b.id);
+        } catch {}
       } else throw new Error("pi status " + pi.status);
     } catch (e) {
       const already = b.payment_status === "retry";
@@ -142,7 +166,7 @@ export async function chargeDue() {
       if (already) {
         paymentAlert("subscription-charge-failed", `booking ${b.id}: ${e.message}`);
         await notify(b.customer_id, "payment_failed", "Card charge failed",
-          "We couldn't charge your card for the next cleaning. Open the booking to pay manually or update your card.", b.id).catch(() => {});
+          "We couldn't charge your card for the next cleaning. Open the booking and pay it — the card you use is saved for the visits after that.", b.id).catch(() => {});
         const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
         if (oc.rows[0]) await notify(oc.rows[0].owner_id, "payment_failed", "Recurring payment failed",
           "A recurring booking's card charge failed — the customer has been asked to pay manually.", b.id).catch(() => {});
