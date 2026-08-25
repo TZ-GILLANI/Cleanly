@@ -79,7 +79,11 @@ ok("even with an address to filter by", near.status === 200, `got ${near.status}
 const health = await j("/api/health");
 ok("health reports the migration as pending", health.data.schema === "MIGRATION_PENDING",
    JSON.stringify(health.data));
-ok("and still says which build is running", health.data.version === "7.1.0", health.data.version);
+/* From package.json, not written out here — a version pinned inside a test
+   fails on the next bump for no reason, and editing a test to make it pass is
+   how a real failure gets waved through. */
+const PKG_VERSION = JSON.parse((await import("fs")).readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+ok("and still says which build is running", health.data.version === PKG_VERSION, health.data.version);
 
 console.log(`\n════ MIGRATION LAG: ${pass} passed, ${fail} failed ════\n`);
 process.exit(fail ? 1 : 0);

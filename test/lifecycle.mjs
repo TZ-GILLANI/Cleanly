@@ -102,10 +102,21 @@ ok("the price and commission are both recorded",
 ok("and the total is the service price plus the fee",
    Number(B.total_huf) === 12000 + Number(B.service_fee_huf), `${B.total_huf}`);
 
-/* The company must SEE it — the fault that started all of this. */
+/* The company must SEE it once it is PAID — and not before.
+
+   This used to set 'pending' and expect the job to appear. But payments.js
+   sets pending the moment a Stripe Checkout session is created, before a card
+   number is typed, so that assertion was demanding the company be shown work
+   nobody had paid for. Musa hit exactly that: his card was declined and the
+   job still turned up in the company's list. */
 await query("UPDATE bookings SET payment_status='pending' WHERE id=$1", [B.id]);
+const pendingList = await j("/api/bookings", { token: CO.token });
+ok("a booking that is only mid-payment is NOT shown to the company",
+   !(pendingList.data.bookings || []).some((x) => x.id === B.id));
+
+await query("UPDATE bookings SET payment_status='paid' WHERE id=$1", [B.id]);
 const coList = await j("/api/bookings", { token: CO.token });
-ok("the company sees the booking while payment is still in flight",
+ok("once it is paid, the company sees it",
    (coList.data.bookings || []).some((x) => x.id === B.id));
 const waiting = (coList.data.bookings || []).find((x) => x.id === B.id);
 ok("and is shown how long they have to accept it", !!waiting?.accept_deadline, waiting?.accept_deadline);

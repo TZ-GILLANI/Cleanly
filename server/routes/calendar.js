@@ -102,7 +102,7 @@ async function bookingsFor(user) {
          LEFT JOIN users cu ON cu.id = b.customer_id
          LEFT JOIN users u  ON u.id  = b.assigned_to
         WHERE b.company_id = $1 AND b.scheduled_date >= $2
-          AND (b.payment_status IN ('paid','pending','scheduled','retry') OR b.status <> 0)
+          AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)
         ORDER BY b.scheduled_date ASC`, [user.company_id, since]);
     return { rows: r.rows, role: "company", name: "Cleano — company schedule" };
   }

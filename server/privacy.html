@@ -19,6 +19,18 @@
 Foglalások: szolgáltatás, időpont, cím, ár. / Account: name, email, phone, address, password (bcrypt-hashed).
 Companies: business details and uploaded documents. Bookings: service, time, address, price.</p>
 
+<h2>Helymeghatározás / Location</h2>
+<p><b>Ügyfélként:</b> a címed megadásakor egyszeri helymeghatározást kérhetünk, hogy kitölthessük a mezőket. Ezt nem tároljuk külön.</p>
+<p><b>Takarítóként:</b> amikor egy munkához elindulsz, a helyzetedet megosztjuk <i>annak az egy ügyfélnek</i>, akihez tartasz, hogy lássa, mikor érkezel.
+Ez akkor indul el, amikor az alkalmazásban az „Úton vagyok” gombra koppintasz, és <b>akkor áll le, amikor a munkát befejezettnek jelölöd</b>, vagy ha a
+foglalás törlésre kerül. Két munka között soha nem követünk. A telefonon a megosztás a háttérben is folytatódik, hogy a térkép ne álljon meg, amikor
+zsebre teszed a készüléket; Androidon ilyenkor állandó értesítés jelzi. Csak a legutolsó ismert pontot tároljuk, és a munka lezárása után töröljük.</p>
+<p><b>As a customer:</b> we may ask for a one-off location fix to fill in your address. It is not stored separately.</p>
+<p><b>As a cleaner:</b> once you set out for a job we share your position with <i>that one customer</i> so they can see you approaching. It starts when you
+tap “On the way” and <b>stops when you mark the job finished</b>, or if the booking is cancelled. We never track you between jobs. On a phone the sharing
+continues in the background so the map does not freeze when you pocket the device; on Android a permanent notification shows while it is on. We keep only
+the most recent point, and delete it once the job is closed.</p>
+
 <h2>Fizetés / Payments</h2>
 <p>A bankkártyás fizetést a Stripe Payments Europe, Ltd. (írországi engedélyes pénzforgalmi szolgáltató) dolgozza fel; a vállalkozói kifizetéseket a Stripe Connect kezeli. Kártyaadatok hozzánk nem kerülnek. / Card payments are processed by Stripe Payments Europe, Ltd.; company payouts run via Stripe Connect. We never see or store card numbers.</p>
 

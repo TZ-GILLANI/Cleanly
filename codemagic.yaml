@@ -40,6 +40,18 @@ workflows:
         script: |
           P=ios/App/App/Info.plist
           plutil -replace NSLocationWhenInUseUsageDescription -string "Cleano uses your location to fill in your address when booking a cleaning." $P
+          # ── Background location, for watching a cleaner arrive ───────────
+          # Apple reads BOTH strings: the "when in use" one above covers filling
+          # in an address at booking, this one covers a cleaner on the way. The
+          # wording has to say what the user gets, not what we collect —
+          # reviewers reject vague justifications, and this is the sentence they
+          # read in the permission dialog.
+          plutil -replace NSLocationAlwaysAndWhenInUseUsageDescription -string "While you are on the way to a job, Cleano shares your location with that customer so they can see you approaching. It starts when you tap 'On the way' and stops as soon as you finish the job." $P
+          plutil -replace NSLocationAlwaysUsageDescription -string "While you are on the way to a job, Cleano shares your location with that customer so they can see you approaching. It stops as soon as you finish the job." $P
+          # Lets the watcher keep reporting once the cleaner puts the phone away.
+          plutil -replace UIBackgroundModes -json '["remote-notification","location"]' $P \
+            || plutil -insert UIBackgroundModes -json '["remote-notification","location"]' $P
+          echo "--- background modes ---"; plutil -extract UIBackgroundModes xml1 -o - $P
           plutil -replace NSCameraUsageDescription -string "Cleano uses the camera so you can photograph your documents, such as a student card or company papers." $P
           plutil -replace NSPhotoLibraryUsageDescription -string "Cleano lets you attach photos of your documents from your photo library." $P
           plutil -replace NSPhotoLibraryAddUsageDescription -string "Cleano can save images to your photo library." $P
@@ -66,8 +78,13 @@ workflows:
           perl -0pi -e 's/import Capacitor/import Capacitor\nimport FirebaseCore/ unless /FirebaseCore/' ios/App/App/AppDelegate.swift
           perl -0pi -e 's/(didFinishLaunchingWithOptions[^\n]*-> Bool \{)/$1\n        FirebaseApp.configure()/ unless /FirebaseApp.configure/' ios/App/App/AppDelegate.swift
           echo "--- AppDelegate.swift ---"; head -20 ios/App/App/AppDelegate.swift
-          # b) allow background push delivery
-          plutil -replace UIBackgroundModes -json '["remote-notification"]' ios/App/App/Info.plist || plutil -insert UIBackgroundModes -json '["remote-notification"]' ios/App/App/Info.plist
+          # b) allow background push delivery — AND keep background location.
+          #    This step runs after the permissions step and REPLACES the whole
+          #    array, so listing only remote-notification here silently deletes
+          #    the "location" mode set earlier and the cleaner's position stops
+          #    updating the moment the phone is put away. Both, in one place.
+          plutil -replace UIBackgroundModes -json '["remote-notification","location"]' ios/App/App/Info.plist || plutil -insert UIBackgroundModes -json '["remote-notification","location"]' ios/App/App/Info.plist
+          echo "--- background modes (final) ---"; plutil -extract UIBackgroundModes xml1 -o - ios/App/App/Info.plist
           # Portrait only — the layout is a phone column, rotation shows a broken half-view
           plutil -replace UISupportedInterfaceOrientations -json '["UIInterfaceOrientationPortrait"]' ios/App/App/Info.plist
           plutil -replace 'UISupportedInterfaceOrientations~ipad' -json '["UIInterfaceOrientationPortrait"]' ios/App/App/Info.plist || plutil -insert 'UISupportedInterfaceOrientations~ipad' -json '["UIInterfaceOrientationPortrait"]' ios/App/App/Info.plist

@@ -107,7 +107,7 @@ export async function chargeDue() {
            stores the headline commission; without reducing it here the partner
            would quietly pay the processing cost on every visit after the first,
            which is exactly what Partner Terms 3.4 promises they will not. */
-        ...(b.sub_acct ? { application_fee_amount: subFeeNet } : {}),
+        ...(b.sub_acct && subFeeNet > 0 ? { application_fee_amount: subFeeNet } : {}),
         metadata: { booking_id: b.id, cleano_subscription: b.subscription_id },
       }, {
         ...opts,

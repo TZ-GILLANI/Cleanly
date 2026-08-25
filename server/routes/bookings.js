@@ -49,6 +49,15 @@ router.get("/", requireAuth, async (req, res) => {
          comment is more than the parser will lex, and the endpoint answered
          500 to every company. Prose belongs in JavaScript, not in a query. */
       result = await query(
+      /* A company sees work that has been PAID for, or that it has already
+         acted on. Not work someone merely started paying for.
+
+         'pending' used to be in this list. But payments.js sets pending the
+         moment a Stripe Checkout session is CREATED — before the customer has
+         typed a card number. So a payment that then failed left a job sitting
+         in the company's list that nobody had paid for, which is what Musa hit:
+         card declined, job still visible. 'scheduled' and 'retry' stay, because
+         those are subscription occurrences that are genuinely due. */
         `SELECT b.*, u.full_name AS assigned_name,
                 CASE WHEN cu.deleted_name IS NOT NULL
                      THEN 'Cleano customer'
@@ -59,7 +68,7 @@ router.get("/", requireAuth, async (req, res) => {
          LEFT JOIN users u ON u.id = b.assigned_to
          LEFT JOIN users cu ON cu.id = b.customer_id
          WHERE b.company_id = $1
-           AND (b.payment_status IN ('paid','pending','scheduled','retry') OR b.status <> 0)
+           AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)
          ORDER BY b.created_at DESC`,
         [req.user.companyId]
       );

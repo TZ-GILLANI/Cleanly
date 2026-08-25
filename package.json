@@ -1,7 +1,7 @@
 {
   "name": "cleanly",
   "private": true,
-  "version": "7.1.0",
+  "version": "7.1.1",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n CLIENT,SERVER -c cyan,magenta \"npm run client\" \"npm run server\"",
@@ -17,6 +17,7 @@
     "test:e2e": "node test/e2e.mjs"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor-firebase/app": "^6.3.1",
     "@capacitor-firebase/messaging": "^6.3.1",
     "@capacitor/android": "^6.2.1",

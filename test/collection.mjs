@@ -166,7 +166,15 @@ ok("return leg: the customer can watch it come back", back.lat != null, JSON.str
 ok("someone else still cannot read the location",
    (await j(`/api/bookings/${trackBk.id}/location`, { token: CO.token })).status === 200);
 
-const appSrc = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+/* Comments blanked out, line numbers preserved. Counting call sites in raw
+   source counts the sentences that MENTION them too — the paragraph explaining
+   when the tracker unmounts names canTrack(b), and this check reported five
+   entry points where there are four. Fourth time today this exact shape of
+   mistake has bitten; strip properly. */
+const appRaw = (await import("fs")).readFileSync("src/App.jsx", "utf8");
+const appSrc = appRaw
+  .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+  .replace(/\/\/[^\n]*/g, (m) => " ".repeat(m.length));
 ok("the app offers tracking on both legs of a collection", /fulfilment === "collection" \? \(st === 2 \|\| st === 6\)/.test(appSrc));
 ok("and not while the items are at the company's premises", !/st === 5/.test(appSrc.slice(appSrc.indexOf("const canTrack"), appSrc.indexOf("const canTrack") + 400)));
 ok("every tracking entry point uses the same rule", (appSrc.match(/canTrack\(b\)/g) || []).length === 4, String((appSrc.match(/canTrack\(b\)/g) || []).length));

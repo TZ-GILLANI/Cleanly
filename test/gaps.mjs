@@ -703,12 +703,24 @@ ok("no realistic price produces an amount Stripe would refuse", hufRefused === 0
 
 const paySrc = (await import("fs")).readFileSync("server/routes/payments.js", "utf8");
 ok("the rule is applied to the charge, not just the fee", /unit_amount: payableMinor/.test(paySrc));
-/* Three: the direct charge, the legacy destination charge, and the off-session
-   renewal. Counting them exactly rather than "at least one", so a fourth path
-   added later without the rule is noticed. */
-ok("and on every path that takes a commission",
-   (paySrc.match(/application_fee_amount: payableMinor/g) || []).length === 3,
-   `${(paySrc.match(/application_fee_amount: payableMinor/g) || []).length} found`);
+/* Counting call sites broke the moment the two destination-charge paths were
+   folded into feeSplit(). Assert the GUARANTEE instead: every fee that goes to
+   Stripe is rounded, and a fee that rounds to nothing is omitted rather than
+   sent as a zero — which Stripe rejects, on its own page, where our logs never
+   see it. */
+{
+  const payMod = await import("../server/routes/payments.js");
+  const tiny = payMod.platformNetMinor(99000, 9900);           // 990 Ft at 10%
+  ok("a commission that rounds to nothing is left out entirely",
+     !("application_fee_amount" in payMod.feeSplit(tiny, "HUF", "acct_1")),
+     JSON.stringify(payMod.feeSplit(tiny, "HUF", "acct_1")));
+  const real = payMod.platformNetMinor(500000, 75000);
+  const split = payMod.feeSplit(real, "HUF", "acct_1");
+  ok("a real commission is sent, rounded to whole forints",
+     split.application_fee_amount > 0 && split.application_fee_amount % 100 === 0,
+     JSON.stringify(split));
+  ok("and the partner is always the destination", split.transfer_data?.destination === "acct_1");
+}
 ok("what we record as kept matches what we asked Stripe for",
    /platform_net_minor = \$1[\s\S]{0,120}payableMinor/.test(paySrc));
 ok("a payment that cannot start alerts the operator, not just the customer",
@@ -767,8 +779,15 @@ ok("a booking that has already sat unanswered for a day is out of time",
    minsFromNow(at(30, 72)) <= 0, `${minsFromNow(at(30, 72))} minutes`);
 
 const bkSrcC = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
-ok("the company list includes work whose payment is still in flight",
-   /payment_status IN \('paid','pending','scheduled','retry'\)/.test(bkSrcC));
+/* 'pending' USED to be in this list, and that was the bug Musa hit: a card was
+   declined and the job still appeared for the company. payments.js sets pending
+   the moment a Checkout session is created — before a card number is typed — so
+   it never meant "paid", only "someone opened the payment page". */
+ok("the company list shows work that has been paid for",
+   /payment_status IN \('paid','scheduled','retry'\)/.test(bkSrcC));
+ok("and NOT work whose payment was merely started",
+   !/'paid','pending'/.test(bkSrcC), "pending is set when the session opens, not when it settles");
+ok("but anything already acted on stays visible", /OR b\.status <> 0/.test(bkSrcC));
 
 /* The comment that broke an endpoint outright lived INSIDE the SQL string: an
    em dash in a SQL block comment is more than the parser will lex, and every
@@ -822,12 +841,21 @@ const calSrcAll = (await import("fs")).readFileSync("server/routes/calendar.js",
    payableMinor. Comment lines are excluded; a false alarm here teaches people
    to ignore the check. */
 const unrounded = [];
-for (const [file, src] of [["payments.js", paySrcAll], ["subscriptions.js", subSrcAll]]) {
+/* Blank the comments out first, keeping line numbers. Testing each line for a
+   leading * or // cannot see the MIDDLE of a block comment — and the paragraph
+   explaining this rule quotes `application_fee_amount: 0`, so the check kept
+   reporting its own documentation. Third time this shape of mistake has been
+   made today; strip properly, once. */
+const decomment = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+  .replace(/\/\/[^\n]*/g, (m) => " ".repeat(m.length));
+for (const [file, src] of [["payments.js", decomment(paySrcAll)], ["subscriptions.js", decomment(subSrcAll)]]) {
   for (const line of src.split("\n")) {
     const t = line.trim();
-    if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
     if (!/\b(amount|application_fee_amount):\s/.test(t)) continue;
-    if (/payableMinor|subFeeNet|amount_minor|fee_minor/.test(t)) continue;
+    /* feeSplit() applies payableMinor itself and is covered above; `fee` is its
+       already-rounded local. Without this the helper reports itself. */
+    if (/payableMinor|subFeeNet|amount_minor|fee_minor|application_fee_amount: fee\b/.test(t)) continue;
     unrounded.push(`${file}: ${t.slice(0, 60)}`);
   }
 }
@@ -840,11 +868,11 @@ ok("partial refunds are rounded in the customer's favour, not ours",
    /payableMinor\(amountMinor \+ 99/.test(paySrcAll));
 
 console.log("\n── one visibility rule, not two that drift ──");
-const rule = /payment_status IN \('paid','pending','scheduled','retry'\)/;
-ok("the booking list shows work whose payment is in flight", rule.test(bkSrcC));
+const rule = /payment_status IN \('paid','scheduled','retry'\)/;
+ok("the booking list shows only work that has been paid for", rule.test(bkSrcC));
 ok("and the calendar feed uses exactly the same rule", rule.test(calSrcAll));
-ok("neither still lists only paid work",
-   !/IN \('paid','scheduled','retry'\)/.test(bkSrcC) && !/IN \('paid','scheduled','retry'\)/.test(calSrcAll));
+ok("neither of them counts a merely-opened payment page",
+   !/'paid','pending'/.test(bkSrcC) && !/'paid','pending'/.test(calSrcAll));
 
 /* The prose-in-SQL fault that produced a 500 for every company. */
 let proseAnywhere = 0;

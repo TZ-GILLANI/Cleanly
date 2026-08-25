@@ -183,6 +183,9 @@ for (const m of src.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
      list — the first version of this check reported four developer log lines
      as user-facing text on the customer's interface. */
   if (/console\.(log|warn|error|info|debug)\([^)]{0,200}$/.test(before)) continue;
+  /* Identifiers, not copy. registerPlugin("BackgroundGeolocation") names a
+     native class; translating it would break the bridge. */
+  if (/registerPlugin\($/.test(before)) continue;
   const line = src.slice(0, m.index).split("\n").length - 1;
   const o = owner(line);
   if (!o) continue;
@@ -250,6 +253,40 @@ for (const FILE of FILES) {
     if (!o) continue;
     hits.push({ role: o.role, comp: o.name, line: line + 1, text: raw.slice(0, 80),
                 file: FILE.replace(/^src\//, ""), kind: "jsx-text" });
+  }
+
+  /* ── Pass 3: a text child that has a whole line to itself ──────────────
+
+     Pass 2 needs the > and the < on the SAME line. Real JSX rarely obliges:
+
+         <div style={{ ...a long style object... }}>
+           Upload your logo (PNG)
+         </div>
+
+     Three English strings hid in exactly that shape — one of them a paragraph
+     on the company signup form. Each began with the invisible character the
+     emoji trim left behind, which is the only reason I ever looked at those
+     lines. Nothing else would have found them.
+
+     So: a line that is only words, whose previous line ends in > and whose
+     next line opens a closing tag. */
+  for (let i = 1; i < lines.length - 1; i++) {
+    const ln = lines[i];
+    const raw = ln.trim();
+    if (!raw || raw.length < 3 || raw.length > 300) continue;
+    if (/[<>{}();=]/.test(raw)) continue;
+    const prev = lines[i - 1].trimEnd();
+    if (!prev.endsWith(">") || prev.endsWith("/>")) continue;
+    if (!/^<\//.test(lines[i + 1].trim())) continue;
+    const idx = lines.slice(0, i).join("\n").length;
+    if (inCmt(idx)) continue;
+    const text = raw.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+    if (!HAS_WORDS.test(text) || LOOKS_LIKE_DATA.test(text)) continue;
+    if (CSS_VALUE.test(text) || CODE_FRAGMENT.test(text)) continue;
+    const o = own(i);
+    if (!o) continue;
+    hits.push({ role: o.role, comp: o.name, line: i + 1, text: raw.slice(0, 80),
+                file: FILE.replace(/^src\//, ""), kind: "jsx-text-line" });
   }
 }
 

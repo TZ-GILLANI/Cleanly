@@ -160,5 +160,37 @@ ok("with no key configured nothing is called and the original survives",
    (await tr.translateAll("Alapos takarítás", "hu")).hu === "Alapos takarítás");
 ok("and the source language is recorded", (await tr.translateAll("x", "hu"))._src === "hu");
 
+console.log("\n── no invisible characters hiding text from the scanner ──");
+{
+  /* Emoji were stripped from the UI months ago, but only the pictures went.
+     Every U+FE0F variation selector that had followed one stayed behind: an
+     invisible character sitting at the start of thirty labels. It cost a
+     stray space in some of them, an empty 52px block in others — and it made
+     three English paragraphs invisible to the untranslated-string scanner,
+     which is how they survived every "0 untranslated" report.
+
+     A lone U+FE0F — one not attached to an emoji — is always a leftover. */
+  const fsx = await import("fs");
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{3030}\u{303D}\u{00A9}\u{00AE}\u{2122}\u{23E9}-\u{23FA}]/u;
+  /* Walk by code point, not by UTF-16 unit. src[i - 1] on an astral emoji is
+     its low surrogate, which matches nothing — so a first version of this
+     check reported every legitimate ⏱️ and 🛏️ as an orphan. */
+  const orphans = (src) => {
+    const cps = [...src];
+    const out = [];
+    let at = 0;
+    for (let i = 0; i < cps.length; i++) {
+      if (cps[i] === "\uFE0F" && !EMOJI.test(cps[i - 1] || "")) out.push(src.slice(0, at).split("\n").length);
+      at += cps[i].length;
+    }
+    return out;
+  };
+  for (const f of ["src/App.jsx", "src/store.jsx", "src/lib/translations.js", "src/lib/i18n.js"]) {
+    const o = orphans(fsx.readFileSync(new URL("../" + f, import.meta.url), "utf8"));
+    ok(`${f} carries no orphaned variation selectors`, o.length === 0, "lines " + o.slice(0, 8).join(", "));
+  }
+
+}
+
 console.log(`\n════ LIVE TRANSLATION: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

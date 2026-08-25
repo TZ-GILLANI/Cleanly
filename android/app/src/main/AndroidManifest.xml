@@ -37,4 +37,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Background location: the customer watches the cleaner travel to their
+         home, and the cleaner puts the phone away the moment they start
+         driving. Requested only when a job is actually under way — the tracker
+         is mounted between "On the way" and "Job done" and torn down after.
+         FOREGROUND_SERVICE_LOCATION is required from Android 14. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 </manifest>

@@ -84,6 +84,27 @@ export function payableMinor(minor, currency) {
   return NEEDS_100.has(String(currency || "").toLowerCase()) ? Math.floor(n / 100) * 100 : n;
 }
 
+/* A fee of zero is not a fee — leave it out.
+
+   payableMinor() floors HUF to a whole forint, so on a small booking the
+   commission can floor all the way to 0: a 990 Ft job at the default 10%
+   leaves nothing once Stripe's own cut is covered. Passing
+   `application_fee_amount: 0` is not the same as passing nothing — Stripe
+   rejects it, and the customer sees a generic "an error occurred while
+   processing the request" ON Stripe's own page, so nothing reaches our logs.
+   Price-dependent, so it works in testing at most prices and fails at some.
+
+   When there is no commission to take, the whole charge simply goes to the
+   partner. We earn nothing on that booking, which is already what
+   platformNetMinor() decided. */
+export function feeSplit(amountMinor, currency, destination) {
+  if (!destination) return {};
+  const fee = payableMinor(amountMinor, currency);
+  return fee > 0
+    ? { application_fee_amount: fee, transfer_data: { destination } }
+    : { transfer_data: { destination } };
+}
+
 export function platformNetMinor(totalMinor, commissionMinor) {
   return Math.max(0, Math.round(Number(commissionMinor) - stripeFeeMinor(totalMinor)));
 }
@@ -285,7 +306,7 @@ export async function chargeSavedCard(booking) {
     if (acctId) {
       try {
         const acct = await stripe.accounts.retrieve(acctId);
-        if (acct.charges_enabled) split = { application_fee_amount: payableMinor(feeHuf * 100, "HUF"), transfer_data: { destination: acctId } };
+        if (acct.charges_enabled) split = feeSplit(feeHuf * 100, "HUF", acctId);
       } catch {}
     }
 
@@ -444,7 +465,10 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
           payment_intent_data: {
             /* Reduced by Stripe's cut so the partner's settlement equals their
                listed price exactly. See platformNetMinor above. */
-            application_fee_amount: payableMinor(platformNetMinor(amountMinor, feeMinor), currency),
+            /* Omitted entirely when it rounds to zero — see feeSplit(). */
+            ...(payableMinor(platformNetMinor(amountMinor, feeMinor), currency) > 0
+              ? { application_fee_amount: payableMinor(platformNetMinor(amountMinor, feeMinor), currency) }
+              : {}),
             ...(isSub ? { setup_future_usage: "off_session" } : {}),
           },
           line_items: lineItems,
@@ -469,7 +493,7 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
           /* Destination charge: Cleano is the merchant, so Stripe bills Cleano
              directly and the partner already receives their price in full. No
              adjustment needed — deducting again would charge them twice. */
-          if (acct.charges_enabled) split = { application_fee_amount: payableMinor(feeMinor, currency), transfer_data: { destination: booking.stripe_account_id } };
+          if (acct.charges_enabled) split = feeSplit(feeMinor, currency, booking.stripe_account_id);
         } catch {}
       }
       let customerId = null;
@@ -700,6 +724,28 @@ export async function stripeWebhook(req, res) {
     }
     if (!event) throw lastErr || new Error("no signature matched");
     const connectAcct = event.account || null;   // set on Connect (direct-charge) events
+    /* A checkout that expired or was abandoned must not leave the booking
+       looking like a payment in flight.
+
+       payment_status goes to 'pending' the moment a session is CREATED, before
+       the customer has typed a card number. Only checkout.session.completed was
+       handled, so a failed or abandoned payment sat as 'pending' until the
+       12-hour sweep — and while it sat there the company had a job in its list
+       that nobody had paid for. Stripe expires an unfinished session after 24h
+       and tells us; take it back to unpaid so the customer can simply try
+       again. */
+    if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+      const sess = event.data.object;
+      const bookingId = sess.metadata?.booking_id;
+      if (bookingId) {
+        await query(
+          `UPDATE bookings SET payment_status = 'unpaid'
+            WHERE id = $1 AND payment_status = 'pending' AND status = 0`,
+          [bookingId]);
+      }
+      return res.json({ received: true });
+    }
+
     if (event.type === "checkout.session.completed") {
       const sess = event.data.object;
       const bookingId = sess.metadata?.booking_id;

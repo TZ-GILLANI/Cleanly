@@ -158,7 +158,12 @@ console.log("\n── one theme, not two half-themes ──");
 console.log("\n── you can tell which code is live ──");
 {
   const idx = fs.readFileSync(new URL("../server/index.js", import.meta.url), "utf8");
-  ok("/api/health reports the build version", /version: "7\.1\.0"/.test(idx));
+  /* Read the number from package.json rather than writing it here. A test
+     that hardcodes the version fails on the next bump for no reason, and the
+     habit of editing a test to make it pass is how a real failure gets waved
+     through. */
+  const pkgV = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  ok("/api/health reports the build version", idx.includes(`version: "${pkgV}"`), pkgV);
   ok("…and which migration the code expects", /schemaLevel: "service_areas\+eu_vat"/.test(idx));
   ok("…and whether the database has caught up", /MIGRATION_PENDING/.test(idx));
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));

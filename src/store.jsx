@@ -268,6 +268,60 @@ export function StoreProvider({ children }) {
     setDataVersion((v) => v + 1);   // screens with their own fetches re-run on this
   }, [session]);
 
+  /* Notice things that happened while you were looking at the screen.
+
+     refreshData() existed and nothing ever called it on its own, so the app
+     only ever fetched at launch. A company accepting a job, a reply on a
+     complaint, a cleaner marking something done — none of it appeared until
+     you killed the app and reopened it. Two triggers, both cheap:
+
+       • coming back to the foreground, which is when you are most likely to be
+         looking for something that changed while you were away
+       • a slow poll while you are actually looking at it
+
+     Both skip when logged out, when the tab is hidden, and when a refresh is
+     already in flight — so a slow network cannot stack requests. */
+  const refreshingRef = React.useRef(false);
+  const safeRefresh = useCallback(async () => {
+    if (!isApiMode || !session) return;
+    if (refreshingRef.current) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    refreshingRef.current = true;
+    try { await refreshData(); } finally { refreshingRef.current = false; }
+  }, [session, refreshData]);
+
+  useEffect(() => {
+    if (!isApiMode || !session) return;
+    const onVisible = () => { if (document.visibilityState === "visible") safeRefresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", safeRefresh);
+
+    /* Capacitor's own event, read off the runtime bridge rather than imported.
+
+       `import("@capacitor/app")` pulls in a package this project does not
+       depend on: the bundler warns, externalises it, and the app ships a
+       dynamic import that can never resolve. window.Capacitor is injected by
+       the native shell at runtime, so asking for it costs nothing on the web
+       and works on device without a new dependency. */
+    let remove = null;
+    try {
+      const AppPlugin = typeof window !== "undefined" && window.Capacitor?.Plugins?.App;
+      if (AppPlugin?.addListener) {
+        const h = AppPlugin.addListener("appStateChange", ({ isActive }) => { if (isActive) safeRefresh(); });
+        remove = () => { try { (h.remove ? h : h?.then?.((x) => x))?.remove?.(); } catch {} };
+      }
+    } catch { /* browser build */ }
+
+    const POLL_MS = Number(import.meta.env?.VITE_POLL_MS) || 25000;
+    const timer = setInterval(safeRefresh, POLL_MS);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", safeRefresh);
+      clearInterval(timer);
+      if (remove) remove();
+    };
+  }, [session, safeRefresh]);
+
   const loadFee = async () => {
     try {
       const c = await api("/payments/config");
@@ -1071,7 +1125,11 @@ export function StoreProvider({ children }) {
   const value = {
     isLive: isApiMode, session, loading, error, clearError: () => setError(null),
     feePct, cancelPolicy,
-    lang, setLang, t, refreshData, dataVersion,
+    /* refreshData refetches unconditionally — a screen that has just changed
+       something must see the result, so it can never be skipped. safeRefresh
+       is the one for polling: it drops out while another fetch is in flight,
+       or while the app is in the background. Pollers use that one. */
+    lang, setLang, t, refreshData, safeRefresh, dataVersion,
     companies: db.companies, services: db.services, employees: visibleEmployees, allEmployees: db.employees,
     bookings: db.bookings, notices: db.notices, invites: db.invites, reviews: db.reviews,
     signupCustomer, signupCompany, signupEmployee, login, logout,

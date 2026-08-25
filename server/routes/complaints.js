@@ -47,7 +47,26 @@ router.get("/", requireAuth, async (req, res) => {
   try {
     let r;
     if (req.user.role === "admin") {
-      r = await query("SELECT c.*, u.full_name AS user_name, u.email AS user_email, co.name AS assigned_company_name FROM complaints c JOIN users u ON u.id = c.user_id LEFT JOIN companies co ON co.id = c.assigned_company_id ORDER BY CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END, c.created_at DESC");
+      /* Carry the booking through, and the company that job belongs to.
+
+         The admin screen showed the complaint on its own — no service, no date,
+         no address — and the "hand to a company" dropdown started empty, so
+         whoever was on support had to go and look up which company the job was
+         with before they could assign it. The booking already knows. */
+      r = await query(
+        `SELECT c.*, u.full_name AS user_name, u.email AS user_email,
+                co.name AS assigned_company_name,
+                b.company_id       AS booking_company_id,
+                bco.name           AS booking_company_name,
+                b.scheduled_date, b.scheduled_slot, b.address AS booking_address,
+                b.status AS booking_status, b.total_huf AS booking_total,
+                b.service_snapshot AS booking_service
+           FROM complaints c
+           JOIN users u        ON u.id = c.user_id
+           LEFT JOIN companies co ON co.id = c.assigned_company_id
+           LEFT JOIN bookings b   ON b.id = c.booking_id
+           LEFT JOIN companies bco ON bco.id = b.company_id
+          ORDER BY CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END, c.created_at DESC`);
     } else if (req.user.role === "company") {
       r = await query("SELECT c.*, u.full_name AS user_name FROM complaints c JOIN users u ON u.id = c.user_id WHERE c.assigned_company_id = $1 ORDER BY CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END, c.created_at DESC", [req.user.companyId]);
     } else {
