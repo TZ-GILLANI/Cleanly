@@ -478,28 +478,6 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS platform_net_minor INT;
 -- A radius is a bad proxy for a city: 30 km swallows four towns around a village
 -- and still misses the edge of a large one. Empty list = fall back to the radius.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS service_cities JSONB NOT NULL DEFAULT '[]';
-
--- Service areas, v7.1.
---
--- What came before was two ideas that could not talk to each other: one pin
--- with a radius, floating free of any city, plus a flat list of whole cities.
--- You could say "everywhere within 15 km of this dot" or "all of Debrecen and
--- all of Budapest" -- but not "all of Debrecen, and only the middle of
--- Budapest", which is what a real cleaning company covers. Nothing anchored
--- the pin either, so it could sit in a field 38 km from the city it claimed.
---
--- Each entry is now a place with a name:
---   { "city": "Debrecen", "mode": "all" }
---   { "city": "Budapest", "mode": "radius", "lat": .., "lng": .., "radiusKm": 8, "label": "Belvaros" }
--- An address is covered if ANY entry covers it. The old columns are still
--- written so builds already on people's phones keep working.
-ALTER TABLE companies ADD COLUMN IF NOT EXISTS service_areas JSONB NOT NULL DEFAULT '[]';
-
--- EU VAT number (kozossegi adoszam). Optional: only companies that invoice
--- across an EU border need one. Validated per member state, and for Hungary
--- checked against the adoszam already on file, because HU + the first eight
--- digits of the adoszam IS the VAT number -- a mismatch is a typo.
-ALTER TABLE companies ADD COLUMN IF NOT EXISTS eu_vat TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_name    TEXT;   -- legal name, if it differs from the trading name
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_zip     TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_city    TEXT;

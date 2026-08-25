@@ -164,7 +164,11 @@ console.log("\n── you can tell which code is live ──");
      through. */
   const pkgV = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   ok("/api/health reports the build version", idx.includes(`version: "${pkgV}"`), pkgV);
-  ok("…and which migration the code expects", /schemaLevel: "service_areas\+eu_vat"/.test(idx));
+  /* Names the columns rather than pinning the exact string, so adding one to
+     the level does not fail a test that is not about that. */
+  ok("…and which migration the code expects",
+     /schemaLevel: "[^"]*service_areas[^"]*eu_vat[^"]*"/.test(idx),
+     (idx.match(/schemaLevel: "[^"]*"/) || [""])[0]);
   ok("…and whether the database has caught up", /MIGRATION_PENDING/.test(idx));
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const health = /version: "([\d.]+)"/.exec(idx)[1];

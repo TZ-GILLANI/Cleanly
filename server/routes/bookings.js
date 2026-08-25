@@ -12,20 +12,41 @@ const router = Router();
 router.get("/", requireAuth, async (req, res) => {
   try {
     let result;
+    /* Who the company IS travels with the booking.
+
+       The screens used to find it with companies.find(c => c.id ===
+       b.company_id) against the list the app had loaded. For a customer that
+       list is /companies?near=..., which is filtered by service area AND by
+       is_listed AND by is_approved. So a company that un-lists itself, changes
+       its areas, or simply sits outside the address the customer is standing
+       at drops out of the list — and every booking they already have loses its
+       name and its logo. The booking was fine; the lookup had nothing to find.
+
+       And because the app re-runs that filtered query on every refresh, the
+       logo was there, then gone, which is exactly what Musa kept seeing.
+
+       The service already travels this way, as service_snapshot. The company
+       now does too. */
     if (req.user.role === "customer") {
       result = await query(
-        `SELECT b.*, u.full_name AS assigned_name
+        `SELECT b.*, u.full_name AS assigned_name,
+                c.name AS company_name, c.logo_url AS company_logo_url,
+                c.emoji AS company_emoji, c.contact_phone AS company_phone
          FROM bookings b
          LEFT JOIN users u ON u.id = b.assigned_to
+         LEFT JOIN companies c ON c.id = b.company_id
          WHERE b.customer_id = $1
          ORDER BY b.created_at DESC`,
         [req.user.id]
       );
     } else if (req.user.role === "employee") {
       result = await query(
-        `SELECT b.*, cu.full_name AS customer_name
+        `SELECT b.*, cu.full_name AS customer_name,
+                c.name AS company_name, c.logo_url AS company_logo_url,
+                c.emoji AS company_emoji
          FROM bookings b
          LEFT JOIN users cu ON cu.id = b.customer_id
+         LEFT JOIN companies c ON c.id = b.company_id
          WHERE b.assigned_to = $1
          ORDER BY b.scheduled_date ASC`,
         [req.user.id]
@@ -322,16 +343,44 @@ router.post("/", requireAuth, async (req, res) => {
         return res.status(400).json({ error: "That time has just been taken — please pick another." });
     }
 
-    // One active subscription chain per customer per service — prevents double-charging chains.
+    /* One active subscription chain per customer per service — prevents
+       double-charging chains.
+
+       But a plan you never managed to PAY for is not one you have. The old
+       clause counted any subscription booking at status 0-3, and a booking
+       whose card was declined sits at status 0 forever: the customer was told
+       "you already have an active subscription — cancel it first", for a
+       subscription that had never started. There is nothing to cancel and no
+       way forward, so the second attempt fails as surely as the first, and it
+       looks like the payment bug striking twice.
+
+       An unpaid booking is a dead attempt. Only a paid one, or one the company
+       has already acted on, blocks a new plan. */
     if (svc.pricing_type === "subscription") {
       const dup = await query(
         `SELECT 1 FROM bookings
-         WHERE customer_id = $1 AND service_id = $2 AND pricing_type = 'subscription' AND status BETWEEN 0 AND 3
+         WHERE customer_id = $1 AND service_id = $2 AND pricing_type = 'subscription'
+           AND status BETWEEN 0 AND 3
+           AND (payment_status IN ('paid','scheduled','retry') OR status > 0)
          LIMIT 1`,
         [req.user.id, serviceId]
       );
       if (dup.rows.length)
         return res.status(400).json({ error: "You already have an active subscription for this service — cancel it first under Bookings." });
+
+      /* And clear the dead attempts out of the way, so the customer's own list
+         does not fill up with plans that never began. */
+      /* cancelled_at belongs to the subscriptions table, not this one — every
+         other cancellation here is status 9 and nothing else. Writing a column
+         that does not exist would have thrown, and a .catch() would have
+         swallowed it in silence, which is how the last three bugs like this
+         survived. So: no catch, and status alone. */
+      await query(
+        `UPDATE bookings SET status = 9
+         WHERE customer_id = $1 AND service_id = $2 AND pricing_type = 'subscription'
+           AND status = 0 AND payment_status NOT IN ('paid','scheduled','retry')`,
+        [req.user.id, serviceId]
+      );
     }
 
     const me = (await query("SELECT customer_type FROM users WHERE id = $1", [req.user.id])).rows[0];

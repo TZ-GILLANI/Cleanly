@@ -6,6 +6,10 @@
 
 export const EXTRA = {
   de: {
+    "You save {0}": "Du sparst {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Nicht gestartet — zum Beginnen bezahlen",
+    "Payment failed:": "Zahlung fehlgeschlagen:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Cleano kümmert sich darum",
     "Delete": "Löschen",
@@ -1137,6 +1141,10 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    "You save {0}": "Economisești {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Neînceput — plătește pentru a începe",
+    "Payment failed:": "Plata a eșuat:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Cleano se ocupă",
     "Delete": "Șterge",
@@ -2268,6 +2276,10 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    "You save {0}": "Ušetríš {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Nezačalo sa — zaplať a začni",
+    "Payment failed:": "Platba zlyhala:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Rieši to Cleano",
     "Delete": "Vymazať",
@@ -3399,6 +3411,10 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    "You save {0}": "Oszczędzasz {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Nie rozpoczęto — zapłać, aby zacząć",
+    "Payment failed:": "Płatność nie powiodła się:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Zajmuje się tym Cleano",
     "Delete": "Usuń",
@@ -4530,6 +4546,10 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    "You save {0}": "Ви заощаджуєте {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Не розпочато — оплатіть, щоб почати",
+    "Payment failed:": "Платіж не пройшов:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Цим займається Cleano",
     "Delete": "Видалити",
@@ -5661,6 +5681,10 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    "You save {0}": "Vous économisez {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Pas encore lancé — payez pour commencer",
+    "Payment failed:": "Échec du paiement :",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Cleano s'en charge",
     "Delete": "Supprimer",
@@ -6792,6 +6816,10 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    "You save {0}": "Ahorras {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Sin empezar — paga para comenzar",
+    "Payment failed:": "El pago ha fallado:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Se encarga Cleano",
     "Delete": "Eliminar",
@@ -7923,6 +7951,10 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    "You save {0}": "{0} tasarruf edersin",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Başlamadı — başlatmak için öde",
+    "Payment failed:": "Ödeme başarısız:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Cleano ilgilensin",
     "Delete": "Sil",
@@ -8994,6 +9026,10 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    "You save {0}": "为你省下 {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "尚未开始 — 付款后启动",
+    "Payment failed:": "支付失败：",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "由 Cleano 处理",
     "Delete": "删除",
@@ -10065,6 +10101,10 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    "You save {0}": "Risparmi {0}",
+    /* v7.1.2 — when a payment fails */
+    "Not started — pay to begin": "Non avviato — paga per iniziare",
+    "Payment failed:": "Pagamento non riuscito:",
     /* v7.1.1 — strings the scanner could not see until the emoji ghosts went */
     "Cleano handles it": "Se ne occupa Cleano",
     "Delete": "Elimina",

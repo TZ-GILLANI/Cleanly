@@ -329,6 +329,34 @@ export function StoreProvider({ children }) {
       if (c && c.cancelPolicy) setCancelPolicy(c.cancelPolicy);
     } catch {}
   };
+  /* JSONB comes back parsed — until it does not.
+
+     node-postgres parses a jsonb column into a real array, so bookings.tasks_done
+     arrives as [0, 1] and the tick marks work. Under a different driver, an
+     older column type, or anything that hands the row through JSON.stringify on
+     the way, the same field arrives as the STRING "[0,1]" — and then
+     .length is 5 instead of 2, .includes(1) matches the substring rather than
+     the item, and the checklist ticks itself on and off for no visible reason.
+
+     Screens should not each have to guess. Normalise once, here, the way the
+     session already normalises saved addresses. */
+  const arr = (v) => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === "string") { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
+    return [];
+  };
+  const obj = (v) => {
+    if (v && typeof v === "object") return v;
+    if (typeof v === "string") { try { const p = JSON.parse(v); return p && typeof p === "object" ? p : {}; } catch { return {}; } }
+    return {};
+  };
+  const cleanBooking = (b) => ({
+    ...b,
+    tasks_done: arr(b.tasks_done),
+    service_snapshot: (() => { const sn = obj(b.service_snapshot); return { ...sn, tasks: arr(sn.tasks) }; })(),
+  });
+  const cleanService = (s) => ({ ...s, tasks: arr(s.tasks), requirements: arr(s.requirements) });
+
   const loadAllData = useCallback(async (sess) => {
     loadFee();
     const next = { companies: [], services: [], employees: [], bookings: [], notices: [], invites: [], reviews: [] };
@@ -347,19 +375,33 @@ export function StoreProvider({ children }) {
       api("/reviews"),
     ]);
     next.companies = companies.companies;
-    next.services  = services.services;
+    next.services  = (services.services || []).map(cleanService);
     next.reviews   = reviews.reviews;
 
     if (sess.role === "customer") {
       const { bookings } = await api("/bookings");
-      next.bookings = bookings;
+      next.bookings = (bookings || []).map(cleanBooking);
     }
     if (sess.role === "employee") {
-      const [{ bookings }, { notices }] = await Promise.all([
+      /* Their own company, fetched by id.
+
+         A cleaner's header and job cards read their company out of the public
+         /companies list — which excludes anyone unlisted or not yet approved.
+         So the moment their employer paused its listing, the cleaner's own
+         screen stopped knowing who they worked for: no name, no logo. The
+         company role already merges its own row for exactly this reason; the
+         cleaner needs it just as much. */
+      const [{ bookings }, { notices }, own] = await Promise.all([
         api("/bookings"),
         api("/notices"),
+        sess.companyId ? api("/companies/" + sess.companyId).catch(() => null) : null,
       ]);
-      next.bookings = bookings; next.notices = notices;
+      next.bookings = (bookings || []).map(cleanBooking); next.notices = notices;
+      if (own?.company) {
+        next.companies = next.companies.some((c) => c.id === own.company.id)
+          ? next.companies.map((c) => (c.id === own.company.id ? own.company : c))
+          : [own.company, ...next.companies];
+      }
     }
     if (sess.role === "company") {
       const [{ bookings }, { employees }, { invites }, { notices }, { services: ownSvcs }, own] = await Promise.all([
@@ -370,17 +412,17 @@ export function StoreProvider({ children }) {
         api("/services/company/" + sess.companyId),
         api("/companies/" + sess.companyId).catch(() => null), // own row — even while pending approval
       ]);
-      next.bookings = bookings; next.employees = employees;
+      next.bookings = (bookings || []).map(cleanBooking); next.employees = employees;
       next.invites = invites; next.notices = notices;
       // merge own (incl. hidden) services
-      next.services = [...services.services.filter(s => s.company_id !== sess.companyId), ...ownSvcs];
+      next.services = [...(services.services || []).filter(s => s.company_id !== sess.companyId).map(cleanService), ...(ownSvcs || []).map(cleanService)];
       // the public list excludes unapproved companies — make sure our own is present
       if (own?.company && !next.companies.some(c => c.id === own.company.id)) next.companies = [own.company, ...next.companies];
       else if (own?.company) next.companies = next.companies.map(c => c.id === own.company.id ? own.company : c);
     }
     if (sess.role === "admin") {
       const { bookings } = await api("/bookings");
-      next.bookings = bookings;
+      next.bookings = (bookings || []).map(cleanBooking);
     }
     setDb(next);
   }, []);

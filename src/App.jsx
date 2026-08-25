@@ -289,7 +289,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.1.1";
+const APP_VERSION = "7.1.3";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -3051,9 +3051,25 @@ function BookingFlow({ company, close, onBooked }) {
   const youPay = (s) => {
     const g = s.pricing_type === "hourly" ? s.hourly_rate_huf : s.price_huf;
     const d = g - Math.round((g || 0) * effPct(s) / 100);
-    if (s.pricing_type === "hourly") return `${huf(d)}/hr`;
+    if (s.pricing_type === "hourly") return `${huf(d)}${L("/hr", "/óra")}`;
     if (s.pricing_type === "subscription") return `${huf(d)} / ${periodShort(s.period)}`;
     return huf(d);
+  };
+  /* Which of the three discounts is actually winning on this service.
+
+     effPct() already picks the best one — but a bare "−20%" leaves the
+     customer guessing whether it is theirs to keep. A student rate shown to
+     someone who is not a student would be a lie; an offer that ends on Friday
+     is worth naming. So: the same comparison, turned into a word. */
+  const discountName = (s) => {
+    const svcPct = Number(s?.promo_pct) || 0;
+    const coPct = promo ? Number(promo.pct) || 0 : 0;
+    const stuPct = isStudent ? Number(company.student_discount) || 0 : 0;
+    const best = Math.max(svcPct, coPct, stuPct);
+    if (best <= 0) return null;
+    if (svcPct === best) return L("Offer", "Akció");
+    if (coPct === best) return promo?.label || L("Offer", "Akció");
+    return L("Student", "Diák");
   };
   const pickSvc = (s) => { setSvc(s); setSchedSel(null); setDay(null); if (s.pricing_type === "hourly") setHours(s.min_hours || 2); };
   const canNext = [svc, day && slot, addr.trim(), true][step];
@@ -3097,10 +3113,29 @@ function BookingFlow({ company, close, onBooked }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink }}>{s.name}</span>
-                      <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(s)}</span>
+                      {/* A saving is only persuasive if you can see what it was.
+                          The old price stays, struck through, beside the new one. */}
+                      {effPct(s) > 0 ? (
+                        <span style={{ display: "flex", alignItems: "baseline", gap: 5, whiteSpace: "nowrap" }}>
+                          <span style={{ fontFamily: B, fontSize: 11.5, color: C.inkFaint, textDecoration: "line-through" }}>{priceLabel(s)}</span>
+                          <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.greenDeep }}>{youPay(s)}</span>
+                        </span>
+                      ) : (
+                        <span style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.navy, whiteSpace: "nowrap" }}>{priceLabel(s)}</span>
+                      )}
                     </div>
                     <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{s.description} · ~{s.minutes} {L("min", "perc")}{s.pricing_type === "subscription" ? ` · ${everyP(s.period)}` : s.pricing_type === "hourly" ? fill(L(" · pick {0}–{1} h", " · {0}–{1} óra választható"), s.min_hours || 2, s.max_hours || 8) : ""}</div>
-                    {isStudent && <div style={{ fontFamily: B, fontSize: 10.5, color: C.green, fontWeight: 700, marginTop: 4 }}>{L("You pay:", "A te árad:")} {youPay(s)}</div>}
+                    {effPct(s) > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
+                        <Pill bg={C.mintSoft} color={C.greenDeep}>−{effPct(s)}% {discountName(s)}</Pill>
+                        <span style={{ fontFamily: B, fontSize: 10.5, fontWeight: 700, color: C.green }}>
+                          {fill(L("You save {0}", "Megtakarítasz {0}"),
+                                huf(Math.round(basePrice(s) * effPct(s) / 100))
+                                + (s.pricing_type === "hourly" ? L("/hr", "/óra")
+                                   : s.pricing_type === "subscription" ? ` / ${periodShort(s.period)}` : ""))}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </button>
               ))}
@@ -3460,7 +3495,14 @@ function CustomerBookings({ openBooking }) {
       {mine.map((b) => {
         // API mode delivers assigned_name on the row; demo mode looks it up in the full staff list
         const cleanerName = b.assigned_name || allEmployees.find((e) => e.id === b.assigned_to)?.full_name;
-        const co = companies.find((c) => c.id === b.company_id);
+        /* Prefer what the booking itself carries. The lookup below only fills
+           gaps for demo mode and for rows written before the join existed —
+           it is no longer what the card depends on. */
+        const found = companies.find((c) => c.id === b.company_id);
+        const co = (b.company_name || b.company_logo_url)
+          ? { id: b.company_id, name: b.company_name, logo_url: b.company_logo_url,
+              emoji: b.company_emoji, contact_phone: b.company_phone, ...(found || {}) }
+          : found;
         const reviewed = reviews.some((r) => r.booking_id === b.id);
         const svc = b.service_snapshot || {};
         return (
@@ -3470,10 +3512,19 @@ function CustomerBookings({ openBooking }) {
                 <div style={{ width: 40, height: 40, borderRadius: R.md, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>{svc.icon || ""}</div>
                 <div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{svc.name}</div>
-                  <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1 }}>{co ? `${co.emoji} ${co.name}` : ""}</div>
+                  <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 1 }}>{co?.name || b.company_name || ""}</div>
                 </div>
               </div>
-              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>{L("Paid", "Fizetve")}</Pill>} <StatusPill status={b.status} fulfilment={b.fulfilment} /></>
+              {/* A plan you have not paid for has not started.
+
+                  Subscribing created the booking, then opened Stripe — so if
+                  the card failed, the customer was left looking at what read
+                  as a live weekly plan. It is not one: the recurring schedule
+                  is only created when the first payment clears. Say so. */}
+              <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>{L("Paid", "Fizetve")}</Pill>}
+                {b.pricing_type === "subscription" && b.payment_status !== "paid" && b.status === 0
+                  ? <Pill bg={C.amberSoft} color={C.amber}>{L("Not started — pay to begin", "Nem indult el — fizess a kezdéshez")}</Pill>
+                  : <StatusPill status={b.status} fulfilment={b.fulfilment} />}</>
             </div>
 
             {b.status !== 9 && b.status !== 8 && (
@@ -3549,6 +3600,16 @@ function CustomerBookings({ openBooking }) {
               )}
               {b.invoice && (
                 <a href={b.invoice.data} download={b.invoice.name} style={{ flex: 1, textAlign: "center", fontFamily: B, fontWeight: 700, fontSize: 12, padding: "9px 0", borderRadius: 99, border: `1.5px solid ${C.mint}`, color: C.green, textDecoration: "none" }}>{L("Invoice", "Számla")}</a>
+              )}
+              {isLive && b.payment_error && b.payment_status !== "paid" && b.status !== 9 && b.status !== 8 && (
+                /* Stripe's own sentence, not ours.
+                   "The payment didn't go through" tells you to try the same
+                   card again. "Your card was declined" or "insufficient funds"
+                   tells you to use a different one. */
+                <div style={{ width: "100%", background: C.coralSoft, borderRadius: R.md, padding: "9px 12px", marginBottom: 8,
+                              fontFamily: B, fontSize: 11.5, color: C.coral, lineHeight: 1.5 }}>
+                  {L("Payment failed:", "A fizetés nem sikerült:")} {b.payment_error}
+                </div>
               )}
               {isLive && b.payment_status !== "paid" && b.status !== 9 && b.status !== 8 && (
                 <Btn small mint style={{ flex: 1 }} onClick={async () => {
@@ -3663,7 +3724,7 @@ function EmployeeJobs({ openProfile }) {
           </button>
           <div>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 18, color: "#fff" }}>{session.name}</div>
-            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2 }}>{co ? `${co.emoji} ${co.name}` : L("Cleaner", "Takarító")}</div>
+            <div style={{ fontFamily: B, fontSize: 11, color: "#9FB0E8", marginTop: 2 }}>{co?.name || bookings.find((b) => b.company_name)?.company_name || L("Cleaner", "Takarító")}</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
@@ -7640,6 +7701,7 @@ function AdminBookings() {
                             {b.company_name}<br />
                             {dayLabel(b.scheduled_date)} {b.scheduled_slot} · {b.address || "—"}<br />
                             {b.payment_status || "unpaid"}
+                            {b.payment_error && <><br /><span style={{ color: C.coral }}>{b.payment_error}</span></>}
                           </div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>

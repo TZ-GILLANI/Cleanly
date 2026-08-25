@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, hasColumn } from "../db.js";
 import { paymentAlert } from "../lib/alerts.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { notify } from "../lib/notify.js";
@@ -470,6 +470,13 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
               ? { application_fee_amount: payableMinor(platformNetMinor(amountMinor, feeMinor), currency) }
               : {}),
             ...(isSub ? { setup_future_usage: "off_session" } : {}),
+            /* The same id on the PaymentIntent, not just the session.
+
+               When a card is refused, Stripe fires payment_intent.payment_failed
+               and nothing else — no session event. That event carries only the
+               PaymentIntent, so without this the failure arrives with no way to
+               tell which booking it belongs to, and the reason is lost. */
+            metadata: { booking_id: booking.id },
           },
           line_items: lineItems,
           metadata: { booking_id: booking.id, cleano_direct: "1" },
@@ -743,6 +750,39 @@ export async function stripeWebhook(req, res) {
             WHERE id = $1 AND payment_status = 'pending' AND status = 0`,
           [bookingId]);
       }
+      return res.json({ received: true });
+    }
+
+    /* The card was refused, or Stripe rejected the charge outright.
+
+       This is the event Musa kept hitting and could never see: the customer
+       reaches Stripe's own page, the payment fails there, and Stripe reports it
+       as payment_intent.payment_failed — which nothing here listened for. So
+       the booking stayed 'pending', no reason was recorded anywhere, and the
+       only account of what went wrong lived in the Stripe dashboard.
+
+       last_payment_error is Stripe's own sentence. Keep it. */
+    if (event.type === "payment_intent.payment_failed") {
+      const pi = event.data.object;
+      const bookingId = pi.metadata?.booking_id;
+      const why = pi.last_payment_error?.message
+        || pi.last_payment_error?.code
+        || "The payment did not go through.";
+      console.error("payment failed:", bookingId, pi.last_payment_error?.code, pi.last_payment_error?.decline_code, why);
+      if (bookingId) {
+        const cols = (await hasColumn("bookings", "payment_error"))
+          ? "payment_status = 'unpaid', payment_error = $2"
+          : "payment_status = 'unpaid'";
+        const args = (await hasColumn("bookings", "payment_error"))
+          ? [bookingId, String(why).slice(0, 300)]
+          : [bookingId];
+        await query(`UPDATE bookings SET ${cols} WHERE id = $1 AND status = 0`, args);
+      }
+      import("../lib/alerts.js")
+        .then(({ alert }) => alert("pay-failed:" + (pi.last_payment_error?.code || "unknown"),
+          "Cleano: a customer's payment was refused",
+          `booking: ${bookingId}\ncode: ${pi.last_payment_error?.code}\ndecline_code: ${pi.last_payment_error?.decline_code}\nmessage: ${why}`))
+        .catch(() => {});
       return res.json({ received: true });
     }
 

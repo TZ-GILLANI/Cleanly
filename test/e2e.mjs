@@ -164,8 +164,23 @@ const sub = await j("/api/services", { method: "POST", token: coTok, body: { nam
 const subSvcId = sub.data.service?.id;
 const sb = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: dPlus(11), scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
 ok("subscription booked", sb.status === 201);
+/* The rule is one PAID plan per service, not one attempt.
+
+   This used to book a subscription, leave it unpaid, and expect the second
+   attempt to be refused. That is what shipped, and it locked a customer out
+   of their own plan the moment a card was declined: the failed attempt sat at
+   status 0 and counted as active, so the retry was refused with "cancel it
+   first" — for a plan that had never begun. Now an unpaid attempt gets out of
+   the way and a paid one still blocks. */
+const retryAfterFail = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: dPlus(12), scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
+ok("a plan whose payment failed can be attempted again", retryAfterFail.status === 201, JSON.stringify(retryAfterFail.data).slice(0, 120));
+const firstNow = await query("SELECT status FROM bookings WHERE id = $1", [sb.data.booking.id]);
+ok("and the failed attempt is cleared out of the way", firstNow.rows[0].status === 9, String(firstNow.rows[0].status));
+
+const liveSub = retryAfterFail.data.booking;
+await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [liveSub.id]);
 const dup = await j("/api/bookings", { method: "POST", token: custTok, body: { companyId: coId, serviceId: subSvcId, scheduledDate: dPlus(13), scheduledSlot: "11:00", address: "Piac utca 1, Debrecen" } });
-ok("duplicate active subscription blocked", dup.status === 400, JSON.stringify(dup.data));
+ok("a second plan on top of a PAID one is still blocked", dup.status === 400, JSON.stringify(dup.data).slice(0, 120));
 
 /* Walk a booking to "completed" the way the app does.
 
@@ -184,12 +199,12 @@ const completeJob = async (id, token) => {
 
 // UPDATE 1 (3.4): the old "chain" is gone. Completing a visit must NOT create
 // the next one — the scheduler owns the schedule. See test/subscriptions.mjs.
-const done = await completeJob(sb.data.booking.id, coTok);
+const done = await completeJob(liveSub.id, coTok);
 ok("completing a visit no longer chains a new booking", done.status === 200 && !done.data.next, JSON.stringify(done.data.next));
 /* Re-completing is now refused outright rather than silently repeated: a
    finished job cannot go round the ladder again. Either way, no chained
    booking is ever produced, which is what this guards. */
-const again = await j(`/api/bookings/${sb.data.booking.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
+const again = await j(`/api/bookings/${liveSub.id}/status`, { method: "PUT", token: coTok, body: { status: 4 } });
 ok("re-completing stays harmless", !again.data.next, JSON.stringify(again.data).slice(0, 80));
 const subsList = await j("/api/subscriptions", { token: custTok });
 ok("subscriptions endpoint responds for the customer", subsList.status === 200 && Array.isArray(subsList.data.subscriptions), JSON.stringify(subsList.data).slice(0, 80));
