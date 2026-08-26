@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { logAdmin } from "../lib/adminlog.js";
+import { notify } from "../lib/notify.js";
 
 const router = Router();
 
@@ -60,6 +61,17 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
       alert("customer-report", "A company reported a customer",
         `Category: ${category}\nBooking: ${bookingId}\n\n${detail.slice(0, 500)}`);
     } catch {}
+
+    /* Tell the admins. A report nobody is told about is a report nobody acts
+       on — it sat in a table waiting to be noticed by someone who had no
+       reason to look. */
+    try {
+      const admins = await query("SELECT id FROM users WHERE role::text = 'admin' AND is_active IS NOT false");
+      for (const a of admins.rows) {
+        await notify(a.id, "report", "A company has reported a customer",
+          `${category} — ${detail.slice(0, 120)}`, req.body?.bookingId || null).catch(() => {});
+      }
+    } catch (e) { console.error("notify admins of customer report:", e.message); }
 
     res.status(201).json({ report: r.rows[0] });
   } catch (e) {

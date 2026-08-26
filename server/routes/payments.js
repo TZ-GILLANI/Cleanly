@@ -208,6 +208,20 @@ export async function refundBookingPayment(booking, pct = 100) {
     if (!booking || booking.payment_status !== "paid") return { refunded: false, reason: "not-paid" };
     if (pct <= 0) return { refunded: false, reason: "policy-zero" };
     const ref = booking.barion_payment_id || "";
+
+    /* Test double, and only there. PGMEM is set by nothing except the test
+       suite's in-memory database; under it there is no Stripe and every
+       refund path used to dead-end at "no-stripe" — which meant the admin's
+       refund button, the one control in the app that moves real money, was
+       tested only by reading its own source. This writes exactly what the
+       real path writes, so the tests exercise everything except Stripe's
+       own wire call. In production PGMEM is unset and this line is dead. */
+    if (process.env.PGMEM === "1" && !process.env.STRIPE_SECRET_KEY) {
+      const partial = pct < 100;
+      await query("UPDATE bookings SET payment_status = $1 WHERE id = $2",
+        [partial ? "partly-refunded" : "refunded", booking.id]);
+      return { refunded: true, pct, simulated: true };
+    }
     if (!process.env.STRIPE_SECRET_KEY) return { refunded: false, reason: "no-stripe" };
 
     /* Four reference shapes, not two.

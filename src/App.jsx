@@ -290,7 +290,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.9.1";
+const APP_VERSION = "8.0.0";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -1020,7 +1020,24 @@ const canStillCancel = (b, freeH = 48) => {
 
 /* Five glyphs, rounded. Lived inside one component and was called from two
    others, which is a ReferenceError rather than a missing star. */
-const stars = (n) => "".repeat(Math.round(n || 0)) + "".repeat(Math.max(0, 5 - Math.round(n || 0)));
+/* Stars as SHAPES, not characters.
+
+   This was `"★".repeat(n) + "☆".repeat(5 - n)` — and the emoji trim took the
+   two characters out of it months ago, leaving "".repeat() on both sides. It
+   returned an empty string for every rating, so the company could read a
+   review and had no idea whether it was five stars or one. It never threw,
+   never logged, and looked like a blank space nobody questioned.
+
+   Drawn with the same <Star> the rating picker uses, so nothing about it can
+   be emptied by a sweep over text again. */
+const stars = (n) => {
+  const filled = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+  return (
+    <span style={{ display: "inline-flex", gap: 1, verticalAlign: "middle" }} aria-label={`${filled} / 5`}>
+      {[0, 1, 2, 3, 4].map((i) => <Star key={i} filled={i < filled} size={12} />)}
+    </span>
+  );
+};
 
 const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -4387,7 +4404,25 @@ function CompanyJobs({ openProfile }) {
   const isToday = (b) => String(b.scheduled_date).slice(0, 10) === todayISO2;
   const todayJobs = done.filter(isToday);
   const todayRevenue = todayJobs.reduce((a, b) => a + net(b), 0);
-  const subs = open.filter((b) => b.pricing_type === "subscription");
+  /* Live plans, counted as PLANS.
+
+     This counted bookings whose pricing_type happened to be "subscription" —
+     which includes an attempt that never became a plan at all. Someone starts
+     a subscription, the card is refused, and the company is told it has an
+     active subscriber. And because a plan only exists once its first payment
+     clears, subscription_id is the honest test: no id, no plan.
+
+     Distinct ids, so one arrangement counts once however many of its visits
+     are on the board. Cancelled and declined are already out of `open`. */
+  const subs = (() => {
+    const seen = new Set();
+    return open.filter((b) => {
+      if (b.pricing_type !== "subscription" || !b.subscription_id) return false;
+      if (seen.has(b.subscription_id)) return false;
+      seen.add(b.subscription_id);
+      return true;
+    });
+  })();
 
   /* ── What actually needs the owner, right now ──────────────────────────
      "Open jobs" is a number that only ever goes up. These three buckets are
@@ -4502,8 +4537,12 @@ function CompanyJobs({ openProfile }) {
 
       {subs.length > 0 && (
         <div style={{ background: C.navyChip, borderRadius: R.lg, padding: "12px 15px", marginBottom: 14 }}>
-          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{subs.length} active subscription{subs.length > 1 ? "s" : ""} — recurring revenue {huf(subs.reduce((a, b) => a + (b.total_huf || 0), 0))} / cycle</div>
-          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3 }}>{L("Each completed visit automatically schedules the next one with the same cleaner.", "Minden teljesített alkalom automatikusan időpontot foglal a következőre, ugyanazzal a takarítóval.")}</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+            {fill(L("{0} active plan(s) — {1} per visit", "{0} aktív bérlet — alkalmanként {1}"),
+                  subs.length, huf(subs.reduce((a, b) => a + (b.total_huf || 0), 0)))}
+          </div>
+          <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3 }}>{L("Billed monthly. Cancelling stops future charges — anything already paid is settled through a refund request.",
+                 "Havonta számlázzuk. A lemondás leállítja a jövőbeli terheléseket — a már kifizetett összeg visszatérítési kérelemként rendeződik.")}</div>
         </div>
       )}
 
@@ -4759,7 +4798,9 @@ function CompanyClients() {
       const c = map.get(key) || { key, name: b.customer_name || L("Customer", "Ügyfél"), phone: b.customer_phone || null, kind: b.customer_kind || b.customer_type, addresses: new Set(), jobs: 0, done: 0, spend: 0, last: "", hasSub: false };
       c.jobs += 1;
       if (b.status === 4) { c.done += 1; c.spend += (b.total_huf || 0) - (b.service_fee_huf || 0); }
-      if (b.pricing_type === "subscription" && b.status < 8) c.hasSub = true;
+      /* Same test as the counter above: a plan exists only once it has an id.
+         A refused first payment is not a subscriber. */
+      if (b.subscription_id && b.status < 8) c.hasSub = true;
       if (b.address) c.addresses.add(b.address);
       if (String(b.scheduled_date) > c.last) c.last = String(b.scheduled_date).slice(0, 10);
       if (b.customer_phone) c.phone = b.customer_phone;
@@ -7402,7 +7443,7 @@ function AdminCompanies() {
 }
 
 function ComplaintThread({ complaint, role, close, onChange }) {
-  const { fetchComplaintThread, sendComplaintMessage, adminUpdateComplaint, assignComplaint, adminAllCompanies, adminFetchAllCompanies, setComplaintHandler, setCompanyAction, dataVersion } = useStore();
+  const { fetchComplaintThread, sendComplaintMessage, adminUpdateComplaint, assignComplaint, adminAllCompanies, adminFetchAllCompanies, setComplaintHandler, setCompanyAction, adminIssueRefund, dataVersion } = useStore();
   const toast = useToast();
   const [msgs, setMsgs] = React.useState([]);
   const [text, setText] = React.useState("");
@@ -7415,10 +7456,23 @@ function ComplaintThread({ complaint, role, close, onChange }) {
   const [handledBy, setHandledBy] = React.useState(complaint.handled_by || "admin");
   const [coAction, setCoAction] = React.useState(complaint.company_action || "");
   const [cbNote, setCbNote] = React.useState("");
+  const [refundPct, setRefundPct] = React.useState(100);
+  const [refunding, setRefunding] = React.useState(false);
   const load = () => fetchComplaintThread(complaint.id).then((m) => setMsgs(m || []));
   React.useEffect(() => { load(); }, [dataVersion]);
   React.useEffect(() => { if (role === "admin" && (!adminAllCompanies || adminAllCompanies.length === 0)) adminFetchAllCompanies(); }, []);
   const send = async () => { if (!text.trim()) return; const r = await sendComplaintMessage(complaint.id, text.trim()); if (r?.error) toast(r.error, "error"); else { setText(""); load(); } };
+  const doRefund = async () => {
+    if (!window.confirm(fill(L("Send {0}% of this booking back to the customer's card? This cannot be undone.",
+      "Visszaküldi a foglalás {0}%-át az ügyfél kártyájára? Ez nem vonható vissza."), refundPct))) return;
+    setRefunding(true);
+    const r = await adminIssueRefund(complaint.id, refundPct);
+    setRefunding(false);
+    if (r?.error) { toast(r.error, "error"); return; }
+    setStatus("resolved");
+    toast(L("Refund sent ✓", "Visszatérítés elküldve ✓"));
+    onChange && onChange();
+  };
   const doResolve = async () => { const r = await adminUpdateComplaint(complaint.id, { status: "resolved", resolution: note }); if (r?.error) toast(r.error, "error"); else { setStatus("resolved"); toast(L("Marked resolved", "Megoldottnak jelölve")); onChange && onChange(); } };
   const doAssign = async () => { if (!assignTo) return; const r = await assignComplaint(complaint.id, assignTo); if (r?.error) toast(r.error, "error"); else { const co = (adminAllCompanies || []).find((c) => c.id === assignTo); setAssigned(co?.name || "company"); setStatus("in_progress"); toast(L("Assigned to ", "Kiosztva: ") + (co?.name || L("company", "cég"))); onChange && onChange(); } };
   return (
@@ -7528,6 +7582,26 @@ function ComplaintThread({ complaint, role, close, onChange }) {
               {(adminAllCompanies || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <Btn small ghost disabled={!assignTo} onClick={doAssign}>{L("Assign →", "Kiosztás →")}</Btn>
+          </div>
+        </div>
+      )}
+      {/* A refund request is only half a refund. This is the half that sends the
+          money — one press, by a person, never automatic. Admin only. */}
+      {role === "admin" && complaint.booking_id && complaint.booking_payment_status === "paid" && status !== "resolved" && (
+        <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{L("Send a refund", "Visszatérítés küldése")}</div>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>
+            {fill(L("This booking was paid — {0}. Refunding sends the money back to their card and closes this report.",
+                    "Ezt a foglalást kifizették — {0}. A visszatérítés visszaküldi az összeget a kártyájára és lezárja a bejelentést."), huf(Number(complaint.booking_total) || 0))}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 9 }}>
+            <select value={refundPct} onChange={(e) => setRefundPct(Number(e.target.value))}
+              style={{ flex: 1, minWidth: 0, border: `1.5px solid ${C.line}`, borderRadius: R.sm, padding: "8px 10px", fontFamily: B, fontSize: 12, background: C.card, color: C.ink }}>
+              <option value={100}>{L("Full amount", "Teljes összeg")} · {huf(Number(complaint.booking_total) || 0)}</option>
+              <option value={50}>50% · {huf(Math.round((Number(complaint.booking_total) || 0) * 0.5))}</option>
+              <option value={25}>25% · {huf(Math.round((Number(complaint.booking_total) || 0) * 0.25))}</option>
+            </select>
+            <Btn small disabled={refunding} onClick={doRefund}>{refunding ? L("Sending…", "Küldés…") : L("Refund", "Visszatérítés")}</Btn>
           </div>
         </div>
       )}
@@ -7694,6 +7768,117 @@ function CustomerReports({ close, bookings, companies }) {
 }
 
 /* ── 5.9 Reported reviews. Lives with Complaints — same job, same instinct. ── */
+/* EVERY review, and the power to take one down.
+
+   The admin menu carried a "Reviews" tab with nothing rendered behind it —
+   tapping it showed an empty screen. The only reviews an admin could reach
+   were ones a company had already reported, so a review that was abusive or
+   plainly about the wrong business stayed up unless the company flagged it
+   first. */
+function AdminReviews() {
+  const { adminFetchAllReviews, adminRemoveReview, dataVersion } = useStore();
+  const toast = useToast();
+  const [list, setList] = React.useState([]);
+  const [q, setQ] = React.useState("");
+  const [onlyReported, setOnlyReported] = React.useState(false);
+  const [removing, setRemoving] = React.useState(null);
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    adminFetchAllReviews(q, onlyReported).then(setList);
+  }, [q, onlyReported]);
+  React.useEffect(() => { load(); }, [load, dataVersion]);
+
+  return (
+    <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
+      <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 6px" }}>
+        {L("Reviews", "Értékelések")}
+      </div>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 14 }}>
+        {L("Every review left on the platform. Removing one hides it from customers and recalculates the company's rating — the reason is logged against your account.",
+           "Minden értékelés a platformon. Az eltávolítás elrejti az ügyfelek elől, és újraszámolja a cég értékelését — az indoklás rögzül az admin fiókodhoz.")}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={L("Search company, customer or wording…", "Keresés cég, ügyfél vagy szöveg szerint…")}
+          style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.card, border: "none", borderRadius: R.md, padding: "11px 13px", fontFamily: B, fontSize: 12.5, color: C.ink, outline: "none" }} />
+        <button onClick={() => setOnlyReported((v) => !v)}
+          style={{ border: "none", cursor: "pointer", borderRadius: R.md, padding: "0 14px", fontFamily: B, fontWeight: 700, fontSize: 11.5,
+                   background: onlyReported ? C.accent : C.card, color: onlyReported ? "#fff" : C.inkSoft }}>
+          {L("Reported", "Bejelentett")}
+        </button>
+      </div>
+
+      {list.length === 0 && (
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: 30, background: C.card, borderRadius: R.lg }}>
+          {L("No reviews match that.", "Nincs találat.")}
+        </div>
+      )}
+
+      {list.map((r) => (
+        <div key={r.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 15px", marginBottom: 10,
+                                 opacity: r.removed_at ? 0.6 : 1, boxShadow: "0 1px 8px rgba(20,28,58,.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{r.company_name}</div>
+              <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>
+                {r.customer_name} · {dayLabel(r.created_at)}
+              </div>
+            </div>
+            <div style={{ color: C.amber, fontSize: 12.5 }}>{stars(r.rating)}</div>
+          </div>
+
+          {r.comment && (
+            <div style={{ fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 8, lineHeight: 1.55 }}>“{r.comment}”</div>
+          )}
+
+          {r.reported_at && !r.removed_at && (
+            <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "8px 11px", marginTop: 9, fontFamily: B, fontSize: 11, color: C.amber, lineHeight: 1.5 }}>
+              {L("Reported by the company:", "A cég bejelentette:")} {r.reported_reason}
+            </div>
+          )}
+
+          {r.removed_at ? (
+            <div style={{ background: C.coralSoft, borderRadius: R.md, padding: "8px 11px", marginTop: 9, fontFamily: B, fontSize: 11, color: C.coral, lineHeight: 1.5 }}>
+              {L("Removed", "Eltávolítva")} · {r.removed_reason}
+            </div>
+          ) : (
+            <button onClick={() => { setRemoving(r); setReason(""); }}
+              style={{ marginTop: 10, border: `1.5px solid ${C.coral}`, background: "none", color: C.coral, borderRadius: R.md,
+                       padding: "8px 14px", fontFamily: B, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>
+              {L("Remove this review", "Értékelés eltávolítása")}
+            </button>
+          )}
+        </div>
+      ))}
+
+      {removing && (
+        <Sheet close={() => setRemoving(null)} title={L("Remove this review", "Értékelés eltávolítása")}>
+          <div style={{ padding: "2px 2px 8px" }}>
+            <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.55, marginBottom: 12 }}>
+              {L("It stops being shown to customers and the company's rating is recalculated without it. Your reason is kept permanently against your admin account.",
+                 "Az ügyfelek többé nem látják, és a cég értékelése nélküle számolódik újra. Az indoklásod véglegesen rögzül az admin fiókodhoz.")}
+            </div>
+            <Field label={L("Why is it being removed?", "Miért távolítod el?")} area
+              value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Btn full danger disabled={reason.trim().length < 5 || busy} onClick={async () => {
+              setBusy(true);
+              const res = await adminRemoveReview(removing.id, reason.trim());
+              setBusy(false);
+              if (res?.error) return toast(res.error, "error");
+              toast(L("Review removed", "Értékelés eltávolítva"));
+              setRemoving(null);
+              load();
+            }}>{busy ? L("Removing…", "Eltávolítás…") : L("Remove it", "Eltávolítom")}</Btn>
+          </div>
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
 function ReviewReports() {
   const { adminFetchReportedReviews, adminRemoveReview, adminDismissReport } = useStore();
   const toast = useToast();
@@ -8447,15 +8632,31 @@ function BillingList() {
 
           <details style={{ marginTop: 9 }}>
             <summary style={{ fontFamily: B, fontWeight: 700, fontSize: 11, color: C.navySoft, cursor: "pointer" }}>
-              {L("Jobs on this invoice", "A számla tételei")}
+              {L("Every booking behind this figure", "Minden foglalás e mögött az összeg mögött")}
             </summary>
-            <div style={{ marginTop: 6 }}>
+            {/* The statement Musa asked for: which booking, for whom, what the
+                customer paid, and what we charged on it. Enough to write his
+                own invoice from without opening anything else. */}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", fontFamily: B, fontWeight: 700, fontSize: 9.5, color: C.inkFaint, padding: "0 0 4px", borderBottom: `1px solid ${C.line}` }}>
+                <span style={{ flex: 1.6 }}>{L("Booking", "Foglalás")}</span>
+                <span style={{ flex: 1.4 }}>{L("Customer", "Ügyfél")}</span>
+                <span style={{ flex: 1, textAlign: "right" }}>{L("Paid", "Fizetve")}</span>
+                <span style={{ flex: 1, textAlign: "right" }}>{L("Commission", "Jutalék")}</span>
+              </div>
               {c.jobs.map((jb) => (
-                <div key={jb.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: B, fontSize: 11, color: C.inkSoft, padding: "3px 0" }}>
-                  <span>#{jb.orderNo} · {jb.date}</span>
-                  <span>{ft(jb.keptHuf)}{jb.invoiceNo ? ` · ${jb.invoiceNo}` : ""}</span>
+                <div key={jb.id} style={{ display: "flex", alignItems: "center", fontFamily: B, fontSize: 10.5, color: C.inkSoft, padding: "5px 0", borderBottom: `1px solid ${C.line}55` }}>
+                  <span style={{ flex: 1.6, minWidth: 0 }}>#{jb.orderNo} · {jb.date}</span>
+                  <span style={{ flex: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{jb.customerName || "—"}</span>
+                  <span style={{ flex: 1, textAlign: "right" }}>{ft(jb.totalHuf)}</span>
+                  <span style={{ flex: 1, textAlign: "right", color: C.ink, fontWeight: 700 }}>{ft(jb.commissionHuf)}</span>
                 </div>
               ))}
+              <div style={{ display: "flex", fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.ink, padding: "7px 0 0" }}>
+                <span style={{ flex: 3 }}>{fill(L("{0} bookings", "{0} foglalás"), c.jobs.length)}</span>
+                <span style={{ flex: 1, textAlign: "right" }}>{ft(c.jobs.reduce((a, x) => a + (x.totalHuf || 0), 0))}</span>
+                <span style={{ flex: 1, textAlign: "right" }}>{ft(c.jobs.reduce((a, x) => a + (x.commissionHuf || 0), 0))}</span>
+              </div>
             </div>
           </details>
 
@@ -8540,6 +8741,7 @@ function AdminPanel({ tab }) {
         {tab === "users" && <AdminUsers />}
         {tab === "bookings" && <AdminBookings />}
         {tab === "complaints" && <><CustomerReportQueue /><ReviewReports /><AdminComplaints /></>}
+        {tab === "reviews" && <AdminReviews />}
         {tab === "log" && <AdminLog />}
       </div>
     </div>

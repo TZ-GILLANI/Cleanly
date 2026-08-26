@@ -58,15 +58,49 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS reschedule JSONB;
 
 
+-- 5 ── The two report buttons ───────────────────────────────────────
+-- NEW. This is why "report this customer" and "report this review"
+-- both refused to work: they write to a table and to columns that sit
+-- near the end of schema.sql — added after your database was first
+-- built, and never run since, because the full file times out in this
+-- editor. The buttons were fine. There was nowhere to put the report.
+
+CREATE TABLE IF NOT EXISTS customer_reports (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id   UUID REFERENCES bookings(id) ON DELETE SET NULL,
+  customer_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company_id   UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  reported_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+  category     TEXT NOT NULL,          -- abusive | absent | unsafe | payment | other
+  detail       TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'open',   -- open | reviewed | dismissed
+  admin_note   TEXT,
+  handled_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+  handled_at   TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_customer_reports_customer ON customer_reports (customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_reports_open ON customer_reports (status);
+
+-- Review moderation: the company reports, an admin decides, every
+-- removal is logged with who did it and why.
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reported_at     TIMESTAMPTZ;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reported_reason TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS removed_at      TIMESTAMPTZ;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS removed_by      UUID;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS removed_reason  TEXT;
+
+
 -- ═══════════════════════════════════════════════════════════════════
 --  CHECK IT WORKED
---  Run this second query. You want four rows back.
+--  Run this second query. You want six rows back.
 -- ═══════════════════════════════════════════════════════════════════
 
 SELECT table_name, column_name, data_type, column_default
 FROM   information_schema.columns
 WHERE  (table_name = 'companies' AND column_name IN ('service_areas', 'eu_vat'))
    OR  (table_name = 'bookings'  AND column_name IN ('payment_error', 'reschedule'))
+   OR  (table_name = 'reviews'   AND column_name IN ('reported_at', 'removed_at'))
 ORDER  BY table_name, column_name;
 
 -- Expected:
@@ -74,6 +108,8 @@ ORDER  BY table_name, column_name;
 --   bookings   | reschedule    | jsonb |
 --   companies  | eu_vat        | text  |
 --   companies  | service_areas | jsonb | '[]'::jsonb
+--   reviews    | removed_at    | timestamp with time zone |
+--   reviews    | reported_at   | timestamp with time zone |
 --
 -- Then open  https://<your-render-url>/api/health  in a browser.
 -- You want:  "version":"7.9.1"  and  "schema":"ready"

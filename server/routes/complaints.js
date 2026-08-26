@@ -60,6 +60,7 @@ router.get("/", requireAuth, async (req, res) => {
                 bco.name           AS booking_company_name,
                 b.scheduled_date, b.scheduled_slot, b.address AS booking_address,
                 b.status AS booking_status, b.total_huf AS booking_total,
+                b.payment_status AS booking_payment_status,
                 b.service_snapshot AS booking_service
            FROM complaints c
            JOIN users u        ON u.id = c.user_id
@@ -138,6 +139,49 @@ router.put("/:id/assign", requireAuth, requireRole("admin"), async (req, res) =>
 });
 
 /* PUT /api/complaints/:id — update status/resolution. Admin OR the assigned company. */
+/* POST /api/complaints/:id/refund — an admin actually pays the refund back.
+
+   Cancelling raises a refund REQUEST and moves no money; that was the point.
+   But a request nobody can act on is just a note: the admin could read it,
+   mark it resolved, and the customer would still be waiting. This is the other
+   half — one deliberate press, by a person, that sends the money.
+
+   Deliberately admin-only. A company deciding to refund out of the platform's
+   Stripe account is not a decision the company gets to make. */
+router.post("/:id/refund", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const c = await query("SELECT * FROM complaints WHERE id = $1", [req.params.id]);
+    if (!c.rows.length) return res.status(404).json({ error: "Not found" });
+    const bookingId = c.rows[0].booking_id;
+    if (!bookingId) return res.status(400).json({ error: "This report is not attached to a booking, so there is nothing to refund." });
+
+    const b = await query("SELECT * FROM bookings WHERE id = $1", [bookingId]);
+    if (!b.rows.length) return res.status(404).json({ error: "That booking no longer exists" });
+    if (b.rows[0].payment_status !== "paid")
+      return res.status(400).json({ error: `Nothing to refund — this booking is ${b.rows[0].payment_status}.` });
+
+    const pct = Math.min(100, Math.max(1, Number(req.body?.pct) || 100));
+    const { refundBookingPayment } = await import("./payments.js");
+    const out = await refundBookingPayment(b.rows[0], pct);
+    if (!out.refunded)
+      return res.status(400).json({ error: `The refund did not go through: ${out.reason || out.error || "unknown"}` });
+
+    await query(
+      `UPDATE complaints SET status = 'resolved', resolved_at = NOW(),
+              resolution = COALESCE(resolution, '') || $1 WHERE id = $2`,
+      [`\nRefunded ${pct}% by an admin.`, req.params.id]);
+    logAdmin(req, "refund_issued", "booking", bookingId, `${pct}% on complaint ${req.params.id}`);
+    await notify(c.rows[0].user_id, "complaint", "Your refund has been sent",
+      pct === 100 ? "The full amount is on its way back to your card."
+                  : `${pct}% of the amount is on its way back to your card.`, bookingId).catch(() => {});
+
+    res.json({ ok: true, refunded: true, pct });
+  } catch (e) {
+    console.error("issue refund:", e.message);
+    res.status(500).json({ error: "Could not issue the refund" });
+  }
+});
+
 router.put("/:id", requireAuth, async (req, res) => {
   const { status, resolution } = req.body || {};
   if (!["open", "in_progress", "resolved"].includes(status)) return res.status(400).json({ error: "Invalid status" });

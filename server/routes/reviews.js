@@ -123,6 +123,22 @@ router.post("/:id/report", requireAuth, requireRole("company"), async (req, res)
         WHERE id = $2 AND company_id = $3 AND removed_at IS NULL RETURNING id`,
       [reason, req.params.id, req.user.companyId]);
     if (!r.rows.length) return res.status(404).json({ error: "Review not found" });
+
+    /* Send it to the admins, who are the only people who can act on it.
+
+       The report was written to the review row and that was the end of it —
+       there is an admin moderation queue, but nothing ever told an admin to go
+       and look at it. A report that reaches no one is the same as no report. */
+    try {
+      const { notify } = await import("../lib/notify.js");
+      const co = await query("SELECT name FROM companies WHERE id = $1", [req.user.companyId]);
+      const admins = await query("SELECT id FROM users WHERE role::text = 'admin' AND is_active IS NOT false");
+      for (const a of admins.rows) {
+        await notify(a.id, "report", "A company has reported a review",
+          `${co.rows[0]?.name || "A company"} says: ${reason.slice(0, 140)}`, null).catch(() => {});
+      }
+    } catch (e) { console.error("notify admins of review report:", e.message); }
+
     res.json({ reported: true });
   } catch { res.status(500).json({ error: "Could not report the review" }); }
 });
@@ -138,6 +154,42 @@ router.get("/reported", requireAuth, requireRole("admin"), async (req, res) => {
         ORDER BY r.reported_at DESC`);
     res.json({ reviews: r.rows });
   } catch { res.status(500).json({ error: "Could not load the queue" }); }
+});
+
+/* EVERY review, for the admin.
+
+   The admin menu had a "Reviews" tab with nothing behind it — tapping it
+   showed an empty screen. The only reviews an admin could reach were the ones
+   a company had already reported, which meant a review that was abusive,
+   defamatory or plainly about the wrong business could not be touched unless
+   the company happened to flag it first.
+
+   Search by company, customer or wording. Removed ones stay in the list,
+   marked, because a moderation log you cannot read is not a log. */
+router.get("/admin", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const onlyReported = String(req.query.reported || "") === "1";
+    const rows = await query(
+      `SELECT r.id, r.stars AS rating, r.body AS comment, r.body_i18n, r.created_at,
+              r.reported_at, r.reported_reason, r.removed_at, r.removed_reason,
+              u.full_name AS customer_name, c.name AS company_name, c.id AS company_id
+         FROM reviews r
+         JOIN users u ON u.id = r.customer_id
+         JOIN companies c ON c.id = r.company_id
+        ORDER BY r.created_at DESC
+        LIMIT 500`);
+    let list = rows.rows;
+    if (onlyReported) list = list.filter((x) => x.reported_at && !x.removed_at);
+    if (q) list = list.filter((x) =>
+      String(x.company_name || "").toLowerCase().includes(q)
+      || String(x.customer_name || "").toLowerCase().includes(q)
+      || String(x.comment || "").toLowerCase().includes(q));
+    res.json({ reviews: list });
+  } catch (e) {
+    console.error("admin reviews:", e.message);
+    res.status(500).json({ error: "Could not load reviews" });
+  }
 });
 
 /* Admin decides the report was unfounded — the review stays, the flag clears. */

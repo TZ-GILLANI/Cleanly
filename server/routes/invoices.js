@@ -244,6 +244,7 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
     const r = await query(
       `SELECT b.id, b.order_no, b.scheduled_date, b.total_huf, b.service_fee_huf,
               b.platform_net_minor, b.fee_invoice_no, b.fee_invoice_at,
+              cu.full_name AS customer_name,
               c.id AS company_id,
               COALESCE(NULLIF(c.billing_name,''), c.name) AS billing_name,
               c.name AS company_name, c.tax_id,
@@ -253,6 +254,7 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
          FROM bookings b
          JOIN companies c ON c.id = b.company_id
          LEFT JOIN users u ON u.id = c.owner_id
+         LEFT JOIN users cu ON cu.id = b.customer_id
         WHERE b.status = 4 AND b.payment_status = 'paid' AND b.service_fee_huf > 0
           AND (($1 = true AND b.fee_invoice_no IS NOT NULL)
             OR ($1 = false AND b.fee_invoice_no IS NULL))
@@ -281,6 +283,7 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
       const g = byCompany.get(row.company_id);
       g.jobs.push({
         id: row.id, orderNo: row.order_no, date: isoDate(row.scheduled_date),
+        customerName: row.customer_name || null,
         totalHuf: Number(row.total_huf) || 0,
         commissionHuf: Number(row.service_fee_huf) || 0,
         keptHuf: kept,

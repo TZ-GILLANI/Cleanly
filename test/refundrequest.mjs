@@ -154,6 +154,79 @@ console.log("\n── the two cases that still refund by themselves ──");
   ok("nor does cancelling a plan", !/await refundBookingPayment\(b, 100\)/.test(subs));
 }
 
+/* ── AND THE OTHER HALF: someone has to be able to say yes ────────────────
+   A request nobody can act on is a note. The admin — not the company, not
+   the customer, not a timer — presses once and the money goes back. ── */
+console.log("\n── an admin can actually issue the refund ──");
+{
+  /* A real admin account — the auth middleware re-reads the role from the
+     database on every request, so a borrowed token cannot fake one. */
+  await j("/api/auth/register", { method: "POST", body: {
+    fullName: "Root", email: "rr-a@t.hu", password: "secret123", role: "customer", customerType: "resident",
+    city: "Debrecen", address: "Piac utca 2", phone: "+36703031942", termsAccepted: true } });
+  await query("UPDATE users SET role = 'admin', is_super = true WHERE email = $1", ["rr-a@t.hu"]);
+  const adTok = (await j("/api/auth/login", { method: "POST",
+    body: { email: "rr-a@t.hu", password: "secret123" } })).data.token;
+  const coTok = (await j("/api/auth/login", { method: "POST",
+    body: { email: "rr-b@t.hu", password: "secret123" } })).data.token;
+
+  const b = await book(svcId, 24);
+  await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [b.id]);
+  await j(`/api/bookings/${b.id}/status`, { method: "PUT", token: cuTok, body: { status: 9 } });
+  const req = (await query(
+    "SELECT * FROM complaints WHERE booking_id = $1 ORDER BY created_at DESC LIMIT 1", [b.id])).rows[0];
+  ok("the cancel raised a request to act on", !!req);
+
+  const asCustomer = await j(`/api/complaints/${req.id}/refund`, { method: "POST", token: cuTok });
+  ok("the customer cannot refund themselves", asCustomer.status === 403, String(asCustomer.status));
+  const asCompany = await j(`/api/complaints/${req.id}/refund`, { method: "POST", token: coTok });
+  ok("nor can the company reach into the platform's Stripe account", asCompany.status === 403, String(asCompany.status));
+  ok("and nothing moved while they tried",
+     (await query("SELECT payment_status FROM bookings WHERE id = $1", [b.id])).rows[0].payment_status === "paid");
+
+  const done = await j(`/api/complaints/${req.id}/refund`, { method: "POST", token: adTok, body: { pct: 100 } });
+  ok("the admin can", done.status === 200, JSON.stringify(done.data).slice(0, 140));
+  const after = (await query("SELECT payment_status FROM bookings WHERE id = $1", [b.id])).rows[0];
+  ok("and the booking is now refunded", after.payment_status === "refunded", String(after.payment_status));
+  const cl = (await query("SELECT status, resolution FROM complaints WHERE id = $1", [req.id])).rows[0];
+  ok("the request closes itself — no second chore", cl.status === "resolved", String(cl.status));
+  ok("with a record of what was sent", /Refunded 100%/.test(cl.resolution || ""), String(cl.resolution));
+
+  const twice = await j(`/api/complaints/${req.id}/refund`, { method: "POST", token: adTok });
+  ok("pressing it twice cannot pay twice", twice.status === 400, JSON.stringify(twice.data).slice(0, 120));
+
+  const unpaid = await book(svcId, 25);
+  const c2 = (await query(
+    `INSERT INTO complaints (user_id, booking_id, subject, body) VALUES ($1,$2,'x','y') RETURNING id`,
+    [cuId, unpaid.id])).rows[0].id;
+  const none = await j(`/api/complaints/${c2}/refund`, { method: "POST", token: adTok });
+  ok("a booking that was never paid refuses politely", none.status === 400 && /Nothing to refund/.test(none.data.error || ""), JSON.stringify(none.data).slice(0, 120));
+
+  const detached = (await query(
+    `INSERT INTO complaints (user_id, subject, body) VALUES ($1,'no booking','y') RETURNING id`, [cuId])).rows[0].id;
+  const nb = await j(`/api/complaints/${detached}/refund`, { method: "POST", token: adTok });
+  ok("a report with no booking on it says so", nb.status === 400, JSON.stringify(nb.data).slice(0, 120));
+
+  const partialB = await book(svcId, 26);
+  await query("UPDATE bookings SET payment_status = 'paid' WHERE id = $1", [partialB.id]);
+  const c3 = (await query(
+    `INSERT INTO complaints (user_id, booking_id, subject, body) VALUES ($1,$2,'half','y') RETURNING id`,
+    [cuId, partialB.id])).rows[0].id;
+  const half = await j(`/api/complaints/${c3}/refund`, { method: "POST", token: adTok, body: { pct: 50 } });
+  ok("a half refund is possible when only half went wrong", half.status === 200 && half.data.pct === 50, JSON.stringify(half.data).slice(0, 120));
+}
+
+console.log("\n── the admin screen offers it, and only where money exists ──");
+{
+  const fs = await import("fs");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  ok("the refund control is in the complaint sheet", /adminIssueRefund\(complaint\.id, refundPct\)/.test(app));
+  ok("only for an admin", /role === "admin" && complaint\.booking_id && complaint\.booking_payment_status === "paid"/.test(app));
+  ok("and it asks before sending", /window\.confirm\(fill\(L\("Send \{0\}% of this booking back/.test(app));
+  const co = fs.readFileSync(new URL("../server/routes/complaints.js", import.meta.url), "utf8");
+  ok("the list tells the screen whether it was paid", /b\.payment_status AS booking_payment_status/.test(co));
+}
+
 console.log("\n── the screens no longer promise a refund that will not happen ──");
 {
   const fs = await import("fs");

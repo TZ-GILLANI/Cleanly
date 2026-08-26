@@ -1168,6 +1168,20 @@ export function StoreProvider({ children }) {
     try { await api(`/reviews/${id}/report`, { method: "POST", body: { reason } }); setDataVersion((v) => v + 1); return {}; }
     catch (e) { return { error: e.message }; }
   };
+  /* The other half of a refund request: an admin actually sending the money. */
+  const adminIssueRefund = async (complaintId, pct) => {
+    if (!isApiMode) return { error: "Live mode only" };
+    try { const r = await api(`/complaints/${complaintId}/refund`, { method: "POST", body: { pct: pct || 100 } }); await refreshData(); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+  const adminFetchAllReviews = async (q, onlyReported) => {
+    if (!isApiMode) return [];
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (onlyReported) params.set("reported", "1");
+    try { const r = await api("/reviews/admin" + (params.toString() ? "?" + params : "")); return r.reviews || []; }
+    catch { return []; }
+  };
   const adminFetchReportedReviews = async () => {
     if (!isApiMode) return [];
     try { const r = await api("/reviews/reported"); return r.reviews || []; } catch { return []; }
@@ -1219,7 +1233,7 @@ export function StoreProvider({ children }) {
     toggleTask, setStatus, markNoticeRead, deleteNotice, uploadInvoice, archiveBooking,
     assignBooking, createInvite, deleteInvite, sendNotice, sendCompanyMessage, upsertService, removeEmployee, fetchPendingCleaners, decideCleaner, setComplaintHandler, setCompanyAction, fetchCompanyReviews, hideDeletedIdentity,
     adminUpdateCompany, adminUpdateUser, adminDeleteUser, adminFetchStats, adminFetchUsers,
-    reportReview, adminFetchReportedReviews, adminRemoveReview, adminDismissReport,
+    reportReview, adminFetchReportedReviews, adminFetchAllReviews, adminRemoveReview, adminDismissReport, adminIssueRefund,
     adminUserFull, adminEditCompanyDetails,
     fetchInvoices, uploadPartnerInvoice, fetchOutstandingInvoices,
     reportCustomer, adminCustomerReports, adminHandleCustomerReport,
