@@ -5807,15 +5807,20 @@ function ReportCustomerBox({ booking }) {
                "Ez csak a Cleanóhoz jut el — az ügyfél soha nem értesül róla és nem látja. Senkit nem függesztünk fel automatikusan; minden bejelentést ember olvas el.")}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 13 }}>
+            {/* The sheet's own background IS C.bg, so chips and textarea in
+                C.bg vanished into it — leaving stray text that looked mis-
+                centred, and a message box with no visible edge. Card colour
+                plus a line gives every control its outline back. */}
             {CATS.map(([id, lbl]) => (
               <button key={id} onClick={() => setCat(id)}
-                style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99,
-                  background: cat === id ? C.accent : C.bg, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
+                style={{ cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99,
+                  border: `1.5px solid ${cat === id ? C.accent : C.line}`,
+                  background: cat === id ? C.accent : C.card, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
             ))}
           </div>
           <textarea rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={2000}
             placeholder={L("What happened? Dates, times and what was said or done help us act on it.", "Mi történt? A dátum, az időpont és az elhangzottak segítenek intézkedni.")}
-            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 12, resize: "vertical" }} />
+            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 12, resize: "vertical" }} />
           <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
             <Btn full ghost onClick={() => setOpen(false)}>{L("Cancel", "Mégse")}</Btn>
             <Btn full disabled={busy || detail.trim().length < 10} onClick={async () => {
@@ -5925,7 +5930,7 @@ function CompanyReviews() {
             </div>
             <textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500}
               placeholder={L("e.g. abusive language, not a real customer, mentions a different company", "pl. sértő hangnem, nem valódi ügyfél, más céget említ")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <Btn full ghost onClick={() => setReporting(null)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full disabled={reason.trim().length < 5 || rBusy} onClick={async () => {
@@ -7960,7 +7965,7 @@ function ReviewReports() {
             </div>
             <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={400}
               placeholder={L("Why it breaks the rules", "Miért sérti a szabályokat")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <Btn full ghost onClick={() => setRemoving(null)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full danger disabled={reason.trim().length < 5 || busy} onClick={async () => {
@@ -8046,7 +8051,7 @@ function CustomerReportQueue() {
             </div>
             <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
               placeholder={acting.decision === "reviewed" ? L("e.g. called the customer, warned them, company reassigned", "pl. felhívtuk az ügyfelet, figyelmeztettük, a cég új takarítót adott") : L("e.g. spoke to both sides, misunderstanding", "pl. mindkét féllel beszéltünk, félreértés volt")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
               <Btn full ghost onClick={() => setActing(null)}>{L("Cancel", "Mégse")}</Btn>
               <Btn full disabled={busy || note.trim().length < 5} onClick={async () => {
