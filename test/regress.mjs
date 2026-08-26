@@ -103,8 +103,31 @@ const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
 const past = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: yesterday, scheduledSlot: "10:00", address: "Kossuth u 1" } });
 ok("a booking in the past is refused", past.status === 400, JSON.stringify(past.data));
 const today = new Date().toISOString().slice(0, 10);
-const todayOk = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: today, scheduledSlot: "07:00", address: "Kossuth u 1" } });
-ok("today is still allowed", todayOk.status === 201, JSON.stringify(todayOk.data).slice(0, 120));
+
+/* Today is still bookable — but not at seven in the morning when the suite is
+   running at two in the afternoon. This asserted "today is allowed" with a
+   fixed early hour, which quietly meant "a slot that has already gone is
+   allowed": the very bug Musa hit when he booked 08:00 at 13:00.
+
+   So: a slot comfortably ahead of the clock, and if the working day has run
+   out, tomorrow — the claim is about the DAY being allowed, not about any
+   particular hour still being available at midnight. */
+const aheadH = new Date(Date.now() + 3 * 3600e3);
+const useTomorrow = aheadH.getHours() >= 20 || aheadH.getDate() !== new Date().getDate();
+const okDate = useTomorrow ? new Date(Date.now() + 864e5).toISOString().slice(0, 10) : today;
+const okSlot = useTomorrow ? "10:00" : String(aheadH.getHours()).padStart(2, "0") + ":00";
+const todayOk = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: okDate, scheduledSlot: okSlot, address: "Kossuth u 1" } });
+ok("a slot still ahead of the clock is allowed", todayOk.status === 201, `${okDate} ${okSlot} → ${JSON.stringify(todayOk.data).slice(0, 120)}`);
+
+/* And the hour that has gone is not. */
+const goneH = new Date(Date.now() - 3 * 3600e3);
+if (goneH.getDate() === new Date().getDate()) {
+  const gone = await j("/api/bookings", { method: "POST", token: cu.token, body: {
+    companyId: cid, serviceId: svc.id, scheduledDate: today,
+    scheduledSlot: String(goneH.getHours()).padStart(2, "0") + ":00", address: "Kossuth u 1" } });
+  ok("an hour earlier today is refused", gone.status === 400, JSON.stringify(gone.data).slice(0, 120));
+  ok("and says the time has passed", /already passed/i.test(gone.data.error || ""), gone.data.error);
+}
 const farOff = await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(500), scheduledSlot: "10:00", address: "Kossuth u 1" } });
 ok("a booking 500 days out is refused as a typo", farOff.status === 400, JSON.stringify(farOff.data));
 

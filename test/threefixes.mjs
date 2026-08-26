@@ -167,5 +167,67 @@ console.log("\n── 3. the cleaner can find the customer ──");
   ok("and it does nothing at all without an address", /if \(!address\) return null;/.test(app));
 }
 
+console.log("\n── the uploader is in a list that can actually contain a finished job ──");
+{
+  /* It was rendered inside the OPEN jobs loop, whose filter is status < 4,
+     while the box itself returns null unless status IS 4. Two conditions that
+     can never both hold, so it had never appeared once — which is why "there
+     is no place to upload the invoice" was reported twice. */
+  const fs = await import("fs");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+
+  const at = app.indexOf("<PartnerInvoiceBox booking={b} />");
+  ok("the uploader is rendered somewhere", at > -1);
+
+  /* Which loop encloses it: the nearest .map above it. */
+  const before2 = app.slice(0, at);
+  const lastDone = before2.lastIndexOf("{done.map((b) => (");
+  const lastOpen = before2.lastIndexOf("].sort((a, b) => (a.assigned_to");
+  ok("and the loop it sits in is the COMPLETED list, not the open one",
+     lastDone > lastOpen, `done@${lastDone} open@${lastOpen}`);
+  ok("the open-jobs card no longer pretends to hold it",
+     /This list is OPEN jobs \(status < 4\)/.test(app));
+  ok("the box still refuses an unfinished job", /if \(booking\.status !== 4\) return null;/.test(app));
+}
+
+console.log("\n── a cancelled plan is one entry, not twelve ──");
+{
+  const fs = await import("fs");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  ok("cancelled plan visits collapse to the earliest one",
+     /const collapseCancelledPlans = \(list\) => \{/.test(app));
+  ok("a cancelled ONE-OFF keeps its own card", /!b\.subscription_id \|\| b\.status < 8 \|\| keep\.has\(b\.id\)/.test(app));
+  ok("both the customer's and the company's lists use it",
+     (app.match(/collapseCancelledPlans\(nextVisitOnly\(allMine\)\)/g) || []).length === 2);
+  ok("the card says the PLAN was cancelled, not just a booking",
+     /L\("Plan cancelled", "Csomag lemondva"\)/.test(app));
+  ok("and how many visits went with it",
+     /The whole plan was cancelled — \{0\} upcoming visits with it/.test(app));
+  ok("only when it really stands for more than one", /cancelledSiblings\(allMine, b\) > 1/.test(app));
+
+  /* The collapse itself, on rows shaped like the real thing. */
+  const rows = [
+    { id: "a", subscription_id: "s1", status: 9, scheduled_date: "2026-09-01", scheduled_slot: "10:00" },
+    { id: "b", subscription_id: "s1", status: 9, scheduled_date: "2026-09-08", scheduled_slot: "10:00" },
+    { id: "c", subscription_id: "s1", status: 9, scheduled_date: "2026-09-15", scheduled_slot: "10:00" },
+    { id: "d", subscription_id: null, status: 9, scheduled_date: "2026-09-02", scheduled_slot: "10:00" },
+    { id: "e", subscription_id: "s1", status: 4, scheduled_date: "2026-08-25", scheduled_slot: "10:00" },
+  ];
+  const firstOf = new Map();
+  for (const b of rows) {
+    if (!b.subscription_id || b.status < 8) continue;
+    const k = b.scheduled_date + b.scheduled_slot;
+    const cur = firstOf.get(b.subscription_id);
+    if (!cur || k < cur.k) firstOf.set(b.subscription_id, { k, id: b.id });
+  }
+  const keep = new Set([...firstOf.values()].map((x) => x.id));
+  const shown = rows.filter((b) => !b.subscription_id || b.status < 8 || keep.has(b.id));
+  ok("three cancelled plan visits become one", shown.filter((b) => b.subscription_id && b.status >= 8).length === 1);
+  ok("the earliest is the one kept", shown.some((b) => b.id === "a"));
+  ok("the cancelled one-off survives on its own", shown.some((b) => b.id === "d"));
+  ok("and a COMPLETED visit of that plan is untouched history", shown.some((b) => b.id === "e"));
+  ok("so five rows become three", shown.length === 3, String(shown.length));
+}
+
 console.log(`\n════ THREE FIXES: ${pass} passed, ${fail} failed ════\n`);
 process.exit(fail ? 1 : 0);

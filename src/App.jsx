@@ -1,5 +1,6 @@
 import ReactDOM from "react-dom";
 import React, { useState, useEffect, useMemo, useContext, createContext, useCallback } from "react";
+import { leadMinutes } from "./lib/bookingRules.js";
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from "libphonenumber-js";
 import { Capacitor } from "@capacitor/core";
 import { StoreProvider, useStore, isLive } from "./store.jsx";
@@ -289,7 +290,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.5.0";
+const APP_VERSION = "7.8.0";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -537,6 +538,32 @@ const nextVisitOnly = (list) => {
   return list.filter((b) => !b.subscription_id || b.status >= 4 || keep.has(b.id));
 };
 
+/* A cancelled plan is ONE thing that happened, not twelve.
+
+   Cancelling a subscription cancels every visit it had already put on the
+   calendar — and with the horizon now three months, that is twelve rows for a
+   weekly plan. All twelve turned up as separate cancelled cards, so ending one
+   arrangement filled the screen with wreckage and buried the real history
+   underneath it.
+
+   So the cancelled visits of a plan collapse to the earliest one, which stands
+   for the lot and says how many it speaks for. A cancelled ONE-OFF keeps its
+   own card: that really was a single thing that happened. */
+const collapseCancelledPlans = (list) => {
+  const first = new Map();
+  for (const b of list) {
+    if (!b.subscription_id || b.status < 8) continue;   // 8 declined · 9 cancelled
+    const cur = first.get(b.subscription_id);
+    const key = isoOf(b.scheduled_date) + (b.scheduled_slot || "");
+    if (!cur || key < cur.key) first.set(b.subscription_id, { key, id: b.id });
+  }
+  const keep = new Set([...first.values()].map((x) => x.id));
+  return list.filter((b) => !b.subscription_id || b.status < 8 || keep.has(b.id));
+};
+const cancelledSiblings = (list, b) =>
+  !b?.subscription_id ? 0
+  : list.filter((x) => x.subscription_id === b.subscription_id && x.status >= 8).length;
+
 /* How many more visits are already booked behind this one. */
 const laterVisits = (list, b) =>
   !b?.subscription_id ? 0
@@ -652,11 +679,32 @@ const slotBusy = (av, iso, slot, serviceId) => {
   return Array.isArray(perSvc) && perSvc.includes(h);
 };
 /* The hours a customer can actually book on this date, for this service. */
+/* An hour that has already gone is not a free slot.
+
+   Only the DAY was ever checked, so at one in the afternoon the picker still
+   offered eight that morning — and the server took it. Today needs the clock
+   as well as the calendar; every other day is unaffected.
+
+   The lead time mirrors BOOKING_LEAD_MIN on the server. Showing a slot the
+   server will refuse is worse than not showing it: the customer picks it,
+   fills in the address, and only then is told no. */
+const notPastToday = (iso, hours) => {
+  const today = localISO(new Date());
+  if (isoOf(iso) !== today) return hours;
+  /* The server's number, not one of our own — see src/lib/bookingRules.js. */
+  const cutoff = Date.now() + leadMinutes() * 60000;
+  return hours.filter((h) => {
+    const [hh, mm] = String(h).slice(0, 5).split(":").map(Number);
+    const d = new Date();
+    d.setHours(hh, mm || 0, 0, 0);
+    return d.getTime() >= cutoff;
+  });
+};
 const openSlots = (av, iso, serviceId) => {
-  if (!av) return HOURS;
+  if (!av) return notPastToday(iso, HOURS);
   if (av.paused) return [];
   if (Array.isArray(av.closed) && av.closed.includes(isoOf(iso))) return [];
-  return daySlots(av, iso).filter((h) => !slotBusy(av, iso, h, serviceId));
+  return notPastToday(iso, daySlots(av, iso).filter((h) => !slotBusy(av, iso, h, serviceId)));
 };
 const slotOpen = (av, iso, slot, serviceId) => openSlots(av, iso, serviceId).includes(String(slot).slice(0, 5));
 /* A day is only "closed" if NOTHING at all can be booked — never grey out the
@@ -3634,7 +3682,7 @@ function CustomerBookings({ openBooking }) {
   const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment, fetchSubscriptions, subscriptionAction, withdrawReschedule } = useStore();
   const toast = useToast();
   const allMine = bookings.filter((b) => b.customer_id === session.userId || b.customer_name === session.name);
-  const mine = nextVisitOnly(allMine);
+  const mine = collapseCancelledPlans(nextVisitOnly(allMine));
   const [plans, setPlans] = useState([]);
   const [cancelPlan, setCancelPlan] = useState(null);
   const reloadPlans = React.useCallback(() => { fetchSubscriptions().then(setPlans); }, []);
@@ -3762,8 +3810,22 @@ function CustomerBookings({ openBooking }) {
               <>{b.payment_status === "paid" && <Pill bg={C.mintSoft} color={C.green}>{L("Paid", "Fizetve")}</Pill>}
                 {b.pricing_type === "subscription" && b.payment_status !== "paid" && b.status === 0
                   ? <Pill bg={C.amberSoft} color={C.amber}>{L("Not started — pay to begin", "Nem indult el — fizess a kezdéshez")}</Pill>
-                  : <StatusPill status={b.status} fulfilment={b.fulfilment} />}</>
+                  : b.subscription_id && b.status >= 8
+                    ? <Pill bg={C.coralSoft} color={C.coral}>{L("Plan cancelled", "Csomag lemondva")}</Pill>
+                    : <StatusPill status={b.status} fulfilment={b.fulfilment} />}</>
             </div>
+
+            {/* One cancelled card stands for the whole cancelled plan, so it
+                has to say how many visits it speaks for — otherwise it reads
+                as one lost booking rather than the arrangement ending. */}
+            {b.subscription_id && b.status >= 8 && cancelledSiblings(allMine, b) > 1 && (
+              <div style={{ background: C.coralSoft, borderRadius: R.md, padding: "8px 12px", marginTop: 11,
+                            fontFamily: B, fontSize: 11, color: C.coral, lineHeight: 1.5 }}>
+                {fill(L("The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.",
+                        "A teljes csomag lemondva — vele együtt {0} közelgő alkalom. Több terhelés nem lesz."),
+                      cancelledSiblings(allMine, b))}
+              </div>
+            )}
 
             {/* The plan banner. One card stands for the whole arrangement now,
                 so the card has to say which visit it is and what follows. */}
@@ -4166,12 +4228,29 @@ function EmployeeJobs({ openProfile }) {
           <>
             <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14, color: C.inkSoft, margin: "16px 0 10px" }}>{L("Completed", "Elvégzett")}</div>
             {done.map((b) => (
-              <div key={b.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 16px", marginBottom: 9, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .8 }}>
+              <div key={b.id} style={{ background: C.card, borderRadius: R.lg, padding: "13px 16px", marginBottom: 9, boxShadow: "0 1px 6px rgba(20,28,58,.04)", opacity: .8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink }}>{(b.service_snapshot || {}).name}</div>
                   <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 2 }}>{b.customer_name} · {dayLabel(b.scheduled_date)}</div>
                 </div>
                 <Pill>{L("Done", "Kész")}</Pill>
+                </div>
+                {/* The invoice uploader belongs HERE, in the list of FINISHED
+                    jobs. It used to sit in the open-jobs list, whose filter is
+                    status < 4, while the box itself returns null unless status
+                    IS 4 — two conditions that can never both hold. It had never
+                    rendered once, for any job, for anybody. */}
+                <PartnerInvoiceBox booking={b} />
+                {/* Reporting a customer belongs here too.
+
+                    It was only on the open-jobs card, so it disappeared the
+                    moment the job was marked complete — which is precisely
+                    when a company decides to report someone. Nobody stops
+                    mid-clean, standing in a stranger's kitchen, to file a
+                    complaint about them. The server never had a status rule
+                    here; only the screen did. */}
+                <ReportCustomerBox booking={b} />
               </div>
             ))}
           </>
@@ -4248,7 +4327,7 @@ function CompanyJobs({ openProfile }) {
   /* Same collapse as the customer sees, for the same reason: a job list is a
      list of work to do next, not an inventory of a plan. The Schedule tab is
      where the whole run of a plan belongs. */
-  const mine = nextVisitOnly(allMine);
+  const mine = collapseCancelledPlans(nextVisitOnly(allMine));
   const open = mine.filter((b) => b.status < 4 && b.status !== 9);
   const done = mine.filter((b) => b.status === 4 && !b.archived_by_company);
   const cancelled = mine.filter((b) => b.status === 9 || b.status === 8);
@@ -4534,7 +4613,10 @@ function CompanyJobs({ openProfile }) {
                 ))}
               </div>
             )}
-            <PartnerInvoiceBox booking={b} />
+            {/* Not here. This list is OPEN jobs (status < 4) and the uploader
+                returns null unless the job is finished (status 4) — two
+                conditions that can never both hold, which is why it had never
+                rendered once for anybody. It lives in the completed list. */}
             <ReportCustomerBox booking={b} />
             {canTrack(b) && (
               <Btn small ghost style={{ width: "100%", marginTop: 10 }} onClick={() => setJobTrackId(b.id)}>

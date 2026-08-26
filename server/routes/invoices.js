@@ -51,6 +51,21 @@ router.post("/:bookingId/partner", requireAuth, requireRole("company"), async (r
     if (a.code) return res.status(a.code).json({ error: a.code === 404 ? "Booking not found" : "Not your booking" });
     if (!a.isCompany) return res.status(403).json({ error: "Not your booking" });
 
+    /* You cannot invoice work you have not done.
+
+       This route had no status check at all — the other invoice route requires
+       a finished job, this one took anything. A partner could raise and send a
+       customer an invoice for a booking that had not happened yet, and the
+       customer would get it by email with a PDF attached. Nothing in the app
+       stopped it; the upload box simply never offered the button on an
+       unfinished job, which is a very different thing from the server refusing.
+
+       status 4 = completed. 8 declined, 9 cancelled — neither is billable. */
+    if (Number(a.b.status) !== 4)
+      return res.status(400).json({ error: "You can invoice a job once it is completed." });
+    if (a.b.payment_status !== "paid")
+      return res.status(400).json({ error: "You can invoice a job once it is paid." });
+
     const number = String(req.body?.invoiceNumber || "").trim();
     const issuedAt = String(req.body?.issuedAt || "").slice(0, 10);
     const pdf = req.body?.pdf;   // data URL or bare base64

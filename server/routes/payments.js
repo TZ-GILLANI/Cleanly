@@ -770,6 +770,16 @@ router.get("/config", (req, res) => {
     // customer reads before paying can never drift from the refund we actually give.
     /* One number now: cancel freely before it, not at all after. */
     cancelPolicy: { freeH: Number(process.env.CANCEL_FREE_H || 48) },
+    /* The booking rules the SCREEN has to agree with.
+
+       The slot picker hides hours that have already gone, using a lead time it
+       held as its own literal — while the server read BOOKING_LEAD_MIN from the
+       environment. Identical today, and silently different the moment that
+       variable is changed in Render: the picker would offer a slot the server
+       refuses, or hide one it would have taken. This endpoint exists precisely
+       so a screen cannot drift from the server, and these belong on it. */
+    leadMin: Math.max(0, Number(process.env.BOOKING_LEAD_MIN ?? 60)),
+    subChargeDays: Math.max(1, Number(process.env.SUB_CHARGE_DAYS || 5)),
     cardEnabled: configured(), provider: provider() || "none", env: provider() === "stripe" ? (String(process.env.STRIPE_SECRET_KEY).startsWith("sk_live") ? "live" : "sandbox") : (process.env.BARION_ENV === "prod" ? "live" : "sandbox") });
 });
 
@@ -955,6 +965,32 @@ export async function stripeWebhook(req, res) {
                     WHERE subscription_id = $2 AND scheduled_date <= $3
                       AND payment_status IN ('scheduled','retry') AND status NOT IN (8,9)`,
                   [(connectAcct ? `stripedc:${connectAcct}:` : "stripe:") + sess.id, subIns.rows[0].id, last]);
+
+                /* Spread the commission across the visits it was charged for.
+
+                   The checkout takes a MONTH, so platform_net_minor was written
+                   as a month's commission — onto the single booking that
+                   existed at the time. The billing list reads that field per
+                   job, so the first visit of a plan showed five visits' worth
+                   of commission and the other four showed none. The total was
+                   right and every line was wrong.
+
+                   Same split the monthly renewal already does: an even share
+                   each, with the remainder on the first so the parts still add
+                   up to exactly what Stripe handed us. */
+                const paidRows = await query(
+                  `SELECT id FROM bookings
+                    WHERE subscription_id = $1 AND scheduled_date <= $2 AND status NOT IN (8,9)
+                    ORDER BY scheduled_date`, [subIns.rows[0].id, last]);
+                const monthNet = Number((await query("SELECT platform_net_minor FROM bookings WHERE id = $1", [bookingId]))
+                  .rows[0]?.platform_net_minor) || 0;
+                const n = paidRows.rows.length;
+                if (n > 1 && monthNet > 0) {
+                  const share = Math.floor(monthNet / n);
+                  for (let i = 0; i < n; i++)
+                    await query("UPDATE bookings SET platform_net_minor = $1 WHERE id = $2",
+                      [i === 0 ? monthNet - share * (n - 1) : share, paidRows.rows[i].id]);
+                }
                 await query(
                   "UPDATE subscriptions SET next_booking_date = GREATEST(next_booking_date, $1) WHERE id = $2",
                   [nextDateFrom(last, b2.period), subIns.rows[0].id]);

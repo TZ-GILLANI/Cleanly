@@ -6,6 +6,7 @@
 
 export const EXTRA = {
   de: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Der ganze Plan wurde gekündigt — mitsamt {0} anstehenden Terminen. Es wird nichts weiter abgebucht.",
     "Apple Maps": "Apple Karten",
     "Checking invoice…": "Rechnung wird geprüft…",
     "Google Maps": "Google Maps",
@@ -1181,6 +1182,7 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Întregul abonament a fost anulat — împreună cu {0} vizite viitoare. Nu se va mai debita nimic.",
     "Apple Maps": "Apple Maps",
     "Checking invoice…": "Se verifică factura…",
     "Google Maps": "Google Maps",
@@ -2356,6 +2358,7 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Celý plán bol zrušený — spolu s {0} nadchádzajúcimi návštevami. Nič ďalšie sa nestrhne.",
     "Apple Maps": "Apple Mapy",
     "Checking invoice…": "Kontrolujeme faktúru…",
     "Google Maps": "Mapy Google",
@@ -3531,6 +3534,7 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Cały plan został anulowany — razem z {0} nadchodzącymi wizytami. Nic więcej nie zostanie pobrane.",
     "Apple Maps": "Mapy Apple",
     "Checking invoice…": "Sprawdzanie faktury…",
     "Google Maps": "Mapy Google",
@@ -4706,6 +4710,7 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Весь план скасовано — разом із {0} майбутніми візитами. Більше нічого не списуватиметься.",
     "Apple Maps": "Apple Карти",
     "Checking invoice…": "Перевіряємо рахунок…",
     "Google Maps": "Google Карти",
@@ -5881,6 +5886,7 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "L'abonnement entier a été résilié — avec {0} interventions à venir. Plus rien ne sera prélevé.",
     "Apple Maps": "Plans",
     "Checking invoice…": "Vérification de la facture…",
     "Google Maps": "Google Maps",
@@ -7056,6 +7062,7 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Se ha cancelado todo el plan — junto con {0} visitas próximas. No se cobrará nada más.",
     "Apple Maps": "Mapas de Apple",
     "Checking invoice…": "Comprobando la factura…",
     "Google Maps": "Google Maps",
@@ -8231,6 +8238,7 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Planın tamamı iptal edildi — beraberinde {0} yaklaşan ziyaret. Başka ücret alınmayacak.",
     "Apple Maps": "Apple Haritalar",
     "Checking invoice…": "Fatura kontrol ediliyor…",
     "Google Maps": "Google Haritalar",
@@ -9346,6 +9354,7 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "整个套餐已取消 — 连同 {0} 次即将上门的服务。不会再有扣款。",
     "Apple Maps": "苹果地图",
     "Checking invoice…": "正在检查发票…",
     "Google Maps": "谷歌地图",
@@ -10461,6 +10470,7 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "L'intero piano è stato annullato — insieme a {0} interventi in arrivo. Non verrà addebitato altro.",
     "Apple Maps": "Mappe di Apple",
     "Checking invoice…": "Verifica della fattura…",
     "Google Maps": "Google Maps",

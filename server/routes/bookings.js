@@ -146,6 +146,32 @@ router.post("/", requireAuth, async (req, res) => {
   const maxAhead = new Date(Date.now() + 400 * 864e5).toISOString().slice(0, 10);
   if (dOnly > maxAhead) return res.status(400).json({ error: "That date is too far in the future." });
 
+  /* The HOUR, not just the day.
+
+     Only the date was checked, so at one o'clock in the afternoon you could
+     still book eight that morning. The booking was accepted, the slot counted
+     against the company's capacity, and a job appeared that had already been
+     and gone before anyone agreed to it.
+
+     slotTime() comes from the reminder engine rather than being worked out
+     again here — it already knows about Budapest's offset and daylight saving,
+     and two versions of "when does this start" would drift apart the first time
+     the clocks changed.
+
+     BOOKING_LEAD_MIN is the head start a company gets. An hour by default:
+     nobody dispatches a cleaner in ten minutes, and a booking that arrives
+     with no time to answer it is a complaint waiting to happen. Set it to 0 if
+     you would rather take same-hour work. */
+  if (scheduledSlot) {
+    const { slotTime } = await import("../lib/reminders.js");
+    const starts = slotTime(dOnly, scheduledSlot);
+    const leadMin = Math.max(0, Number(process.env.BOOKING_LEAD_MIN ?? 60));
+    if (starts && starts.getTime() <= Date.now())
+      return res.status(400).json({ error: "That time has already passed — please pick a later one." });
+    if (starts && starts.getTime() < Date.now() + leadMin * 60000)
+      return res.status(400).json({ error: `Please pick a time at least ${leadMin} minutes from now, so the company can get there.` });
+  }
+
   try {
     const svcRes = await query("SELECT * FROM services WHERE id = $1 AND is_active = true", [serviceId]);
     if (!svcRes.rows.length) return res.status(400).json({ error: "Service not found" });
@@ -310,7 +336,30 @@ router.post("/", requireAuth, async (req, res) => {
     const studPct = customerType === "student" ? (co.student_discount || 0) : 0;
     const svcPromo = Math.min(Math.max(parseInt(svc.promo_pct, 10) || 0, 0), 90);
     const discount = Math.round(gross * Math.max(promo, studPct, svcPromo) / 100); // best single discount, never stacked
-    const companyShare = gross - discount;
+    let companyShare = gross - discount;
+
+    /* The floor, applied where every discount finally lands.
+
+       Services are checked when they are priced, but three separate discounts
+       meet here — the service's own offer, the company promo, and the student
+       rate — and any of them can take the charge below the point where our
+       commission covers Stripe's cut. Past that point the shortfall comes out
+       of the PARTNER's money, which is exactly what Partner Terms 3.4 says
+       cannot happen.
+
+       The discount is trimmed rather than the booking refused. Refusing would
+       punish a customer for a number the company chose, and the alternative —
+       letting it through — quietly pays the partner less than they listed. The
+       customer still gets the largest discount that can actually be honoured. */
+    {
+      const { minimumServicePriceHuf } = await import("./payments.js");
+      const floor = minimumServicePriceHuf();
+      if (Number.isFinite(floor) && gross >= floor && companyShare < floor) {
+        companyShare = floor;
+        console.warn("discount trimmed to keep the partner whole:", serviceId, gross, "->", companyShare);
+      }
+    }
+
     // Cleano service fee is ADDED ON TOP and shown to the customer:
     // company's listed price stays fully theirs.
     const feePct = Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50);
@@ -736,6 +785,10 @@ router.post("/:id/reschedule", requireAuth, requireRole("customer"), async (req,
     if ([8, 9].includes(Number(b.status))) return res.status(400).json({ error: "That booking is no longer active." });
     if (openRequest(b)) return res.status(400).json({ error: "You have already asked to move this visit — wait for the company, or withdraw it first." });
 
+    const { slotTime } = await import("../lib/reminders.js");
+    const leadMs = Math.max(0, Number(process.env.BOOKING_LEAD_MIN ?? 60)) * 60000;
+    const farLimit = new Date(Date.now() + 400 * 864e5).toISOString().slice(0, 10);
+
     const raw = Array.isArray(req.body?.options) ? req.body.options : [];
     const seen = new Set();
     const options = [];
@@ -747,6 +800,17 @@ router.post("/:id/reschedule", requireAuth, requireRole("customer"), async (req,
       if (seen.has(key)) continue;                       // the same day twice is one option
       if (date === isoDate(b.scheduled_date) && slot === String(b.scheduled_slot || "").slice(0, 5)) continue;
       if (date < new Date().toISOString().slice(0, 10)) continue;
+      /* The same two limits the booking endpoint enforces, which this route did
+         not: the HOUR, and how far ahead.
+
+         Only the date was compared, so proposing today at 06:00 at two in the
+         afternoon slipped through — the very bug we fixed on the booking form,
+         reappearing on the road that goes round it. And nothing capped the far
+         end, so a customer could offer a date in 2031 and a company clicking
+         through its options could park a paid job there indefinitely. */
+      const starts = slotTime(date, slot);
+      if (starts && starts.getTime() < Date.now() + leadMs) continue;
+      if (date > farLimit) continue;
       seen.add(key);
       options.push({ date, slot });
     }
@@ -827,9 +891,29 @@ router.put("/:id/reschedule", requireAuth, requireRole("company"), async (req, r
       return res.json({ ok: true, booking: b, reschedule: done });
     }
 
-    const i = Number(req.body?.choice);
-    const pick = Number.isInteger(i) ? request.options[i] : null;
+    /* The index must be a real number, not something that COERCES to one.
+
+       Number("") is 0. So is Number(null), Number(false) and Number([]). With a
+       plain Number() cast, a request that forgot to send a choice at all — or
+       sent an empty field — silently selected the customer's first option and
+       moved their booking. Accepting "0" is harmless in itself; accepting
+       "nothing" as "the first one" is not. */
+    const rawChoice = req.body?.choice;
+    const i = typeof rawChoice === "number" ? rawChoice : NaN;
+    const pick = Number.isInteger(i) && i >= 0 && i < (request.options || []).length ? request.options[i] : null;
     if (!pick) return res.status(400).json({ error: "Pick one of the dates the customer offered." });
+
+    /* Re-checked here too. An option validated on Monday can be in the past by
+       the time the company gets round to answering on Friday, and a request
+       that has sat unanswered must not become a way to book a slot that has
+       already gone. */
+    {
+      const { slotTime } = await import("../lib/reminders.js");
+      const starts = slotTime(pick.date, pick.slot);
+      const lead = Math.max(0, Number(process.env.BOOKING_LEAD_MIN ?? 60)) * 60000;
+      if (starts && starts.getTime() < Date.now() + lead)
+        return res.status(400).json({ error: "That time has passed since it was offered — ask the customer for new dates." });
+    }
 
     /* Re-check at the moment of the decision. The options were validated when
        they were offered, and the company may have taken other work since. */

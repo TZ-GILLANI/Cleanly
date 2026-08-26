@@ -29,7 +29,13 @@ function budapestOffsetMs(dateStr) {
     return sign * ((Number(m[2]) * 60 + Number(m[3] || 0)) * 60e3);
   } catch { return 2 * 3600e3; }
 }
-function slotTime(dateVal, slot) {
+/* When a slot actually starts, in real time.
+
+   Exported because the booking endpoint needs the same answer: "has this hour
+   already gone?" is the same question as "when does this job begin", and two
+   versions of it would drift the moment one of them learned about daylight
+   saving and the other did not. */
+export function slotTime(dateVal, slot) {
   try {
     const d = dateVal instanceof Date ? dateVal.toISOString().slice(0, 10) : isoDate(dateVal);
     const hm = String(slot || "09:00").match(/(\d{1,2}):(\d{2})/);
@@ -181,6 +187,28 @@ export async function sweepUnaccepted() {
         await notify(b.owner_id, "reminder", "A booking is waiting for you",
           "A customer is waiting for you to accept a booking. If you can't take it, decline so they can rebook.", b.id);
       }
+      /* 1b) An abandoned checkout dies quickly, not at its own start time.
+
+         acceptDeadline is about a COMPANY that has not answered, and it has a
+         three-hour floor and a ceiling at the slot start. For a booking nobody
+         paid for, both are wrong: the company cannot even see an unpaid job, so
+         it is not failing to answer — and waiting until the cleaner was due to
+         arrive means the customer sits looking at a booking that was never real
+         while the hour goes by.
+
+         The same grace the capacity count already uses: long enough to finish
+         typing a card, short enough not to squat on a slot. After that the row
+         is released and the customer is told plainly, so they can try again. */
+      const graceMin = Math.max(5, Number(process.env.CHECKOUT_GRACE_MIN || 30));
+      const unpaid = b.payment_status === "unpaid" || b.payment_status === "pending";
+      if (unpaid && ageH * 60 >= graceMin) {
+        await query("UPDATE bookings SET status = 9, decline_reason = $1 WHERE id = $2 AND status = 0 AND payment_status IN ('unpaid','pending')",
+          ["auto-cancelled: payment was not completed", b.id]);
+        await notify(b.customer_id, "cancelled", "Booking cancelled — not paid",
+          "The payment for this booking was not completed, so we released the time. Nothing was charged — book again whenever you like.", b.id);
+        continue;
+      }
+
       // 2) auto-cancel + refund — same rule the company sees counting down
       const deadline = acceptDeadline(b);
       /* acceptDeadline is the single source of truth. The fallback only runs if

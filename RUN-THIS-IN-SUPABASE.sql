@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════
---  CLEANO — the columns your database is missing (for v7.5.0)
+--  CLEANO — the columns your database is missing (for v7.8.0)
 --  NUMBER 4 IS NEW. Run the file again; 1 to 3 will simply do nothing.
 --
 --  Where: Supabase → your project → SQL Editor → New query
@@ -76,7 +76,7 @@ ORDER  BY table_name, column_name;
 --   companies  | service_areas | jsonb | '[]'::jsonb
 --
 -- Then open  https://<your-render-url>/api/health  in a browser.
--- You want:  "version":"7.5.0"  and  "schema":"ready"
+-- You want:  "version":"7.8.0"  and  "schema":"ready"
 -- If it says "schema":"MIGRATION_PENDING", the ALTERs did not land.
 -- If it says an older version, Render has not deployed the new code yet.
 

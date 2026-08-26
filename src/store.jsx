@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api, setToken, getToken, isApiMode } from "./lib/api.js";
+import { setBookingRules } from "./lib/bookingRules.js";
 import { getLang, saveLang, translate } from "./lib/i18n.js";
 import { xl } from "./lib/translations.js";
 
@@ -205,6 +206,9 @@ export function StoreProvider({ children }) {
   const [lang, setLangState] = useState(getLang);
   const [feePct, setFeePct] = useState(10);
   const [cancelPolicy, setCancelPolicy] = useState({ freeH: 24, halfH: 2, halfPct: 50 });
+  /* The head start the company gets, published by the server. 60 is only the
+     value used before the first config call answers. */
+  const [leadMin, setLeadMin] = useState(60);
   const t = (key, vars) => translate(lang, key, vars);
   /* Every role needs their language on the server, because that is what decides
      the language of push notifications — which never pass through the app. It was
@@ -327,6 +331,11 @@ export function StoreProvider({ children }) {
       const c = await api("/payments/config");
       if (c && c.feePct != null) setFeePct(Number(c.feePct));
       if (c && c.cancelPolicy) setCancelPolicy(c.cancelPolicy);
+      /* Take the server's lead time rather than keeping our own copy — see
+         /payments/config. A number the screen invents is a number that can
+         disagree with the one the server enforces. */
+      if (c && Number.isFinite(Number(c.leadMin))) setLeadMin(Number(c.leadMin));
+      setBookingRules(c);
     } catch {}
   };
   /* JSONB comes back parsed — until it does not.
@@ -1191,7 +1200,7 @@ export function StoreProvider({ children }) {
        something must see the result, so it can never be skipped. safeRefresh
        is the one for polling: it drops out while another fetch is in flight,
        or while the app is in the background. Pollers use that one. */
-    lang, setLang, t, refreshData, safeRefresh, dataVersion,
+    lang, setLang, t, refreshData, safeRefresh, dataVersion, leadMin,
     requestReschedule, withdrawReschedule, decideReschedule,
     companies: db.companies, services: db.services, employees: visibleEmployees, allEmployees: db.employees,
     bookings: db.bookings, notices: db.notices, invites: db.invites, reviews: db.reviews,

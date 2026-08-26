@@ -128,9 +128,14 @@ await materialise();
   const fs = await import("fs");
   const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   ok("but the lists collapse a plan to its next visit", /const nextVisitOnly = \(list\) => \{/.test(app));
-  ok("the customer's list uses it", /const mine = nextVisitOnly\(allMine\);/.test(app));
+  /* Now wrapped: the same list also collapses a cancelled plan's visits into
+     one entry, so the assertion follows the composition rather than pinning
+     the exact call it used to be. */
+  ok("the customer's list uses it", /const mine = collapseCancelledPlans\(nextVisitOnly\(allMine\)\);/.test(app));
   ok("the company's job list uses it too",
      (app.match(/nextVisitOnly\(allMine\)/g) || []).length === 2, "should be customer + company");
+  ok("and both also collapse a cancelled plan",
+     (app.match(/collapseCancelledPlans\(nextVisitOnly\(allMine\)\)/g) || []).length === 2);
   ok("history is left alone — a finished visit stays where it is",
      /if \(b\.status >= 4\) continue;/.test(app));
   ok("the card says which visit is next", /L\("Next on \{0\}", "Következő: \{0\}"\)/.test(app));

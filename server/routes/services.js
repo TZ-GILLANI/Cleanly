@@ -119,10 +119,20 @@ router.post("/", requireAuth, requireRole("company"), async (req, res) => {
   {
     const { minimumServicePriceHuf } = await import("./payments.js");
     const floor = minimumServicePriceHuf();
-    const smallest =
+    /* After the discount, not before it.
+
+       The floor was checked against the LIST price, so a 1 200 Ft service was
+       accepted and a 50% offer on it produced a 600 Ft charge — at which point
+       our commission is smaller than Stripe's cut, and the shortfall comes
+       silently out of the partner's money. The promise in Partner Terms 3.4 is
+       about what they RECEIVE, so the smallest charge is what has to clear the
+       floor. */
+    const svcPromo = Math.min(Math.max(parseInt(promoPct, 10) || 0, 0), 90);
+    const listed =
       ptype === "hourly" ? (Number(hourlyRateHuf) || 0) * (Number(minHours) || 2)
       : ptype === "unit" ? (Number(unitPriceHuf) || 0) * (Number(minUnits) || 1)
       : Number(priceHuf) || 0;
+    const smallest = Math.round(listed * (100 - svcPromo) / 100);
     if (smallest > 0 && smallest < floor) {
       return res.status(400).json({
         error: `The smallest charge for this service is ${smallest} Ft, which is below the ${floor} Ft minimum. Card processing costs more than our commission at that price.`,
