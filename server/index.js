@@ -108,7 +108,7 @@ app.post("/api/client-error", async (req, res) => {
    unrelated response. `schemaLevel` names the last migration the code expects,
    so /api/health answers "did my deploy land, and has the database caught up?"
    in one request. */
-const BUILD = { version: "8.0.0", schemaLevel: "service_areas+eu_vat+payment_error+reschedule+reports" };
+const BUILD = { version: "8.0.2", schemaLevel: "service_areas+eu_vat+payment_error+reschedule+reports" };
 app.get("/api/health", async (req, res) => {
   let schema = "unknown";
   try {

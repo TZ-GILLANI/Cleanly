@@ -160,7 +160,10 @@ if (!jsdomOk) {
       if (card) {
         try { card.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); } catch (e) { thrown.push(e); }
         await new Promise((r) => setTimeout(r, 1600));
-        const body = w.document.getElementById("root").textContent || "";
+        /* body, not #root: Sheets render through a portal onto <body> since the
+           report dialog got buried under its sibling cards, so dialog text
+           never appears inside #root any more. */
+        const body = w.document.body.textContent || "";
         ok("opening a company does not crash the booking flow",
            thrown.length === before && !/Something broke|Valami elromlott/.test(body),
            thrown[thrown.length - 1]?.message || "error screen");
@@ -178,7 +181,7 @@ if (!jsdomOk) {
       try { el.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); }
       catch (e) { thrown.push(e); }
       await new Promise((r) => setTimeout(r, ms));
-      return w.document.getElementById("root").textContent || "";
+      return w.document.body.textContent || "";
     };
     /* The bottom nav shows a label only for the tab you are on — every other
        button is an icon with no text at all. Matching on button text finds
@@ -192,11 +195,11 @@ if (!jsdomOk) {
            either flakes or slows every role down to the worst case. */
         for (let i = 0; i < 8; i++) {
           await new Promise((r) => setTimeout(r, 400));
-          if (marker.test(w.document.getElementById("root").textContent || "")) return true;
+          if (marker.test(w.document.body.textContent || "")) return true;
         }
       }
       if (process.env.NAVDEBUG) {
-        const txt = (w.document.getElementById("root").textContent || "").replace(/[\s\S]*?display: swap'\);/, "").replace(/\.[a-z-]+\s*\{[^}]*\}/g, "").replace(/\s+/g, " ");
+        const txt = (w.document.body.textContent || "").replace(/[\s\S]*?display: swap'\);/, "").replace(/\.[a-z-]+\s*\{[^}]*\}/g, "").replace(/\s+/g, " ");
         console.log(`  [${role} last screen]`, JSON.stringify(txt.slice(0, 260)));
       }
       return false;
@@ -228,10 +231,10 @@ if (!jsdomOk) {
       if (!reached) {
         await clickText("Manage", 900);
         await clickText("Settings", 1400);
-        reached = /Where you work/i.test(w.document.getElementById("root").textContent || "");
+        reached = /Where you work/i.test(w.document.body.textContent || "");
       }
       if (reached) {
-        const body = w.document.getElementById("root").textContent || "";
+        const body = w.document.body.textContent || "";
         /* v7.1: one list of named places replaced a free pin + a flat city
            list. The anchor moved with it; the promise did not. */
         ok("company — the service-area section is on the settings screen",
@@ -263,13 +266,13 @@ if (!jsdomOk) {
              other clicks in this file do. */
           if (k) box[k].onChange({ target: { value: "Debrecen" }, currentTarget: { value: "Debrecen" } });
           await new Promise((r) => setTimeout(r, 900));
-          const t2 = w.document.getElementById("root").textContent || "";
+          const t2 = w.document.body.textContent || "";
           ok("company — with no suggestions, you can still use what you typed",
              /Use .Debrecen.|Debrecen.* haszn/i.test(t2) || /No suggestions right now|Most nincs javaslat/i.test(t2),
              t2.slice(t2.indexOf("Town or city"), t2.indexOf("Town or city") + 200));
         }
 
-        const setupTxt = w.document.getElementById("root").textContent || "";
+        const setupTxt = w.document.body.textContent || "";
         ok("company — the setup screen says what is still missing",
            /things left before customers can book you|Everything is set up|Add a place/i.test(setupTxt),
            setupTxt.slice(0, 90));
@@ -284,7 +287,7 @@ if (!jsdomOk) {
       const before = thrown.length;
       try { tabs[i].dispatchEvent(new w.MouseEvent("click", { bubbles: true })); } catch (e) { thrown.push(e); }
       await new Promise((r) => setTimeout(r, 800));
-      const body = w.document.getElementById("root").textContent || "";
+      const body = w.document.body.textContent || "";
       if (thrown.length > before || /Something broke|Valami elromlott/.test(body)) {
         broken.push(`${(tabs[i].textContent || i).toString().trim().slice(0, 14)}: ${thrown[thrown.length - 1]?.message || "error screen"}`);
       }

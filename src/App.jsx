@@ -290,7 +290,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "8.0.0";
+const APP_VERSION = "8.0.2";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -1429,7 +1429,16 @@ function Sheet({ title, close, children }) {
     document.body.classList.add("cl-modal-open");
     return () => document.body.classList.remove("cl-modal-open");
   }, []);
-  return (
+  /* Rendered through a portal onto <body>, not where the component sits.
+
+     A Sheet opened from deep inside a list — the report dialog on a done job
+     was the one Musa caught — was mounted INSIDE that card, so "fixed" and
+     zIndex only counted within the card's own stacking context, and every
+     card after it in the list painted straight over the dialog. The portal
+     moves the actual DOM to the end of <body>: no ancestor transform, filter
+     or sibling order can ever sit on top of it again, wherever a Sheet is
+     opened from. */
+  return ReactDOM.createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={close} style={{ position: "absolute", inset: 0, background: "rgba(16,25,74,.55)", backdropFilter: "blur(3px)" }} />
       <div className="cl-slideup" style={{ position: "relative", background: C.bg, borderRadius: "28px 28px 0 0", padding: "16px 22px calc(28px + env(safe-area-inset-bottom))", maxWidth: 430, width: "100%", margin: "0 auto", maxHeight: "90vh", overflowY: "auto" }}>
@@ -1440,7 +1449,8 @@ function Sheet({ title, close, children }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 const Progress = ({ done, total }) => (
