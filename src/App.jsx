@@ -290,7 +290,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.9.0";
+const APP_VERSION = "7.9.1";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -4954,19 +4954,32 @@ function CompanyServices() {
           {(f.fulfilment || "onsite") === "collection" && (
             <div style={{ background: C.navyChip, borderRadius: R.md, padding: "12px 14px", marginBottom: 12 }}>
               <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.5 }}>
-                {L("The customer is told when their things come back, and the job only counts as finished once you return them.", "Az ügyfél megtudja, mikor kapja vissza a holmiját, és a munka csak a visszaszállításkor számít késznek.")}
+                {L("The customer is told when their things come back, and the job only counts as finished once you return them.", "Az ügyfél megtudja, mikor kapja vissza a holmiját, és a munka csak akkor számít késznek, ha visszavitted.")}
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{ flex: 1 }}><Field label={L("Ready in (days)", "Elkészül (nap)")} type="number" placeholder="3"
-                  value={f.turnaround_days ?? 3} onChange={(e) => setF({ ...f, turnaround_days: Math.min(60, Math.max(0, parseInt(e.target.value, 10) || 0)) })} /></div>
-                <div style={{ flex: 1 }}><Field label={L("Jobs at the same time", "Egyszerre vállalt munkák")} type="number" placeholder={L("team size", "csapatlétszám")}
-                  value={f.slot_capacity ?? ""} onChange={(e) => setF({ ...f, slot_capacity: e.target.value === "" ? null : Math.min(100, Math.max(1, parseInt(e.target.value, 10) || 1)) })} /></div>
-              </div>
-              <div style={{ fontFamily: B, fontSize: 10, color: C.inkFaint, marginTop: 4, lineHeight: 1.5 }}>
-                {L("How many of this service you can run at once. Leave it empty to use your team size. A long job now blocks the whole time it lasts, not just the hour it starts.", "Hányat tudsz ebből egyszerre vállalni. Hagyd üresen, ha a csapatlétszámot használnád. A hosszú munka mostantól a teljes időtartamát lefoglalja, nem csak a kezdő óráját.")}
-              </div>
+              <Field label={L("Ready in (days)", "Elkészül (nap)")} type="number" placeholder="3"
+                value={f.turnaround_days ?? 3} onChange={(e) => setF({ ...f, turnaround_days: Math.min(60, Math.max(0, parseInt(e.target.value, 10) || 0)) })} />
             </div>
           )}
+
+          {/* How many of this service you can run at once — for EVERY service,
+              not only collections.
+
+              This sat inside the collection-only block, so on an ordinary
+              cleaning job it could not be reached. Capacity then fell back to
+              the number of approved cleaners on the account, and a company
+              with none is GREATEST(1, 0) = one job at a time: the first
+              customer takes 10:00 and everyone after them is told the time has
+              gone. A one-person business is a real thing, but so is a company
+              that simply has not added its team to the app yet, and the second
+              one had no way to say so. */}
+          <div style={{ background: C.navyChip, borderRadius: R.md, padding: "12px 14px", marginBottom: 12 }}>
+            <Field label={L("Jobs at the same time", "Egyszerre vállalt munkák")} type="number" placeholder={L("team size", "csapatlétszám")}
+              value={f.slot_capacity ?? ""} onChange={(e) => setF({ ...f, slot_capacity: e.target.value === "" ? null : Math.min(100, Math.max(1, parseInt(e.target.value, 10) || 1)) })} />
+            <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkFaint, marginTop: 6, lineHeight: 1.55 }}>
+              {L("How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.",
+                 "Hány ilyen szolgáltatást tudsz egyszerre vállalni ugyanabban az órában. Hagyd üresen, és a csapatlétszámot használjuk — ami 1, amíg nem adsz hozzá takarítót, így egy foglalás betölti az idősávot. A hosszabb munka a teljes időtartamát lefoglalja, nem csak a kezdő óráját.")}
+            </div>
+          </div>
 
           <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.ink, marginBottom: 8 }}>{L("Pricing model", "Árazás módja")}</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>

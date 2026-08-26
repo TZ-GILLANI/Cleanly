@@ -6,6 +6,7 @@
 
 export const EXTRA = {
   de: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Wie viele dieser Leistung du zur selben Stunde übernehmen kannst. Leer lassen, dann gilt deine Teamgröße — die 1 ist, solange du keine Reinigungskräfte hinzufügst, sodass eine Buchung den Termin füllt. Ein langer Auftrag blockiert die gesamte Dauer, nicht nur die Startstunde.",
     "Choose a day": "Tag wählen",
     "Option {0}": "Option {0}",
     "They don't work that day — pick another.": "An dem Tag arbeiten sie nicht — wähle einen anderen.",
@@ -1190,6 +1191,7 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Câte astfel de servicii poți face în aceeași oră. Lasă gol și folosim mărimea echipei — care e 1 până adaugi curățători, deci o rezervare umple intervalul. O lucrare lungă blochează toată durata, nu doar ora de început.",
     "Choose a day": "Alege o zi",
     "Option {0}": "Varianta {0}",
     "They don't work that day — pick another.": "În ziua aceea nu lucrează — alege alta.",
@@ -2374,6 +2376,7 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Koľko takýchto služieb zvládneš v tú istú hodinu. Nechaj prázdne a použijeme veľkosť tímu — tá je 1, kým nepridáš upratovačov, takže jedna rezervácia zaplní termín. Dlhá práca blokuje celý svoj čas, nielen začiatočnú hodinu.",
     "Choose a day": "Vyber deň",
     "Option {0}": "Možnosť {0}",
     "They don't work that day — pick another.": "V ten deň nepracujú — vyber iný.",
@@ -3558,6 +3561,7 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Ile takich usług możesz wykonać o tej samej godzinie. Zostaw puste, a użyjemy wielkości zespołu — która wynosi 1, dopóki nie dodasz sprzątaczy, więc jedna rezerwacja zajmuje termin. Długie zlecenie blokuje cały swój czas, nie tylko godzinę rozpoczęcia.",
     "Choose a day": "Wybierz dzień",
     "Option {0}": "Opcja {0}",
     "They don't work that day — pick another.": "Tego dnia nie pracują — wybierz inny.",
@@ -4742,6 +4746,7 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Скільки таких послуг ви можете виконати в ту саму годину. Залиште порожнім — і ми візьмемо розмір команди, який дорівнює 1, доки ви не додасте прибиральників, тож одне бронювання займає слот. Довга робота блокує весь свій час, а не лише годину початку.",
     "Choose a day": "Оберіть день",
     "Option {0}": "Варіант {0}",
     "They don't work that day — pick another.": "Того дня вони не працюють — оберіть інший.",
@@ -5926,6 +5931,7 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Combien de fois vous pouvez assurer cette prestation à la même heure. Laissez vide et nous utilisons la taille de votre équipe — qui vaut 1 tant que vous n'ajoutez pas d'agents, donc une réservation remplit le créneau. Une intervention longue bloque toute sa durée, pas seulement son heure de début.",
     "Choose a day": "Choisir un jour",
     "Option {0}": "Option {0}",
     "They don't work that day — pick another.": "Ils ne travaillent pas ce jour-là — choisissez-en un autre.",
@@ -7110,6 +7116,7 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Cuántos de este servicio puedes hacer a la misma hora. Déjalo vacío y usaremos el tamaño de tu equipo — que es 1 hasta que añadas limpiadores, así que una reserva llena el hueco. Un trabajo largo bloquea todo su tiempo, no solo la hora de inicio.",
     "Choose a day": "Elige un día",
     "Option {0}": "Opción {0}",
     "They don't work that day — pick another.": "Ese día no trabajan — elige otro.",
@@ -8294,6 +8301,7 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Bu hizmeti aynı saatte kaç kez üstlenebilirsin. Boş bırak, ekip büyüklüğünü kullanırız — temizlikçi eklemediğin sürece bu 1'dir, yani tek rezervasyon slotu doldurur. Uzun bir iş sadece başlangıç saatini değil, tüm süresini bloke eder.",
     "Choose a day": "Bir gün seç",
     "Option {0}": "Seçenek {0}",
     "They don't work that day — pick another.": "O gün çalışmıyorlar — başka bir gün seç.",
@@ -9418,6 +9426,7 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "同一时段你能同时承接多少个此服务。留空则使用你的团队人数 — 在你添加保洁员之前是 1，因此一个预约就会占满该时段。较长的工作会占用其全部时长，而不只是起始那一小时。",
     "Choose a day": "选择日期",
     "Option {0}": "选项 {0}",
     "They don't work that day — pick another.": "他们那天不工作 — 请另选一天。",
@@ -10542,6 +10551,7 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    "How many of this service you can run at the same hour. Leave it empty and we use your team size — which is 1 until you add cleaners, so one booking fills the slot. A long job blocks the whole time it lasts, not just its starting hour.": "Quanti di questi servizi puoi svolgere nella stessa ora. Lascia vuoto e usiamo la dimensione del team — che è 1 finché non aggiungi addetti, quindi una prenotazione riempie lo slot. Un lavoro lungo blocca tutta la sua durata, non solo l'ora di inizio.",
     "Choose a day": "Scegli un giorno",
     "Option {0}": "Opzione {0}",
     "They don't work that day — pick another.": "Quel giorno non lavorano — scegline un altro.",

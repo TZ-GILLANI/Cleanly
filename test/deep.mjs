@@ -202,5 +202,33 @@ console.log("\n── 6. a company can still be reported after the job ends ─�
   ok("and the server never had a status rule to contradict that", !/status !== 4|status < 2/.test(rep));
 }
 
+console.log("\n── 7. a company can say how many jobs it takes at once ──");
+{
+  /* Capacity is service.slot_capacity, or the number of approved cleaners, or
+     1. A company that has not added its team to the app is therefore capped at
+     one job an hour — the first customer takes 10:00 and everyone after is
+     told the time has gone.
+
+     The setting that fixes it existed and was reachable only on COLLECTION
+     services, because the field sat inside a block rendered when fulfilment
+     was "collection". On an ordinary cleaning job it was invisible. */
+  const av = fs.readFileSync(new URL("../server/lib/availability.js", import.meta.url), "utf8");
+  ok("capacity prefers the service's own setting", /svc\?\.slot_capacity != null \? Number\(svc\.slot_capacity\)/.test(av));
+  ok("and falls back to the team, never to zero", /GREATEST\(1, COUNT\(\*\)::int\)/.test(av));
+
+  const capIdx = appCode.indexOf("Jobs at the same time");
+  ok("the field exists in the service form", capIdx > -1);
+  const collIdx = appCode.lastIndexOf('=== "collection" && (', capIdx);
+  const closeIdx = collIdx > -1 ? appCode.indexOf("\n          )}", collIdx) : -1;
+  ok("and it is NOT trapped inside the collection-only block",
+     collIdx === -1 || closeIdx === -1 || closeIdx < capIdx,
+     `collection block ${collIdx}..${closeIdx}, field at ${capIdx}`);
+  ok("turnaround days stays collection-only, where it belongs",
+     appCode.indexOf("Ready in (days)") > collIdx && appCode.indexOf("Ready in (days)") < closeIdx);
+  ok("the help text says what happens if it is left empty", /we use your team size/.test(appCode));
+  const svcRoute = fs.readFileSync(new URL("../server/routes/services.js", import.meta.url), "utf8");
+  ok("the server accepts and stores it", /slotCapacity/.test(svcRoute));
+}
+
 console.log(`\n════ DEEP PASS: ${pass} passed, ${fail} failed ════\n`);
 process.exit(fail ? 1 : 0);
