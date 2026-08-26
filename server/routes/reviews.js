@@ -13,7 +13,15 @@ router.get("/", async (req, res) => {
          company gave when reporting, and who removed it. None of that is the
          public's business, and crucially the cleaner is never named to customers:
          a review is of the COMPANY. */
-      `SELECT r.id, r.company_id, r.stars, r.body, r.body_i18n, r.created_at,
+      /* booking_id was missing from this list.
+
+         The app decides whether to show "Rate this clean" with
+         reviews.some(r => r.booking_id === b.id). Without the column that is
+         always false, so the button came back on every refresh — and since the
+         app now polls every 25 seconds, it came back constantly, for a review
+         the customer had already left. The server was refusing the duplicate
+         all along; only the screen was wrong. */
+      `SELECT r.id, r.booking_id, r.company_id, r.stars, r.body, r.body_i18n, r.created_at,
               u.full_name AS customer_name
          FROM reviews r JOIN users u ON u.id = r.customer_id
         WHERE r.removed_at IS NULL ORDER BY r.created_at DESC`

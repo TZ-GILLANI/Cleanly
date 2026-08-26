@@ -2,6 +2,7 @@ import { query } from "../db.js";
 import { notify } from "./notify.js";
 import { sendEmail } from "./mailer.js";
 import { refundBookingPayment } from "../routes/payments.js";
+import { isoDate } from "./isodate.js";
 
 /* ── Day-of reminders ──────────────────────────────────────────────
    Runs every 5 minutes.
@@ -30,7 +31,7 @@ function budapestOffsetMs(dateStr) {
 }
 function slotTime(dateVal, slot) {
   try {
-    const d = dateVal instanceof Date ? dateVal.toISOString().slice(0, 10) : String(dateVal).slice(0, 10);
+    const d = dateVal instanceof Date ? dateVal.toISOString().slice(0, 10) : isoDate(dateVal);
     const hm = String(slot || "09:00").match(/(\d{1,2}):(\d{2})/);
     if (!hm) return null;
     const utcMs = Date.parse(`${d}T${hm[1].padStart(2, "0")}:${hm[2]}:00Z`) - budapestOffsetMs(d);

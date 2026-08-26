@@ -955,7 +955,13 @@ ok("and automatic selection is not also switched on",
       clean booked at 10:00 left 11:00 and 12:00 looking free. One team could
       be sold the same morning three times over. */
 console.log("\n── availability counts real work, for its real length ──");
-const bkAv = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8");
+/* Availability and capacity moved into server/lib/availability.js so the
+   move-a-visit flow decides "is this slot free" with exactly the same code the
+   booking endpoint uses. Two paths with two opinions is how a company ends up
+   accepting a date it cannot serve — the same shape as the service-area bug.
+   Read both files, so the checks follow the logic wherever it lives. */
+const bkAv = (await import("fs")).readFileSync("server/routes/bookings.js", "utf8")
+  + (await import("fs")).readFileSync("server/lib/availability.js", "utf8");
 /* Retrying is handled by reusing the abandoned row, not by excusing it from
    the count — excusing a customer's unpaid rows would let one person quietly
    hold a whole morning. */
@@ -963,6 +969,9 @@ ok("retrying an abandoned checkout reuses that booking rather than making anothe
    /payment_status = 'unpaid' AND status = 0/.test(bkAv) && /reused: true/.test(bkAv));
 ok("matched on the address too, so a van calling at two houses is not mistaken for a retry",
    /AND address = \$6/.test(bkAv));
+ok("the booking endpoint and the move flow share one availability check",
+   /import \{ slotProblem \} from "\.\.\/lib\/availability\.js"/.test(bkAv)
+   && /export async function slotProblem/.test(bkAv));
 ok("and anyone's abandoned checkout expires out of the count",
    /NOT \(b\.payment_status = 'unpaid' AND b\.created_at < NOW\(\)/.test(bkAv));
 ok("the grace period is generous enough to finish paying",

@@ -612,6 +612,26 @@ export function StoreProvider({ children }) {
      did. It used to swallow the outcome: the confirm dialog fired the request
      without awaiting it and toasted "Booking cancelled" straight away, so a
      refusal from the server produced a success message AND an error banner. */
+  /* Moving one visit. Three calls, all thin — the rules live on the server so
+     an old app on someone's phone cannot talk a company into a date it cannot
+     work. Each refreshes afterwards, because the answer changes what both
+     sides see. */
+  const requestReschedule = async (id, options, note) => {
+    try {
+      const r = await api("/bookings/" + id + "/reschedule", { method: "POST", body: { options, note } });
+      await refreshData();
+      return r;
+    } catch (e) { return { error: e.message }; }
+  };
+  const withdrawReschedule = async (id) => {
+    try { const r = await api("/bookings/" + id + "/reschedule", { method: "DELETE" }); await refreshData(); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+  const decideReschedule = async (id, body) => {
+    try { const r = await api("/bookings/" + id + "/reschedule", { method: "PUT", body }); await refreshData(); return r; }
+    catch (e) { return { error: e.message }; }
+  };
+
   const cancelBooking = async (id) => {
     if (isApiMode) {
       try { await api("/bookings/" + id + "/status", { method: "PUT", body: { status: 9 } }); }
@@ -1172,6 +1192,7 @@ export function StoreProvider({ children }) {
        is the one for polling: it drops out while another fetch is in flight,
        or while the app is in the background. Pollers use that one. */
     lang, setLang, t, refreshData, safeRefresh, dataVersion,
+    requestReschedule, withdrawReschedule, decideReschedule,
     companies: db.companies, services: db.services, employees: visibleEmployees, allEmployees: db.employees,
     bookings: db.bookings, notices: db.notices, invites: db.invites, reviews: db.reviews,
     signupCustomer, signupCompany, signupEmployee, login, logout,

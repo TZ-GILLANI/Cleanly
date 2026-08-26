@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { isoDate } from "../lib/isodate.js";
 
 const router = Router();
 
@@ -264,7 +265,7 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
       }
       const g = byCompany.get(row.company_id);
       g.jobs.push({
-        id: row.id, orderNo: row.order_no, date: String(row.scheduled_date).slice(0, 10),
+        id: row.id, orderNo: row.order_no, date: isoDate(row.scheduled_date),
         totalHuf: Number(row.total_huf) || 0,
         commissionHuf: Number(row.service_fee_huf) || 0,
         keptHuf: kept,
@@ -419,11 +420,11 @@ router.get("/admin/billing.csv", requireAuth, requireRole("admin"), async (req, 
       lines.push([
         row.billing_name, row.company_name, row.tax_id, row.billing_zip, row.billing_city,
         row.billing_address, row.billing_email, row.order_no,
-        String(row.scheduled_date).slice(0, 10),
+        isoDate(row.scheduled_date),
         Number(row.total_huf) || 0, commission, kept,
         Math.round((commission - kept) * 100) / 100,
         net, vat, gross,
-        row.fee_invoice_no || "", row.fee_invoice_at ? String(row.fee_invoice_at).slice(0, 10) : "",
+        row.fee_invoice_no || "", row.fee_invoice_at ? isoDate(row.fee_invoice_at) : "",
       ].map(q).join(","));
     }
 

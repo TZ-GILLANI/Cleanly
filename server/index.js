@@ -108,11 +108,12 @@ app.post("/api/client-error", async (req, res) => {
    unrelated response. `schemaLevel` names the last migration the code expects,
    so /api/health answers "did my deploy land, and has the database caught up?"
    in one request. */
-const BUILD = { version: "7.2.0", schemaLevel: "service_areas+eu_vat+payment_error" };
+const BUILD = { version: "7.5.0", schemaLevel: "service_areas+eu_vat+payment_error+reschedule" };
 app.get("/api/health", async (req, res) => {
   let schema = "unknown";
   try {
     await query("SELECT service_areas, eu_vat FROM companies LIMIT 0");
+    await query("SELECT payment_error, reschedule FROM bookings LIMIT 0");
     schema = "ready";
   } catch (e) {
     schema = /does not exist|undefined column/i.test(e.message || "") ? "MIGRATION_PENDING" : "unknown";

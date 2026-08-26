@@ -3,6 +3,7 @@ import { query, hasColumn } from "../db.js";
 import { paymentAlert } from "../lib/alerts.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { notify } from "../lib/notify.js";
+import { isoDate } from "../lib/isodate.js";
 
 
 /* ── Billing the partner for our commission.
@@ -160,7 +161,7 @@ async function getStripe() {
    No-op for non-Stripe or unpaid bookings. Never throws — logs and returns a result. */
 /* Advance a YYYY-MM-DD by one period (weekly/biweekly/monthly). */
 export function nextDateFrom(dateStr, period) {
-  const [y, m, d] = String(dateStr).slice(0, 10).split("-").map(Number);
+  const [y, m, d] = isoDate(dateStr).split("-").map(Number);
   let nd;
   if (period === "weekly") nd = new Date(Date.UTC(y, m - 1, d + 7));
   else if (period === "biweekly") nd = new Date(Date.UTC(y, m - 1, d + 14));
@@ -170,6 +171,36 @@ export function nextDateFrom(dateStr, period) {
     nd = new Date(Date.UTC(y, m, Math.min(d, lastDay)));
   }
   return nd.toISOString().slice(0, 10);
+}
+
+/* THE VISITS ONE MONTHLY PAYMENT COVERS.
+
+   Billing is monthly for every plan, whatever the cleaning cadence: a weekly
+   customer pays once a month for that month's cleans, not four times. Months
+   are not equal — a weekly plan has four visits in some and five in others —
+   so the charge is always exactly the visits that fall inside the period
+   rather than a flat figure that would over- or under-charge depending on the
+   calendar.
+
+   Returns the dates, starting at `startIso`, up to but not including the same
+   day of the following month. */
+export function visitsInBillingMonth(startIso, frequency) {
+  const start = isoDate(startIso);
+  if (!start) return [];
+  const [y, m, d] = start.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const end = new Date(Date.UTC(y, m, Math.min(d, lastDay))).toISOString().slice(0, 10);
+  const out = [];
+  let cur = start;
+  /* A guard, not a limit: 40 covers a weekly plan in the longest month several
+     times over, and stops a bad frequency spinning forever. */
+  for (let i = 0; i < 40 && cur < end; i++) {
+    out.push(cur);
+    const next = nextDateFrom(cur, frequency);
+    if (next <= cur) break;
+    cur = next;
+  }
+  return out.length ? out : [start];
 }
 
 export async function refundBookingPayment(booking, pct = 100) {
@@ -222,10 +253,27 @@ export async function refundBookingPayment(booking, pct = 100) {
       paymentIntent = session.payment_intent;
     }
 
+    /* Does anything else share this payment?
+
+       Billing is monthly, so one PaymentIntent covers every visit in that
+       month. Refunding "the whole thing" for one cancelled visit would hand
+       back the entire month — three cleans the customer still wants and the
+       company is still going to do.
+
+       So whenever a payment covers more than one booking, the refund is scoped
+       to THIS booking's own amount even at 100%. A payment covering one visit
+       behaves exactly as before: no amount, full refund, application fee
+       reversed with it. */
+    const shared = await query(
+      "SELECT COUNT(*)::int AS n FROM bookings WHERE barion_payment_id = $1 AND id <> $2",
+      [ref, booking.id]);
+    const sharesPayment = (shared.rows[0]?.n || 0) > 0;
+
     const partial = pct < 100;
-    const amountMinor = partial && booking.total_minor
-      ? Math.round(Number(booking.total_minor) * pct / 100)
-      : (partial ? Math.round(Number(booking.total_huf) * 100 * pct / 100) : null);
+    const ownMinor = Number(booking.total_minor) || Number(booking.total_huf) * 100;
+    const amountMinor = partial
+      ? Math.round(ownMinor * pct / 100)
+      : (sharesPayment ? ownMinor : null);
     await stripe.refunds.create({
       payment_intent: paymentIntent,
       /* A partial refund is a fraction of the price, so it lands on a non-round
@@ -238,7 +286,7 @@ export async function refundBookingPayment(booking, pct = 100) {
     }, opts);
     await query("UPDATE bookings SET payment_status = $1 WHERE id = $2",
       [partial ? "partly-refunded" : "refunded", booking.id]);
-    return { refunded: true, pct };
+    return { refunded: true, pct, scoped: sharesPayment };
   } catch (e) {
     console.error("refund failed:", e.message);
     paymentAlert("refund-failed", `booking ${booking?.id}: ${e.stack || e.message}`);
@@ -264,7 +312,7 @@ export async function refundBookingPayment(booking, pct = 100) {
 export function hoursUntilBooking(booking, now = new Date()) {
   try {
     const d = booking.scheduled_date instanceof Date
-      ? booking.scheduled_date.toISOString().slice(0, 10) : String(booking.scheduled_date).slice(0, 10);
+      ? booking.scheduled_date.toISOString().slice(0, 10) : isoDate(booking.scheduled_date);
     const hm = String(booking.scheduled_slot || "09:00").match(/(\d{1,2}):(\d{2})/) || [0, "9", "00"];
     const start = Date.parse(`${d}T${String(hm[1]).padStart(2, "0")}:${hm[2]}:00+02:00`);
     const h = (start - now.getTime()) / 3600e3;
@@ -399,9 +447,21 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
       const feeHuf = Number(booking.service_fee_huf) ||
         Math.round(amount * Math.min(Math.max(Number(process.env.COMMISSION_PCT || 10), 0), 50) / (100 + Number(process.env.COMMISSION_PCT || 10)));
       const currency = String(booking.currency || "HUF").toLowerCase();
-      const amountMinor = Number(booking.total_minor) || amount * 100;
-      const feeMinor = Number(booking.service_fee_minor) || feeHuf * 100;
       const isSub = booking.pricing_type === "subscription";
+      /* Billing is monthly for every plan, whatever the cleaning cadence.
+
+         A booking row always holds ONE visit's price — that is what the company
+         is paid for it, and what a single-visit refund gives back. The CHARGE
+         is the month: the visits that actually fall inside it, so a five-week
+         month costs five cleans and a four-week month costs four. Nothing is
+         averaged, so nobody is ever billed for a clean they did not get. */
+      const monthVisits = isSub
+        ? visitsInBillingMonth(booking.scheduled_date, booking.period || "weekly").length
+        : 1;
+      const perVisitMinor = Number(booking.total_minor) || amount * 100;
+      const perVisitFeeMinor = Number(booking.service_fee_minor) || feeHuf * 100;
+      const amountMinor = perVisitMinor * monthVisits;
+      const feeMinor = perVisitFeeMinor * monthVisits;
 
       // ── 3.1 DIRECT CHARGE: the payment is created ON the company's Stripe
       //    account; the cleaning money never touches the platform. Cleano's
@@ -422,7 +482,12 @@ router.post("/start", requireAuth, requireRole("customer"), async (req, res) => 
           unit_amount: payableMinor(amountMinor, currency),
           product_data: {
             name: (svc.name || "Cleaning service").slice(0, 250),
-            description: `${booking.company_name} · ${String(booking.scheduled_date).slice(0, 10)} ${booking.scheduled_slot || ""}`.slice(0, 500),
+            /* Say what the number covers. A weekly customer seeing four times
+               the price they chose, with no explanation, abandons the payment
+               and is right to. */
+            description: (isSub
+              ? `${booking.company_name} · ${monthVisits} visit${monthVisits === 1 ? "" : "s"}, first on ${isoDate(booking.scheduled_date)} ${booking.scheduled_slot || ""} · billed monthly`
+              : `${booking.company_name} · ${isoDate(booking.scheduled_date)} ${booking.scheduled_slot || ""}`).slice(0, 500),
           },
         },
         quantity: 1,
@@ -861,9 +926,39 @@ export async function stripeWebhook(req, res) {
                  sess.customer ? String(sess.customer) : null,
                  pi2.payment_method ? String(pi2.payment_method) : null,
                  connectAcct,
-                 nextDateFrom(String(b2.scheduled_date).slice(0, 10), b2.period)]
+                 nextDateFrom(isoDate(b2.scheduled_date), b2.period)]
               );
               await query("UPDATE bookings SET subscription_id = $1 WHERE id = $2", [subIns.rows[0].id, bookingId]);
+              /* Build the rest of the run NOW, not on the next half-hourly
+                 tick. Until this line existed, a customer who had just paid —
+                 and the company waiting on the work — saw a single visit on a
+                 calendar that should already have shown the whole plan, with
+                 nothing to tell them it was merely late rather than broken. */
+              try {
+                const { materialise } = await import("../lib/subscriptions.js");
+                await materialise(subIns.rows[0].id);
+
+                /* The customer paid for the whole first month, so the whole
+                   first month is paid — not just the visit they clicked.
+
+                   Every one of those visits carries the same payment
+                   reference. That is what lets a single cancelled visit be
+                   refunded for its own amount out of a shared charge, rather
+                   than handing back the month.
+
+                   next_booking_date moves past them too, so the monthly pass
+                   does not come round and charge for cleans already bought. */
+                const covered = visitsInBillingMonth(b2.scheduled_date, b2.period);
+                const last = covered[covered.length - 1];
+                await query(
+                  `UPDATE bookings SET payment_status = 'paid', barion_payment_id = $1
+                    WHERE subscription_id = $2 AND scheduled_date <= $3
+                      AND payment_status IN ('scheduled','retry') AND status NOT IN (8,9)`,
+                  [(connectAcct ? `stripedc:${connectAcct}:` : "stripe:") + sess.id, subIns.rows[0].id, last]);
+                await query(
+                  "UPDATE subscriptions SET next_booking_date = GREATEST(next_booking_date, $1) WHERE id = $2",
+                  [nextDateFrom(last, b2.period), subIns.rows[0].id]);
+              } catch (e) { console.error("materialise on create:", e.message); }
             }
           } catch (e) { console.warn("create subscription:", e.message); }
         } catch (e) { console.warn("save card:", e.message); }

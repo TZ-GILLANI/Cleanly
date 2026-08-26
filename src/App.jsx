@@ -289,7 +289,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.2.0";
+const APP_VERSION = "7.5.0";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -542,6 +542,34 @@ const laterVisits = (list, b) =>
   !b?.subscription_id ? 0
   : list.filter((x) => x.subscription_id === b.subscription_id && x.status < 4
                     && String(x.scheduled_date) > String(b.scheduled_date)).length;
+
+/* The visits one monthly payment covers — the client's copy of the rule the
+   server bills by (visitsInBillingMonth in server/routes/payments.js).
+
+   Every plan is billed monthly whatever its cleaning cadence, and months are
+   not equal: a weekly plan has four visits in some and five in others. The
+   customer has to see the real figure BEFORE they type a card, or a weekly
+   subscriber meets four times the price they chose with no explanation and
+   abandons the payment — rightly. */
+const addPeriod = (iso, freq) => {
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  if (freq === "weekly") return new Date(Date.UTC(y, m - 1, d + 7)).toISOString().slice(0, 10);
+  if (freq === "biweekly") return new Date(Date.UTC(y, m - 1, d + 14)).toISOString().slice(0, 10);
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(d, lastDay))).toISOString().slice(0, 10);
+};
+const visitsInMonthFrom = (iso, freq) => {
+  if (!iso) return 1;
+  const end = addPeriod(iso, "monthly");
+  let n = 0, cur = String(iso).slice(0, 10);
+  for (let i = 0; i < 40 && cur < end; i++) {
+    n++;
+    const next = addPeriod(cur, freq);
+    if (next <= cur) break;
+    cur = next;
+  }
+  return Math.max(1, n);
+};
 
 const promoOf = (co) => {
   const p = co && co.promo;
@@ -1173,6 +1201,122 @@ const StatusPill = ({ status, fulfilment }) => {
     >{status === 9 ? L("Cancelled", "Lemondva") : status === 8 ? L("Declined", "Elutasítva") : STAGE(status, fulfilment)}</Pill>
   );
 };
+/* ASKING TO MOVE A VISIT.
+
+   The customer never picks the new date on their own — they offer two or three
+   they could manage and the company takes whichever it can work. That way
+   nobody is handed a day the other side cannot do, and a customer who simply
+   cannot make Tuesday does not have to cancel a whole plan to escape it. */
+/* GETTING THERE.
+
+   The cleaner had the address as a line of text and nothing else — no map, no
+   way to hand it to the phone's navigation. On a first visit to a street you do
+   not know, with a customer waiting, retyping an address into another app is
+   the difference between on time and late.
+
+   Both map apps, because both exist on the phones cleaners actually carry:
+   Apple Maps is the default on iOS, Google Maps on Android and on most iPhones
+   where it is installed. Each takes a plain address, so nothing here depends on
+   us having geocoded anything.
+
+   `dir/?api=1&destination=` and `?daddr=` both open DIRECTIONS rather than a
+   pin — the cleaner wants the route, not a dot. */
+function GoThere({ address, phone, compact }) {
+  if (!address) return null;
+  const q = encodeURIComponent(String(address));
+  const isApple = typeof navigator !== "undefined" && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent || "");
+  const btn = {
+    flex: 1, textAlign: "center", textDecoration: "none",
+    fontFamily: B, fontWeight: 700, fontSize: compact ? 11 : 12,
+    borderRadius: R.md, padding: compact ? "8px 10px" : "10px 12px",
+  };
+  const apple = <a key="a" href={`https://maps.apple.com/?daddr=${q}&dirflg=d`} target="_blank" rel="noreferrer"
+    style={{ ...btn, background: C.bg, color: C.navySoft }}>{L("Apple Maps", "Apple Térkép")}</a>;
+  const google = <a key="g" href={`https://www.google.com/maps/dir/?api=1&destination=${q}`} target="_blank" rel="noreferrer"
+    style={{ ...btn, background: C.bg, color: C.navySoft }}>{L("Google Maps", "Google Térkép")}</a>;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 7 }}>
+        {/* The phone's own map app first — it is the one that will already be
+            signed in and holding their recent trips. */}
+        {isApple ? [apple, google] : [google, apple]}
+        {phone && (
+          <a href={`tel:${phone}`} style={{ ...btn, background: C.mintSoft, color: C.greenDeep, flex: "0 0 auto", padding: compact ? "8px 12px" : "10px 14px" }}>
+            {L("Call", "Hívás")}
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MoveVisitSheet({ booking, close }) {
+  const { requestReschedule } = useStore();
+  const toast = useToast();
+  const [rows, setRows] = React.useState([{ date: "", slot: "10:00" }, { date: "", slot: "10:00" }]);
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  const minIso = localISO(new Date());
+  const set = (i, patch) => setRows((r) => r.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+  const filled = rows.filter((r) => r.date);
+  const enough = new Set(filled.map((r) => r.date + r.slot)).size >= 2;
+
+  return (
+    <Sheet close={close} title={L("Ask to move this visit", "Időpont áthelyezésének kérése")}>
+      <div style={{ padding: "2px 2px 8px" }}>
+        <div style={{ fontFamily: B, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.55, marginBottom: 14 }}>
+          {L("Offer two or three times you could manage. The company picks whichever one it can work — nothing is charged again, and the rest of your plan stays as it is.",
+             "Adj meg két-három időpontot, ami neked megfelelne. A cég azt választja, amelyiket vállalni tudja — nem terhelünk újra, és a csomagod többi alkalma változatlan marad.")}
+        </div>
+        <div style={{ background: C.bg, borderRadius: R.md, padding: "10px 13px", marginBottom: 14 }}>
+          <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint }}>{L("Currently", "Jelenleg")}</div>
+          <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink, marginTop: 2 }}>
+            {dayLabel(booking.scheduled_date)} · {booking.scheduled_slot}
+          </div>
+        </div>
+
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 9, alignItems: "center" }}>
+            <input type="date" min={minIso} value={r.date} onChange={(e) => set(i, { date: e.target.value })}
+              style={{ flex: 1, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }} />
+            <select value={r.slot} onChange={(e) => set(i, { slot: e.target.value })}
+              style={{ flex: 1, minWidth: 0, background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }}>
+              {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+            {rows.length > 2 && (
+              <button onClick={() => setRows((x) => x.filter((_, k) => k !== i))}
+                style={{ border: "none", background: "none", color: C.coral, fontWeight: 700, cursor: "pointer", fontSize: 15 }}>✕</button>
+            )}
+          </div>
+        ))}
+        {rows.length < 3 && (
+          <button onClick={() => setRows((r) => [...r, { date: "", slot: "10:00" }])}
+            style={{ width: "100%", background: "none", border: `1.5px dashed ${C.line}`, borderRadius: R.md, padding: "10px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer", marginBottom: 12 }}>
+            {L("Add a third option", "Harmadik lehetőség hozzáadása")}
+          </button>
+        )}
+
+        <Field label={L("Anything they should know? (optional)", "Bármi, amit tudniuk kell? (nem kötelező)")}
+          area value={note} onChange={(e) => setNote(e.target.value)} />
+
+        {err && <div style={{ fontFamily: B, fontSize: 12, color: C.coralText || C.coral, marginBottom: 10 }}>{err}</div>}
+        <Btn full disabled={!enough || busy} onClick={async () => {
+          setBusy(true); setErr("");
+          const r = await requestReschedule(booking.id, filled, note);
+          setBusy(false);
+          if (r?.error) return setErr(r.error);
+          toast(L("Sent — the company will pick one of your times", "Elküldve — a cég kiválasztja az egyiket"));
+          close();
+        }}>
+          {busy ? L("Sending…", "Küldés…") : L("Send request", "Kérés küldése")}
+        </Btn>
+      </div>
+    </Sheet>
+  );
+}
+
 function Sheet({ title, close, children }) {
   React.useEffect(() => {
     document.body.classList.add("cl-modal-open");
@@ -2122,8 +2266,8 @@ function PaymentWait({ url, check, onPaid, onCancel, isSub }) {
           /* Saying it here, at the moment the card is typed, is the only place
              it is not a surprise. */
           <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 10, lineHeight: 1.55, background: C.bg, borderRadius: R.md, padding: "9px 12px" }}>
-            {L("This card is saved for the visits after this one. Each is charged automatically 5 days before, and you can cancel the plan any time.",
-               "Ezt a kártyát elmentjük a további alkalmakra. Mindegyiket 5 nappal előtte automatikusan terheljük, a csomagot pedig bármikor lemondhatod.")}
+            {L("This card is saved for the months after this one. You are charged once a month, 5 days before that month's first visit, and you can cancel any time.",
+               "Ezt a kártyát elmentjük a következő hónapokra. Havonta egyszer terhelünk, az adott hónap első alkalma előtt 5 nappal, és bármikor lemondhatod.")}
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 20 }}>
@@ -3081,6 +3225,10 @@ function BookingFlow({ company, close, onBooked }) {
   const [units, setUnits] = useState(unitMin);
   React.useEffect(() => { setUnits(Number(svc?.min_units) || 1); }, [svc?.id]);
   const isSub = svc?.pricing_type === "subscription";
+  /* How many cleans the first monthly payment covers. Depends on the start
+     date, because a plan begun on the 3rd meets a different set of weeks than
+     one begun on the 25th. */
+  const monthVisits = isSub ? visitsInMonthFrom(day?.iso, svc?.period || "weekly") : 1;
   const promo = promoOf(company);
   const effPct = (s) => Math.max(s && s.promo_pct ? s.promo_pct : 0, promo ? promo.pct : 0, isStudent ? company.student_discount || 0 : 0);
   const discPct = effPct(svc);
@@ -3389,11 +3537,20 @@ function BookingFlow({ company, close, onBooked }) {
                 )}
                 <div style={{ borderTop: `1.5px dashed ${C.line}`, margin: "12px 0" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F, fontWeight: 700, fontSize: 17, color: C.ink }}>
-                  <span>{isSub ? fill(L("Per {0}", "{0}"), periodLabel(svc.period)) : L("Total", "Összesen")}</span><span>{huf(total)}</span>
+                  <span>{isSub ? L("Per month", "Havonta") : L("Total", "Összesen")}</span>
+                  <span>{huf(isSub ? total * monthVisits : total)}</span>
                 </div>
+                {/* The sum, spelled out. Four cleans at 9 900 is not a figure
+                    anyone should have to reverse-engineer from a total. */}
+                {isSub && (
+                  <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 5 }}>
+                    {fill(L("{0} visits × {1} — billed monthly, not per visit", "{0} alkalom × {1} — havonta terheljük, nem alkalmanként"),
+                          monthVisits, huf(total))}
+                  </div>
+                )}
                 <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 7, lineHeight: 1.6 }}>
                   {isSub
-                    ? <>{cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day?.iso)}<br />{addr} · {isLive ? L("Card per visit", "Kártya alkalmanként") : L("Cash each visit (demo)", "Készpénz minden alkalommal (demo)")} · {L("renews after each visit", "minden alkalom után megújul")}</>
+                    ? <>{cadenceLabel(svc.period, day)} · {slot} · {L("first visit", "első alkalom:")} {dayLabel(day?.iso)}<br />{addr} · {isLive ? L("One monthly card payment", "Egy havi kártyaterhelés") : L("Cash each visit (demo)", "Készpénz minden alkalommal (demo)")} · {L("renews after each visit", "minden alkalom után megújul")}</>
                     : <>{day?.label || dayLabel(day?.iso)} · {slot}<br />{addr} · {isLive ? L("Card payment", "Kártyás fizetés") : L("Cash (demo)", "Készpénz (demo)")}</>}
                 </div>
               </div>
@@ -3463,7 +3620,9 @@ function BookingFlow({ company, close, onBooked }) {
             }
             onBooked(row);
           }}>
-            {busy ? L("Booking…", "Foglalás…") : step < 3 ? L("Continue", "Tovább") : isSub ? `${L("Subscribe", "Előfizetek")} · ${huf(total)}/${periodShort(svc.period)}` : `${L("Confirm", "Foglalás")} · ${huf(total)}`}
+            {busy ? L("Booking…", "Foglalás…") : step < 3 ? L("Continue", "Tovább")
+              : isSub ? `${L("Subscribe", "Előfizetek")} · ${huf(total * monthVisits)}`
+              : `${L("Confirm", "Foglalás")} · ${huf(total)}`}
           </Btn>
         </div>
       </div>
@@ -3472,7 +3631,7 @@ function BookingFlow({ company, close, onBooked }) {
 }
 
 function CustomerBookings({ openBooking }) {
-  const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment, fetchSubscriptions, subscriptionAction } = useStore();
+  const { session, bookings, allEmployees, companies, reviews, cancelBooking, addReview, submitComplaint, startPayment, fetchSubscriptions, subscriptionAction, withdrawReschedule } = useStore();
   const toast = useToast();
   const allMine = bookings.filter((b) => b.customer_id === session.userId || b.customer_name === session.name);
   const mine = nextVisitOnly(allMine);
@@ -3490,9 +3649,11 @@ function CustomerBookings({ openBooking }) {
   const [compBody, setCompBody] = useState("");
   const [showReports, setShowReports] = useState(false);
   const [trackId, setTrackId] = useState(null);
+  const [movingId, setMovingId] = useState(null);
 
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
+      {movingId && <MoveVisitSheet booking={allMine.find((b) => b.id === movingId)} close={() => setMovingId(null)} />}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 18px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink }}>{L("My bookings", "Foglalásaim")}</div>
         <button onClick={() => setShowReports(true)} style={{ fontFamily: B, fontWeight: 700, fontSize: 11.5, padding: "7px 13px", borderRadius: 99, border: `1.5px solid ${C.navy}33`, background: C.navyChip, color: C.navySoft, cursor: "pointer" }}>{L("Report", "Bejelentés")}</button>
@@ -3523,8 +3684,8 @@ function CustomerBookings({ openBooking }) {
                     p.has_card
                       ? <div style={{ fontFamily: B, fontSize: 10.5, color: C.green, fontWeight: 700, marginTop: 4 }}>
                           {p.charge_on
-                            ? fill(L("Card saved · charges automatically on {0}", "Kártya elmentve · automatikus terhelés: {0}"), dayLabel(p.charge_on))
-                            : fill(L("Card saved · charges {0} days before each visit", "Kártya elmentve · {0} nappal minden alkalom előtt terhelünk"), p.charge_days || 5)}
+                            ? fill(L("Card saved · next monthly charge {0}", "Kártya elmentve · következő havi terhelés: {0}"), dayLabel(p.charge_on))
+                            : fill(L("Card saved · charged monthly, {0} days before the first visit of each month", "Kártya elmentve · havonta terhelünk, a havi első alkalom előtt {0} nappal"), p.charge_days || 5)}
                         </div>
                       : <div style={{ fontFamily: B, fontSize: 10.5, color: C.coral, fontWeight: 700, marginTop: 4 }}>
                           {L("No card saved yet — pay the next visit to make this automatic",
@@ -3622,6 +3783,41 @@ function CustomerBookings({ openBooking }) {
               </div>
             )}
 
+            {/* A move in flight, or the answer to one. */}
+            {(() => {
+              const rs = b.reschedule;
+              if (!rs) return null;
+              if (rs.status === "pending") return (
+                <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "9px 12px", marginTop: 10 }}>
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.amber }}>
+                    {L("Waiting for the company to pick a time", "Várunk, hogy a cég válasszon időpontot")}
+                  </div>
+                  <div style={{ fontFamily: B, fontSize: 10.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.5 }}>
+                    {(rs.options || []).filter((o) => o.ok).map((o) => `${dayLabel(o.date)} ${o.slot}`).join(" · ")}
+                  </div>
+                  <button onClick={async () => {
+                    const r = await withdrawReschedule(b.id);
+                    if (r?.error) toast(r.error, "error"); else toast(L("Request withdrawn", "Kérés visszavonva"));
+                  }} style={{ marginTop: 6, background: "none", border: "none", padding: 0, fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.inkSoft, cursor: "pointer" }}>
+                    {L("Withdraw", "Visszavonom")}
+                  </button>
+                </div>
+              );
+              if (rs.status === "declined") return (
+                <div style={{ background: C.coralSoft, borderRadius: R.md, padding: "9px 12px", marginTop: 10, fontFamily: B, fontSize: 11, color: C.coral, lineHeight: 1.5 }}>
+                  {L("The company couldn't make any of those times, so this visit stays as it is.",
+                     "A cég egyik időpontot sem tudta vállalni, így ez az alkalom változatlan marad.")}
+                  {rs.reason ? ` ${rs.reason}` : ""}
+                </div>
+              );
+              if (rs.status === "moved") return (
+                <div style={{ background: C.mintSoft, borderRadius: R.md, padding: "9px 12px", marginTop: 10, fontFamily: B, fontSize: 11, color: C.greenDeep, lineHeight: 1.5 }}>
+                  {fill(L("Moved from {0} — nothing was charged again.", "Áthelyezve innen: {0} — nem terheltünk újra."), dayLabel(rs.from?.date))}
+                </div>
+              );
+              return null;
+            })()}
+
             {b.status !== 9 && b.status !== 8 && (
               <>
                 <div style={{ display: "flex", alignItems: "center", margin: "16px 2px 5px" }}>
@@ -3705,6 +3901,13 @@ function CustomerBookings({ openBooking }) {
                               fontFamily: B, fontSize: 11.5, color: C.coral, lineHeight: 1.5 }}>
                   {L("Payment failed:", "A fizetés nem sikerült:")} {b.payment_error}
                 </div>
+              )}
+              {/* Moving beats cancelling for both sides, so it sits next to Pay,
+                  not buried. Only while the work has not begun. */}
+              {b.status <= 1 && b.status !== 9 && b.status !== 8 && !(b.reschedule && b.reschedule.status === "pending") && (
+                <Btn small ghost style={{ flex: 1 }} onClick={() => setMovingId(b.id)}>
+                  {L("Move this visit", "Áthelyezés")}
+                </Btn>
               )}
               {isLive && b.payment_status !== "paid" && b.status !== 9 && b.status !== 8 && (
                 <Btn small mint style={{ flex: 1 }} onClick={async () => {
@@ -3904,6 +4107,10 @@ function EmployeeJobs({ openProfile }) {
                 <StatusPill status={b.status} fulfilment={b.fulfilment} />
               </div>
 
+              {/* Directions, on the card, before the job starts — not buried
+                  behind a tracking screen that only opens once they set off. */}
+              <GoThere address={b.address} phone={b.customer_phone} />
+
               {b.note && (
                 <div style={{ background: "#FFF8EA", border: `1px solid ${C.gold}55`, borderRadius: R.md, padding: "10px 13px", marginTop: 12, fontFamily: B, fontSize: 11.5, color: "#8A6A1F", lineHeight: 1.55 }}>
                   <b>{L("Customer note:", "Ügyfél megjegyzése:")}</b> {b.note}
@@ -4019,7 +4226,7 @@ function EmployeeNotices() {
 ════════════════════════════════════════════════════════════ */
 
 function CompanyJobs({ openProfile }) {
-  const { session, bookings, employees, assignBooking, declineBooking, companies, uploadInvoice, archiveBooking, hideDeletedIdentity } = useStore();
+  const { session, bookings, employees, assignBooking, declineBooking, companies, uploadInvoice, archiveBooking, hideDeletedIdentity, decideReschedule } = useStore();
   const [jobTrackId, setJobTrackId] = React.useState(null);
   /* While a job is on the way or being cleaned, poll faster so the task ticks
      appear live. safeRefresh, not refreshData: eight seconds is quicker than a
@@ -4234,6 +4441,48 @@ function CompanyJobs({ openProfile }) {
               </div>
             </div>
 
+            {/* The customer has offered dates. Answer it here, where the job is.
+
+                Only the times the customer offered appear — the company picks,
+                it does not invent one of its own, because the customer said
+                which days they could manage. Anything offered that the company
+                cannot work is greyed with the reason, so the owner can see
+                there was nothing to pick rather than wonder why it is missing. */}
+            {b.reschedule && b.reschedule.status === "pending" && (
+              <div style={{ background: C.amberSoft, borderRadius: R.md, padding: "11px 13px", marginTop: 11 }}>
+                <div style={{ fontFamily: F, fontWeight: 700, fontSize: 12, color: C.amber }}>
+                  {fill(L("{0} asked to move this visit", "{0} áthelyezést kért"), b.customer_name || L("The customer", "Az ügyfél"))}
+                </div>
+                {b.reschedule.note && (
+                  <div style={{ fontFamily: B, fontSize: 11, color: C.inkSoft, marginTop: 4, lineHeight: 1.5 }}>“{b.reschedule.note}”</div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 9 }}>
+                  {(b.reschedule.options || []).map((o, i) => (
+                    o.ok ? (
+                      <button key={i} onClick={async () => {
+                        const r = await decideReschedule(b.id, { choice: i });
+                        if (r?.error) toast(r.error, "error");
+                        else toast(L("Moved — the customer has been told", "Áthelyezve — az ügyfelet értesítettük"));
+                      }} style={{ textAlign: "left", background: C.card, border: `1.5px solid ${C.green}`, borderRadius: R.md, padding: "9px 12px", fontFamily: F, fontWeight: 700, fontSize: 12, color: C.greenDeep, cursor: "pointer" }}>
+                        ✓ {dayLabel(o.date)} · {o.slot}
+                      </button>
+                    ) : (
+                      <div key={i} style={{ background: C.bg, borderRadius: R.md, padding: "9px 12px", fontFamily: B, fontSize: 11, color: C.inkFaint }}>
+                        {dayLabel(o.date)} · {o.slot} — {o.why}
+                      </div>
+                    )
+                  ))}
+                  <button onClick={async () => {
+                    const r = await decideReschedule(b.id, { decline: true });
+                    if (r?.error) toast(r.error, "error");
+                    else toast(L("Kept as it is — the customer has been told", "Marad a régi — az ügyfelet értesítettük"));
+                  }} style={{ background: "none", border: `1.5px solid ${C.line}`, borderRadius: R.md, padding: "8px 12px", fontFamily: B, fontWeight: 700, fontSize: 11, color: C.inkSoft, cursor: "pointer" }}>
+                    {L("None of these — keep the original date", "Egyik sem — marad az eredeti időpont")}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {b.status >= 2 && tasks.length > 0 && (
               <div style={{ marginTop: 11 }}>
                 <Progress done={b.tasks_done.length} total={tasks.length} />
@@ -4444,7 +4693,20 @@ function CompanySchedule() {
   return (
     <div className="cl-fade" style={{ padding: "calc(20px + env(safe-area-inset-top)) 20px 30px" }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 21, color: C.ink, margin: "8px 0 6px" }}>{L("Schedule", "Beosztás")}</div>
-      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 14 }}>{L("Your whole pipeline on a calendar — dots mark days with jobs.", "A teljes munkamenet egy naptárban — a pontok a munkanapokat jelölik.")}</div>
+      <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginBottom: 6 }}>{L("Your whole pipeline on a calendar — dots mark days with jobs.", "A teljes folyamatod egy naptárban — a pontok a munkanapokat jelölik.")}</div>
+      {/* Whether a plan actually built its run is the thing the owner cannot
+          otherwise tell: one visit on the calendar looks the same whether the
+          plan is working or stuck. Count them out loud. */}
+      {(() => {
+        const runs = new Set(mine.filter((b) => b.subscription_id).map((b) => b.subscription_id));
+        const visits = mine.filter((b) => b.subscription_id && String(b.scheduled_date).slice(0, 10) >= localISO(new Date())).length;
+        if (!runs.size) return null;
+        return (
+          <div style={{ fontFamily: B, fontSize: 11.5, fontWeight: 700, color: C.navySoft, background: C.navyChip, borderRadius: R.md, padding: "7px 11px", marginBottom: 14, display: "inline-block" }}>
+            ↻ {fill(L("{0} upcoming visits from {1} recurring plans", "{0} közelgő alkalom {1} ismétlődő csomagból"), visits, runs.size)}
+          </div>
+        );
+      })()}
       <Calendar selected={selDay} onSelect={setSelDay} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 10px" }}>
         <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>{dayLabel(selDay)} · {dayJobs.length} job{dayJobs.length === 1 ? "" : "s"}</div>
@@ -5167,8 +5429,29 @@ function PartnerInvoiceBox({ booking }) {
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => { fetchInvoices(booking.id).then((r) => setInv(r || null)); }, [booking.id]);
-  if (booking.status !== 4 || booking.payment_status !== "paid") return null;
-  if (inv === undefined) return null;
+
+  /* Say why, instead of vanishing.
+
+     These were two silent `return null`s. On a job that was finished but not
+     paid — a card that failed, a booking still settling — the upload box
+     simply was not there, with nothing on screen to say so. Musa's report was
+     "there is no place to upload the invoice", and he was right: for the jobs
+     he was looking at, there wasn't one, and nothing explained it.
+
+     An invoice for work nobody paid for is still the wrong thing to send, so
+     the rule stays. What changes is that the partner can see the rule. */
+  if (booking.status !== 4) return null;                 // not finished: nothing to invoice yet
+  if (booking.payment_status !== "paid") return (
+    <div style={{ background: C.bg, borderRadius: R.md, padding: "9px 12px", marginTop: 10,
+                  fontFamily: B, fontSize: 11, color: C.inkSoft, lineHeight: 1.5 }}>
+      {L("You can upload the invoice once this job is paid.", "A számlát akkor töltheted fel, ha ez a munka ki van fizetve.")}
+    </div>
+  );
+  if (inv === undefined) return (
+    <div style={{ fontFamily: B, fontSize: 11, color: C.inkFaint, marginTop: 10 }}>
+      {L("Checking invoice…", "Számla ellenőrzése…")}
+    </div>
+  );
 
   if (inv?.partner) {
     return (

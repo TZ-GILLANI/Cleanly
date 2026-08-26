@@ -11,6 +11,7 @@
    calendar app reads as local time on the device. The customer, the company and
    the cleaner are in the same city, so this is both simpler and more correct
    than guessing a zone and being wrong for anyone who travels.                */
+import { isoDate } from "./isodate.js";
 
 const CRLF = "\r\n";
 
@@ -45,7 +46,7 @@ function localStamp(dateStr, slot, addMinutes = 0) {
   // Postgres hands back a Date for DATE columns and a string elsewhere; both arrive here.
   const d = dateStr instanceof Date
     ? dateStr.toISOString().slice(0, 10)
-    : String(dateStr).slice(0, 10);
+    : isoDate(dateStr);
   const [y, m, day] = d.split("-").map(Number);
   const [hh, mm] = String(slot || "09:00").split(":").map(Number);
   const t = new Date(Date.UTC(y, m - 1, day, hh || 0, mm || 0, 0));

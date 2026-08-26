@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════
---  CLEANO — the columns your database is missing (for v7.1.3)
---  Unchanged since v7.1.2. If you already ran this, you are done.
+--  CLEANO — the columns your database is missing (for v7.5.0)
+--  NUMBER 4 IS NEW. Run the file again; 1 to 3 will simply do nothing.
 --
 --  Where: Supabase → your project → SQL Editor → New query
 --  Paste this whole file, press RUN. It is safe to run more than once,
@@ -45,24 +45,38 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS payment_error TEXT;
 
 
+-- 4 ── Moving one visit ─────────────────────────────────────────────
+-- NEW in v7.3.0. A customer who can't make Tuesday offers two or three
+-- dates they could manage, and you pick whichever one you can actually
+-- work. Neither side sets the new date alone, so you are never handed
+-- a day you're closed. Holds the whole exchange — the dates offered,
+-- which ones are workable, the one you chose, and the original date.
+-- Nothing about the money moves: same price, same payment, same place
+-- in the plan. Only the day and the hour change.
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS reschedule JSONB;
+
+
 -- ═══════════════════════════════════════════════════════════════════
 --  CHECK IT WORKED
---  Run this second query. You want three rows back.
+--  Run this second query. You want four rows back.
 -- ═══════════════════════════════════════════════════════════════════
 
 SELECT table_name, column_name, data_type, column_default
 FROM   information_schema.columns
 WHERE  (table_name = 'companies' AND column_name IN ('service_areas', 'eu_vat'))
-   OR  (table_name = 'bookings'  AND column_name = 'payment_error')
+   OR  (table_name = 'bookings'  AND column_name IN ('payment_error', 'reschedule'))
 ORDER  BY table_name, column_name;
 
 -- Expected:
 --   bookings   | payment_error | text  |
+--   bookings   | reschedule    | jsonb |
 --   companies  | eu_vat        | text  |
 --   companies  | service_areas | jsonb | '[]'::jsonb
 --
 -- Then open  https://<your-render-url>/api/health  in a browser.
--- You want:  "version":"7.2.0"  and  "schema":"ready"
+-- You want:  "version":"7.5.0"  and  "schema":"ready"
 -- If it says "schema":"MIGRATION_PENDING", the ALTERs did not land.
 -- If it says an older version, Render has not deployed the new code yet.
 

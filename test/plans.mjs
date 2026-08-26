@@ -44,6 +44,7 @@ await import("../server/index.js");
 await new Promise((r) => setTimeout(r, 900));
 const { query } = await import("../server/db.js");
 const { materialise } = await import("../server/lib/subscriptions.js");
+const { isoDate } = await import("../server/lib/isodate.js");
 const dPlus = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
 await j("/api/auth/register", { method: "POST", body: {
@@ -69,7 +70,7 @@ console.log("\n── subscribing goes to the card screen, like any other paymen
   ok("a plan opens checkout the same way a one-off does",
      /if \(isLive\) \{ \/\/ live = card only/.test(app));
   ok("and the wait screen explains what the saved card is for",
-     /This card is saved for the visits after this one/.test(app));
+     /This card is saved for the months after this one/.test(app));
   const pay = fs.readFileSync(new URL("../server/routes/payments.js", import.meta.url), "utf8");
   ok("that session is the one that saves the card",
      /\.\.\.\(isSub \? \{ setup_future_usage: "off_session" \} : \{\}\)/.test(pay));
@@ -91,6 +92,32 @@ const subId = (await query(
    VALUES ($1,$2,$3,'weekly','10:00','Piac utca 1',NULL,'HUF',1089000,99000,'cus_A','pm_OLD','acct_1','active',$4) RETURNING id`,
   [cuId, cid, svcId, dPlus(14)])).rows[0].id;
 await query("UPDATE bookings SET payment_status = 'paid', subscription_id = $1 WHERE id = $2", [subId, firstId]);
+
+console.log("\n── the run is built the moment the plan is, not half an hour later ──");
+{
+  /* materialise() used to be called by the 30-minute tick and nothing else.
+     So a customer subscribed, paid, and then looked at a calendar showing one
+     visit — for up to half an hour. The company saw the same single job and
+     had no way to tell whether the plan had worked or was simply late. */
+  const fs = await import("fs");
+  const pay = fs.readFileSync(new URL("../server/routes/payments.js", import.meta.url), "utf8");
+  const subsRoute = fs.readFileSync(new URL("../server/routes/subscriptions.js", import.meta.url), "utf8");
+  const lib = fs.readFileSync(new URL("../server/lib/subscriptions.js", import.meta.url), "utf8");
+  ok("it can be run for one plan on its own", /export async function materialise\(subId = null\)/.test(lib));
+  ok("creating a plan builds its run there and then", /await materialise\(subIns\.rows\[0\]\.id\);/.test(pay));
+  ok("resuming a paused plan rebuilds it too", /await materialise\(s\.id\);/.test(subsRoute));
+
+  /* And it really only touches the one asked for. */
+  const other = (await query(
+    `INSERT INTO subscriptions (customer_id, company_id, service_id, frequency, slot, address,
+       currency, amount_minor, fee_minor, status, next_booking_date)
+     VALUES ($1,$2,$3,'weekly','14:00','Piac utca 9','HUF',500000,50000,'active',$4) RETURNING id`,
+    [cuId, cid, svcId, dPlus(9)])).rows[0].id;
+  await materialise(subId);
+  const otherCount = await query("SELECT COUNT(*)::int AS n FROM bookings WHERE subscription_id = $1", [other]);
+  ok("asking for one plan does not build another's", otherCount.rows[0].n === 0, String(otherCount.rows[0].n));
+  await query("UPDATE subscriptions SET status = 'cancelled' WHERE id = $1", [other]);
+}
 
 console.log("\n── four visits exist, one visit shows ──");
 await materialise();
@@ -124,6 +151,52 @@ await materialise();
      `${shown.filter((b) => b.status < 4).length} of ${all.length}`);
 }
 
+console.log("\n── the dates a plan lands on ──");
+{
+  /* The customer picks the FIRST date in the booking flow, against the
+     company's real calendar. Every visit after that is arithmetic on that
+     anchor: +7 days weekly, +14 fortnightly, same day next month for monthly
+     (clamped, so the 31st becomes the 28th in February rather than skidding
+     into March). The hour never changes — it is the slot the customer chose.
+
+     What was missing: nothing checked whether the company was OPEN on the
+     dates that arithmetic produced. A week marked as time off still filled
+     with visits, and so did a weekday they never work. */
+  const fs = await import("fs");
+  const lib = fs.readFileSync(new URL("../server/lib/subscriptions.js", import.meta.url), "utf8");
+  ok("every generated date is checked against the company's calendar",
+     /const why = await slotProblem\(\{/.test(lib));
+  ok("using the same checker the booking screen uses",
+     /import \{ slotProblem \} from "\.\/availability\.js";/.test(lib));
+  ok("a blocked day rolls forward to the next one the company can work",
+     /for \(let day = nominal; day < limitIso; day = addDays\(day, 1\)\)/.test(lib));
+  ok("but never past the following visit, or the plan would eat itself",
+     /const limitIso = nextDateFrom\(nominal, s\.frequency\);/.test(lib));
+  ok("and if there is nothing workable in that gap, the visit is skipped rather than faked",
+     /no workable day for plan/.test(lib));
+  ok("the rhythm stays anchored to the date the arithmetic wanted, so one holiday does not shift the plan for ever",
+     /date = nextDateFrom\(nominal, s\.frequency\);/.test(lib));
+
+  /* Run it: close the day the second visit would want. */
+  const startIso = dPlus(40);
+  const shut = dPlus(47);
+  await query("UPDATE companies SET availability = $1 WHERE id = $2",
+    [JSON.stringify({ paused: false, days: Object.fromEntries([0,1,2,3,4,5,6].map((d) => [d, { on: true, slots: ["08:00"] }])), closed: [shut], busy: {}, busyServices: {} }), cid]);
+  const p2 = (await query(
+    `INSERT INTO subscriptions (customer_id, company_id, service_id, frequency, slot, address,
+       currency, amount_minor, fee_minor, status, next_booking_date)
+     VALUES ($1,$2,$3,'weekly','08:00','Piac utca 1','HUF',500000,50000,'active',$4) RETURNING id`,
+    [cuId, cid, svcId, startIso])).rows[0].id;
+  await materialise(p2);
+  const got = (await query("SELECT scheduled_date FROM bookings WHERE subscription_id = $1 ORDER BY scheduled_date", [p2])).rows
+    .map((r) => isoDate(r.scheduled_date));
+  ok("no visit lands on the day the company is closed", !got.includes(shut), got.slice(0, 5).join(" "));
+  ok("the one that would have is moved to the next workable day", got.includes(dPlus(48)), got.slice(0, 5).join(" "));
+  ok("and the visit after it is back on the original rhythm", got.includes(dPlus(54)), got.slice(0, 5).join(" "));
+  await query("UPDATE companies SET availability = NULL WHERE id = $1", [cid]);
+  await query("UPDATE subscriptions SET status = 'cancelled' WHERE id = $1", [p2]);
+}
+
 console.log("\n── the company calendar is the one place that shows them all ──");
 {
   const fs = await import("fs");
@@ -135,6 +208,15 @@ console.log("\n── the company calendar is the one place that shows them all 
   const co = await j("/api/bookings", { token: coTok });
   const runs = (co.data.bookings || []).filter((b) => b.subscription_id === subId);
   ok("the company is actually sent the whole run", runs.length >= 4, String(runs.length));
+  ok("every one survives the unpaid-job filter — 'scheduled' counts as committed",
+     runs.every((b) => ["scheduled", "paid", "retry"].includes(b.payment_status) || b.status !== 0),
+     runs.map((b) => b.payment_status).join(","));
+  const dates = new Set(runs.map((b) => String(b.scheduled_date).slice(0, 10)));
+  ok("and they land on different days, so the calendar has something to dot",
+     dates.size === runs.length, `${dates.size} days for ${runs.length} visits`);
+  const app2 = (await import("fs")).readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  ok("the Schedule tab counts the run out loud, so a stuck plan is visible",
+     /upcoming visits from \{1\} recurring plans/.test(app2));
 }
 
 console.log("\n── charged five days ahead, not two ──");
@@ -220,6 +302,53 @@ console.log("\n── cancelling a plan refunds what was charged ahead ──");
   const left = await query(
     "SELECT COUNT(*)::int AS n FROM bookings WHERE subscription_id = $1 AND status NOT IN (8,9) AND scheduled_date >= CURRENT_DATE AND payment_status IN ('scheduled','retry')", [subId]);
   ok("and nothing is left scheduled behind it", left.rows[0].n === 0, String(left.rows[0].n));
+}
+
+console.log("\n── Apple Pay, and what happens on the second visit ──");
+{
+  /* Apple Pay does not hand over a card number. It hands over a device token
+     (a DPAN), and Stripe saves that as an ordinary PaymentMethod of type card
+     with card.wallet.type = "apple_pay". Charging it later works — Apple
+     permits a saved token to be used OFF-session, which is exactly what a
+     renewal is — but it forbids reusing it while the customer is present. So
+     the automatic charge is allowed and the "Pay now" button must always open
+     a fresh sheet rather than silently reusing the token. It does: Pay now
+     starts a new checkout session. */
+  const fs = await import("fs");
+  const pay = fs.readFileSync(new URL("../server/routes/payments.js", import.meta.url), "utf8");
+  const sub = fs.readFileSync(new URL("../server/lib/subscriptions.js", import.meta.url), "utf8");
+
+  ok("the plan's first payment asks Stripe to keep the payment method",
+     /setup_future_usage: "off_session"/.test(pay));
+  ok("a Customer is created so there is something to attach it to",
+     /stripe\.customers\.create\(/.test(pay));
+  ok("on the company's own account, where the charges happen",
+     /const cust = await stripe\.customers\.create\(\{[\s\S]{0,220}\}, dcOpts\);/.test(pay));
+  ok("whatever Stripe saved is read back off the PaymentIntent — wallet or plain card",
+     /const pmId = pi\.payment_method;/.test(pay));
+  ok("and stored against the plan, not just the customer",
+     /UPDATE subscriptions SET stripe_customer_id = \$1, payment_method_id = \$2/.test(pay));
+
+  ok("the renewal charges it with the customer away, which is what Apple allows",
+     /off_session: true, confirm: true/.test(sub));
+  ok("using the plan's own saved method", /payment_method: b\.sub_pm/.test(sub));
+  /* Keyed on the plan and the month it pays for, because the batch is the
+     unit of payment now. Still carries the attempt state, so a genuine decline
+     can be retried while a duplicate within one attempt collapses. */
+  ok("and it cannot double-charge a month if we crash mid-way",
+     /idempotencyKey: `cleano-sub-\$\{b\.subscription_id\}-\$\{isoDate\(b\.scheduled_date\)\}-\$\{b\.payment_status\}`/.test(sub));
+
+  const code = sub.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  ok("a bank asking for the customer is not retried pointlessly",
+     /code === "authentication_required"/.test(code));
+  ok("nor is a token that no longer exists",
+     /code === "payment_method_not_available"/.test(code));
+  ok("the customer is told what to do instead of a generic failure",
+     /Your bank needs you to confirm/.test(sub));
+  ok("and paying that one visit puts the plan back on automatic",
+     /re-saves your card/.test(sub));
+  ok("the alert to Musa carries Stripe's code, not just a message",
+     /\[\$\{code \|\| "no-code"\}\]/.test(sub));
 }
 
 console.log(`\n════ RECURRING PLANS: ${pass} passed, ${fail} failed ════\n`);

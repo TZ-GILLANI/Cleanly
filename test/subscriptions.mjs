@@ -68,26 +68,31 @@ const subIns = await query(
 
 await materialise();
 const made = await query("SELECT * FROM bookings WHERE subscription_id = $1 ORDER BY scheduled_date", [subIns.rows[0].id]);
-ok("creates 4 future occurrences", made.rows.length === 4, `got ${made.rows.length}`);
-ok("occurrences are 'scheduled', not unpaid", made.rows.length === 4 && made.rows.every((b) => b.payment_status === "scheduled"));
-ok("occurrences are ordinary bookings (have company + slot)", made.rows.length === 4 && made.rows.every((b) => b.company_id && b.scheduled_slot === "09:00"));
-ok("occurrences are a week apart", made.rows.length === 4 &&
+/* Roughly three months on the calendar, whatever the cadence.
+
+   A flat four visits meant a weekly plan showed about a month and a monthly
+   plan showed four — the same number, wildly different horizons. The count now
+   follows the frequency: 12 weekly, 6 fortnightly, 3 monthly. */
+ok("a weekly plan fills about three months", made.rows.length === 12, `got ${made.rows.length}`);
+ok("occurrences are 'scheduled', not unpaid", made.rows.length === 12 && made.rows.every((b) => b.payment_status === "scheduled"));
+ok("occurrences are ordinary bookings (have company + slot)", made.rows.length === 12 && made.rows.every((b) => b.company_id && b.scheduled_slot === "09:00"));
+ok("occurrences are a week apart", made.rows.length === 12 &&
    (new Date(made.rows[1].scheduled_date) - new Date(made.rows[0].scheduled_date)) / 86400000 === 7);
 
 await materialise();
 const again = await query("SELECT COUNT(*)::int n FROM bookings WHERE subscription_id = $1", [subIns.rows[0].id]);
-ok("running twice does NOT duplicate", again.rows[0].n === 4, `got ${again.rows[0].n}`);
+ok("running twice does NOT duplicate", again.rows[0].n === 12, `got ${again.rows[0].n}`);
 
 console.log("\n── unpaid subscriptions no longer masquerade as jobs (3.4 fix) ──");
 const vis = await query(
   `SELECT COUNT(*)::int n FROM bookings b WHERE b.company_id = $1
      AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)`, [co.rows[0].id]);
-ok("scheduled occurrences ARE visible to the company", vis.rows[0].n === 4, `got ${vis.rows[0].n}`);
+ok("scheduled occurrences ARE visible to the company", vis.rows[0].n === 12, `got ${vis.rows[0].n}`);
 await query("INSERT INTO bookings (customer_id, company_id, service_id, service_snapshot, scheduled_date, scheduled_slot, address, customer_type, total_huf, pricing_type, period, payment_status, status, order_no) VALUES ($1,$2,$3,'{}',CURRENT_DATE+1,'11:00','x','resident',5000,'subscription','weekly','unpaid',0,999)", [cu.rows[0].id, co.rows[0].id, sv.rows[0].id]);
 const vis2 = await query(
   `SELECT COUNT(*)::int n FROM bookings b WHERE b.company_id = $1
      AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)`, [co.rows[0].id]);
-ok("an UNPAID subscription stub stays hidden", vis2.rows[0].n === 4, `got ${vis2.rows[0].n}`);
+ok("an UNPAID subscription stub stays hidden", vis2.rows[0].n === 12, `got ${vis2.rows[0].n}`);
 
 
 console.log("\n── a renewal owes the same platform fee as the first booking ──");
@@ -99,11 +104,13 @@ const subSrc = (await import("fs")).readFileSync("server/lib/subscriptions.js", 
    right, because the billing list is built from it. */
 ok("a renewal records what we actually kept", /platform_net_minor = \$1/.test(subSrc),
    "renewals were being billed at the headline rate");
-ok("and it is the net figure, not the headline commission", /platformNetMinor\(amountMinor, Number\(b\.sub_fee\)/.test(subSrc));
+ok("and it is the net figure, not the headline commission", /platformNetMinor\(amountMinor, feeForBatch\)/.test(subSrc));
 ok("nothing tries to issue an invoice from a background charge", !/issueFeeInvoice|szamlazz/i.test(subSrc));
 
 console.log("\n── the plan keeps itself alive ──");
-ok("four occurrences are kept ahead", /const LOOKAHEAD = 4/.test(subSrc));
+ok("the horizon follows the cadence rather than being a flat number",
+   /const LOOKAHEAD_BY_FREQ = \{ weekly: 12, biweekly: 6, monthly: 3 \}/.test(subSrc));
+ok("and it can be overridden without a code change", /process\.env\.SUB_LOOKAHEAD/.test(subSrc));
 ok("it runs on a timer, not on someone remembering", /setInterval\(tick/.test(subSrc));
 ok("only active plans are charged", /s\.status = 'active'/.test(subSrc));
 ok("cancelled and declined bookings are skipped", /b\.status NOT IN \(8,9\)/.test(subSrc));
@@ -118,7 +125,8 @@ console.log("\n── Cleano's commission on a RENEWAL, not just the first visit
 const subSrc2 = (await import("fs")).readFileSync("server/lib/subscriptions.js", "utf8");
 ok("the renewal reduces the fee by Stripe's cut", /application_fee_amount: subFeeNet/.test(subSrc2),
    "otherwise the partner pays processing on every visit after the first");
-ok("it uses the same helper as the first payment", /platformNetMinor\(amountMinor, Number\(b\.sub_fee\)/.test(subSrc2));
+ok("it uses the same helper as the first payment", /platformNetMinor\(amountMinor, feeForBatch\)/.test(subSrc2));
+ok("summed across the month it pays for, not one visit", /const feeForBatch = sum\("service_fee_minor"/.test(subSrc2));
 ok("and records what we actually kept, for that visit's invoice", /platform_net_minor = \$1/.test(subSrc2));
 
 const pay2 = await import("../server/routes/payments.js");
@@ -198,8 +206,12 @@ ok("every prefix the code writes is one the refunder understands",
 /* 2. Double charging. No idempotency key meant that if Stripe took the money
       and we died before recording it, the next pass thirty minutes later
       charged the same saved card again. */
+/* Billing is monthly now, so the unit of payment is the plan's month rather
+   than one visit — and the key says so. It still carries the attempt state, so
+   a genuine decline can be retried while a duplicate within one attempt
+   collapses onto the original charge. */
 ok("the scheduled renewal charge carries an idempotency key",
-   /idempotencyKey: `cleano-sub-\$\{b\.id\}-\$\{b\.payment_status\}`/.test(subSrcS));
+   /idempotencyKey: `cleano-sub-\$\{b\.subscription_id\}-\$\{isoDate\(b\.scheduled_date\)\}-\$\{b\.payment_status\}`/.test(subSrcS));
 ok("and the key changes between a first attempt and a retry, so a decline can still be retried",
    /\$\{b\.payment_status\}/.test(subSrcS));
 ok("the saved-card charge carries one too",

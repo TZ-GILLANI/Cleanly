@@ -505,6 +505,14 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS eu_vat TEXT;
 -- payment_intent.payment_failed webhook; shown to the customer and to the
 -- admin, so "it says an error" becomes a sentence somebody can act on.
 ALTER TABLE bookings  ADD COLUMN IF NOT EXISTS payment_error TEXT;
+
+-- Moving one visit. The customer offers two or three dates they could manage
+-- and the company takes whichever it can actually work, so neither side sets
+-- the new date alone. Holds the whole exchange:
+--   { status: pending|moved|declined, options: [{date,slot,ok,why}],
+--     from: {date,slot}, chosen: {date,slot}, note, requested_at, decided_at }
+-- Nothing about the money moves -- only the day and the hour.
+ALTER TABLE bookings  ADD COLUMN IF NOT EXISTS reschedule JSONB;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_name    TEXT;   -- legal name, if it differs from the trading name
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_zip     TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_city    TEXT;

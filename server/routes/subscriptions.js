@@ -76,6 +76,13 @@ router.post("/:id/resume", requireAuth, async (req, res) => {
     const { nextDateFrom } = await import("./payments.js");
     await query("UPDATE subscriptions SET status = 'active', next_booking_date = $1 WHERE id = $2",
       [nextDateFrom(new Date().toISOString().slice(0, 10), s.frequency), s.id]);
+    /* Pausing cancelled every future visit, so resuming has to rebuild them.
+       Waiting for the next half-hourly tick meant "Resume" looked like it had
+       done nothing at all. */
+    try {
+      const { materialise } = await import("../lib/subscriptions.js");
+      await materialise(s.id);
+    } catch (e) { console.error("materialise on resume:", e.message); }
     res.json({ ok: true });
   } catch { res.status(500).json({ error: "Resume failed" }); }
 });

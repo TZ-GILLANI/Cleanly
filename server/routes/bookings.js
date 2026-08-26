@@ -1,10 +1,12 @@
 import { Router } from "express";
-import { query } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { query, hasColumn } from "../db.js";
+import { slotProblem } from "../lib/availability.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { refundBookingPayment, chargeSavedCard, cancellationRefundPct, customerMayCancel } from "./payments.js";
 import { bumpCounter } from "../lib/alerts.js";
 import { notify } from "../lib/notify.js";
 import { sendEmail } from "../lib/mailer.js";
+import { isoDate } from "../lib/isodate.js";
 
 const router = Router();
 
@@ -41,7 +43,13 @@ router.get("/", requireAuth, async (req, res) => {
       );
     } else if (req.user.role === "employee") {
       result = await query(
-        `SELECT b.*, cu.full_name AS customer_name,
+        /* The customer's phone travels with the job.
+
+           The cleaner's card now offers Call alongside the directions, and a
+           Call button with nothing behind it is worse than no button. The
+           company's list has carried this for a while; the person actually
+           standing at the door did not. */
+        `SELECT b.*, cu.full_name AS customer_name, cu.phone AS customer_phone,
                 c.name AS company_name, c.logo_url AS company_logo_url,
                 c.emoji AS company_emoji
          FROM bookings b
@@ -191,51 +199,16 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    // ── Respect the company's availability (server-side, so a stale app can't
-    //    slip a booking into a time they don't work) ──
-    const av = co.availability;
-    if (av) {
-      if (av.paused) return res.status(400).json({ error: "This company is not taking new bookings right now." });
-      const dstr = String(scheduledDate).slice(0, 10);
-      if (Array.isArray(av.closed) && av.closed.includes(dstr))
-        return res.status(400).json({ error: "The company is closed on that date — please pick another day." });
-
-      const dow = String(new Date(dstr + "T12:00:00Z").getUTCDay());
-      const rule = (av.days || {})[dow] || {};
-      // the hours this company offers on that weekday (legacy from/to still honoured)
-      let offered = Array.isArray(rule.slots) ? rule.slots : null;
-      if (!offered && rule.from && rule.to) {
-        offered = [];
-        for (let h = 0; h < 24; h++) {
-          const t = String(h).padStart(2, "0") + ":00";
-          if (t >= rule.from && t < rule.to) offered.push(t);
-        }
-      }
-      if (rule.on === false || (offered && offered.length === 0))
-        return res.status(400).json({ error: "The company doesn't work on that day — please pick another." });
-
-      if (scheduledSlot) {
-        const t = String(scheduledSlot).slice(0, 5);
-        const blocked = (av.busy || {})[dstr];
-        if (Array.isArray(blocked) && blocked.includes(t))
-          return res.status(400).json({ error: "That time slot is already taken — please pick another." });
-        /* Per-service block: cleaning can be full at 10:00 while laundry is free. */
-        const svcBlocked = ((av.busyServices || {})[serviceId] || {})[dstr];
-        if (Array.isArray(svcBlocked) && svcBlocked.includes(t))
-          return res.status(400).json({ error: "That time is already taken for this service — please pick another." });
-        if (offered && !offered.includes(t))
-          return res.status(400).json({ error: "The company doesn't offer that time — please pick one of their available hours." });
-
-      }
+    /* Opening hours, blocked slots and capacity — one check, shared with the
+       move-a-visit flow so the two can never disagree about what "available"
+       means. See server/lib/availability.js. */
+    {
+      const why = await slotProblem({
+        co, svc, companyId, serviceId, date: dOnly, slot: scheduledSlot, hours,
+      });
+      if (why) return res.status(400).json({ error: why });
     }
 
-    /* ── Capacity. Marking a slot busy by hand is not something a company should
-       have to remember, and until now two customers could book the same hour and
-       both be told yes. A company can only be in as many places at once as it has
-       people, so that is the cap: active cleaners, or 1 for a one-person business.
-       This runs whether or not the company has set opening hours — a company that
-       has not configured availability needs protecting most of all. Cancelled and
-       declined bookings (8, 9) do not hold a slot. ── */
     /* Retrying an abandoned checkout reuses the row it abandoned.
 
        The booking is created before payment, so a failed or closed card screen
@@ -263,84 +236,6 @@ router.post("/", requireAuth, async (req, res) => {
           ORDER BY created_at DESC LIMIT 1`,
         [req.user.id, companyId, serviceId, dOnly, slotStr0, address]);
       if (mine.rows.length) return res.status(200).json({ booking: mine.rows[0], reused: true });
-    }
-
-    {
-      const slotStr = String(scheduledSlot).slice(0, 5);
-      /* A cleaning slot is exclusive: one team, one house, one hour. A collection
-         round is not — the same van calls at several addresses. So a service may
-         override the cap; otherwise it is the size of the team. */
-      const capRow = await query(
-        `SELECT GREATEST(1, COUNT(*)::int) AS n FROM users
-          WHERE company_id = $1 AND role::text = 'employee'
-            AND approval_status::text = 'approved' AND is_active IS NOT false`, [companyId]);
-      const cap = { rows: [{ n: svc.slot_capacity != null ? Number(svc.slot_capacity) : capRow.rows[0].n }] };
-      /* Capacity is counted PER SERVICE. A company that cleans and also does
-         laundry can genuinely do both at 10:00 — different work, often different
-         people or somewhere else entirely. What it cannot do is take the same
-         service twice over with only one team. A company that wants an hour
-         blocked outright uses the company-wide busy list instead. */
-      /* An abandoned checkout must not hold the slot for ever.
-
-         The booking row is created BEFORE payment, which is right — the price,
-         the address and the time all have to exist before there is anything to
-         pay for. But it meant every failed or abandoned payment attempt left a
-         row occupying the slot, counted here as if it were a real job. Try to
-         pay three times and fail, and you have locked yourself out of your own
-         appointment; the customer is then told "that time has just been taken",
-         which is true and completely baffling.
-
-         Two exclusions:
-           · anyone's unpaid attempt older than the grace period — long enough
-             to finish a card payment, short enough not to squat on a slot;
-           A retry of the customer's OWN abandoned attempt is handled earlier by
-           reusing that row rather than creating a second one — see above. That
-           is better than forgiving it here: excusing a customer's unpaid rows
-           from the count would let one person quietly hold a whole morning. */
-      const graceMin = Math.max(5, Number(process.env.CHECKOUT_GRACE_MIN || 30));
-
-      /* A job occupies the hours it actually lasts, not just the hour it starts.
-
-         This compared scheduled_slot for exact equality, so a three-hour clean
-         booked at 10:00 left 11:00 and 12:00 looking free. One team could be
-         sold the same morning three times over, and nobody found out until a
-         cleaner was expected in two places at once.
-
-         Length comes from the booking where the customer chose it (hourly
-         work) and from the service otherwise. Anything we cannot read falls
-         back to one hour, which is the old behaviour — never worse. */
-      const mins = (b) => {
-        const h = Number(b?.hours);
-        if (Number.isFinite(h) && h > 0) return Math.round(h * 60);
-        const m = Number(b?.service_minutes ?? b?.minutes);
-        return Number.isFinite(m) && m > 0 ? Math.round(m) : 60;
-      };
-      const startMin = (slot) => {
-        const [hh, mm] = String(slot || "").slice(0, 5).split(":").map(Number);
-        return Number.isFinite(hh) ? hh * 60 + (mm || 0) : null;
-      };
-
-      const sameDay = await query(
-        `SELECT b.scheduled_slot, b.hours, s.minutes AS service_minutes
-           FROM bookings b LEFT JOIN services s ON s.id = b.service_id
-          WHERE b.company_id = $1 AND b.scheduled_date = $2
-            AND b.service_id = $3 AND b.status NOT IN (8, 9)
-            AND NOT (b.payment_status = 'unpaid' AND b.created_at < NOW() - ($4 || ' minutes')::interval)`,
-        [companyId, dOnly, serviceId, String(graceMin)]);
-
-      const wantFrom = startMin(slotStr);
-      const wantTo = wantFrom == null ? null : wantFrom + mins({ hours, minutes: svc.minutes });
-      let overlapping = 0;
-      if (wantFrom != null) {
-        for (const r of sameDay.rows) {
-          const from = startMin(r.scheduled_slot);
-          if (from == null) continue;
-          const to = from + mins(r);
-          if (wantFrom < to && from < wantTo) overlapping++;   // half-open ranges
-        }
-      }
-      if (overlapping >= cap.rows[0].n)
-        return res.status(400).json({ error: "That time has just been taken — please pick another." });
     }
 
     /* One active subscription chain per customer per service — prevents
@@ -483,7 +378,7 @@ function nextOccurrence(dateStr, period) {
   // tolerate both 'YYYY-MM-DD' strings (pg parser) and Date objects (drivers/emulators)
   const ymd = dateStr instanceof Date
     ? `${dateStr.getFullYear()}-${String(dateStr.getMonth() + 1).padStart(2, "0")}-${String(dateStr.getDate()).padStart(2, "0")}`
-    : String(dateStr).slice(0, 10);
+    : isoDate(dateStr);
   const [y, m, d] = ymd.split("-").map(Number);
   let next;
   if (period === "weekly") next = new Date(y, m - 1, d + 7);
@@ -710,8 +605,42 @@ router.put("/:id/invoice", requireAuth, async (req, res) => {
     if (!b.rows.length) return res.status(404).json({ error: "Not found" });
     if (b.rows[0].company_id !== req.user.companyId) return res.status(403).json({ error: "Forbidden" });
     if (b.rows[0].status !== 4) return res.status(400).json({ error: "Invoices can be added to completed jobs only" });
+    const saved = { name: String(invoice.name).slice(0, 120), type: String(invoice.type || "application/pdf").slice(0, 80), data: invoice.data };
     const r = await query("UPDATE bookings SET invoice = $1 WHERE id = $2 RETURNING *",
-      [JSON.stringify({ name: String(invoice.name).slice(0, 120), type: String(invoice.type || "application/pdf").slice(0, 80), data: invoice.data }), req.params.id]);
+      [JSON.stringify(saved), req.params.id]);
+
+    /* Send it to the customer.
+
+       The invoice was stored and nothing else happened. The company uploaded
+       a document, the app said nothing had gone wrong, and the customer only
+       ever found it if they went back into a finished booking and looked. An
+       invoice that nobody is told about is not an invoice.
+
+       Attached AND downloadable in the app: the attachment is what an
+       accountant forwards, the app copy is what survives a lost email. */
+    (async () => {
+      try {
+        const who = await query(
+          `SELECT cu.email, cu.full_name, c.name AS company_name, b.order_no, b.scheduled_date, b.total_huf, b.service_snapshot
+             FROM bookings b JOIN users cu ON cu.id = b.customer_id JOIN companies c ON c.id = b.company_id
+            WHERE b.id = $1`, [req.params.id]);
+        const w = who.rows[0];
+        if (!w?.email) return;
+        const svcName = (w.service_snapshot && w.service_snapshot.name) || "your cleaning";
+        const base64 = String(saved.data).includes(",") ? String(saved.data).split(",").pop() : String(saved.data);
+        await sendEmail(w.email,
+          `Your invoice from ${w.company_name}${w.order_no ? ` — #${w.order_no}` : ""}`,
+          `<div style="font-family:sans-serif;max-width:520px">
+             <h2 style="color:#1B2A6B">Your invoice is ready</h2>
+             <p>${w.company_name} has issued the invoice for <b>${svcName}</b> on ${isoDate(w.scheduled_date)}.</p>
+             <p>It is attached, and it is also in the Cleano app under that booking.</p>
+           </div>`,
+          [{ filename: saved.name, content: base64 }]);
+        await notify(r.rows[0].customer_id, "invoice", "Your invoice is ready 🧾",
+          `${w.company_name} has sent the invoice for ${svcName}.`, req.params.id);
+      } catch (e) { console.error("invoice email:", e.message); }
+    })();
+
     res.json({ booking: r.rows[0] });
   } catch (err) {
     console.error(err);
@@ -770,6 +699,161 @@ router.put("/:id/hide-identity", requireAuth, async (req, res) => {
     await query("UPDATE bookings SET hide_deleted_identity = true WHERE id = $1", [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: "Could not update booking" }); }
+});
+
+/* ════════════════════════════════════════════════════════════
+   MOVING ONE VISIT
+
+   A customer who cannot make Tuesday should not have to cancel a plan to
+   escape it, and a company should not be handed a date it cannot work. So
+   neither side sets the new date alone: the customer offers two or three they
+   could manage, and the company takes whichever one it can actually serve.
+
+   Nothing about the money moves. The visit keeps its price, its payment and
+   its place in the plan — only the day and the hour change. The visits either
+   side of it are untouched, because each occurrence is its own booking.
+════════════════════════════════════════════════════════════ */
+
+const MAX_OPTIONS = 3;
+
+function openRequest(b) {
+  const r = b?.reschedule;
+  const v = typeof r === "string" ? (() => { try { return JSON.parse(r); } catch { return null; } })() : r;
+  return v && v.status === "pending" ? v : null;
+}
+
+/* POST /api/bookings/:id/reschedule — the customer proposes dates */
+router.post("/:id/reschedule", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    if (!(await hasColumn("bookings", "reschedule")))
+      return res.status(503).json({ error: "Moving a visit is not available yet — the database is still being updated." });
+
+    const bq = await query("SELECT * FROM bookings WHERE id = $1", [req.params.id]);
+    const b = bq.rows[0];
+    if (!b) return res.status(404).json({ error: "Booking not found" });
+    if (b.customer_id !== req.user.id) return res.status(403).json({ error: "Forbidden" });
+    if (Number(b.status) > 1) return res.status(400).json({ error: "The work has already started — call the company instead." });
+    if ([8, 9].includes(Number(b.status))) return res.status(400).json({ error: "That booking is no longer active." });
+    if (openRequest(b)) return res.status(400).json({ error: "You have already asked to move this visit — wait for the company, or withdraw it first." });
+
+    const raw = Array.isArray(req.body?.options) ? req.body.options : [];
+    const seen = new Set();
+    const options = [];
+    for (const o of raw.slice(0, MAX_OPTIONS)) {
+      const date = String(o?.date || "").slice(0, 10);
+      const slot = String(o?.slot || "").slice(0, 5);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slot)) continue;
+      const key = date + slot;
+      if (seen.has(key)) continue;                       // the same day twice is one option
+      if (date === isoDate(b.scheduled_date) && slot === String(b.scheduled_slot || "").slice(0, 5)) continue;
+      if (date < new Date().toISOString().slice(0, 10)) continue;
+      seen.add(key);
+      options.push({ date, slot });
+    }
+    if (options.length < 2)
+      return res.status(400).json({ error: "Offer at least two different dates, so the company has a real choice." });
+
+    /* Checked here as well as when the company answers. Offering a day the
+       company is closed wastes both people's time, and the customer is the one
+       who can still change it. */
+    const co = (await query("SELECT * FROM companies WHERE id = $1", [b.company_id])).rows[0];
+    const svc = (await query("SELECT * FROM services WHERE id = $1", [b.service_id])).rows[0];
+    const checked = [];
+    for (const o of options) {
+      const why = await slotProblem({
+        co, svc, companyId: b.company_id, serviceId: b.service_id,
+        date: o.date, slot: o.slot, hours: b.hours, excludeBookingId: b.id,
+      });
+      checked.push({ ...o, ok: !why, why: why || null });
+    }
+    if (!checked.some((o) => o.ok))
+      return res.status(400).json({ error: "None of those times work for this company — try other days.", options: checked });
+
+    const request = {
+      status: "pending",
+      options: checked,
+      note: String(req.body?.note || "").slice(0, 300) || null,
+      from: { date: isoDate(b.scheduled_date), slot: b.scheduled_slot || null },
+      requested_at: new Date().toISOString(),
+    };
+    await query("UPDATE bookings SET reschedule = $1 WHERE id = $2", [JSON.stringify(request), b.id]);
+
+    const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
+    if (oc.rows[0]) await notify(oc.rows[0].owner_id, "reschedule",
+      "A customer wants to move a visit",
+      `${checked.filter((o) => o.ok).length} alternative dates offered for ${request.from.date}. Pick the one that suits you.`,
+      b.id).catch(() => {});
+
+    res.json({ ok: true, reschedule: request });
+  } catch (e) {
+    console.error("reschedule request:", e.message);
+    res.status(500).json({ error: "Could not send that request" });
+  }
+});
+
+/* DELETE /api/bookings/:id/reschedule — the customer changes their mind */
+router.delete("/:id/reschedule", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    if (!(await hasColumn("bookings", "reschedule"))) return res.json({ ok: true });
+    const bq = await query("SELECT * FROM bookings WHERE id = $1", [req.params.id]);
+    const b = bq.rows[0];
+    if (!b) return res.status(404).json({ error: "Booking not found" });
+    if (b.customer_id !== req.user.id) return res.status(403).json({ error: "Forbidden" });
+    if (!openRequest(b)) return res.json({ ok: true });
+    await query("UPDATE bookings SET reschedule = NULL WHERE id = $1", [b.id]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: "Could not withdraw that request" }); }
+});
+
+/* PUT /api/bookings/:id/reschedule — the company picks one, or declines */
+router.put("/:id/reschedule", requireAuth, requireRole("company"), async (req, res) => {
+  try {
+    if (!(await hasColumn("bookings", "reschedule")))
+      return res.status(503).json({ error: "Moving a visit is not available yet — the database is still being updated." });
+
+    const bq = await query("SELECT * FROM bookings WHERE id = $1", [req.params.id]);
+    const b = bq.rows[0];
+    if (!b) return res.status(404).json({ error: "Booking not found" });
+    if (b.company_id !== req.user.companyId) return res.status(403).json({ error: "Forbidden" });
+    const request = openRequest(b);
+    if (!request) return res.status(400).json({ error: "There is no open request on this booking." });
+
+    if (req.body?.decline === true) {
+      const done = { ...request, status: "declined", reason: String(req.body?.reason || "").slice(0, 300) || null, decided_at: new Date().toISOString() };
+      await query("UPDATE bookings SET reschedule = $1 WHERE id = $2", [JSON.stringify(done), b.id]);
+      await notify(b.customer_id, "reschedule", "Your visit stays as it is",
+        `${b.company_name || "The company"} could not make any of the dates you offered. Your visit on ${isoDate(b.scheduled_date)} is unchanged.`,
+        b.id).catch(() => {});
+      return res.json({ ok: true, booking: b, reschedule: done });
+    }
+
+    const i = Number(req.body?.choice);
+    const pick = Number.isInteger(i) ? request.options[i] : null;
+    if (!pick) return res.status(400).json({ error: "Pick one of the dates the customer offered." });
+
+    /* Re-check at the moment of the decision. The options were validated when
+       they were offered, and the company may have taken other work since. */
+    const co = (await query("SELECT * FROM companies WHERE id = $1", [b.company_id])).rows[0];
+    const svc = (await query("SELECT * FROM services WHERE id = $1", [b.service_id])).rows[0];
+    const why = await slotProblem({
+      co, svc, companyId: b.company_id, serviceId: b.service_id,
+      date: pick.date, slot: pick.slot, hours: b.hours, excludeBookingId: b.id,
+    });
+    if (why) return res.status(400).json({ error: why });
+
+    const done = { ...request, status: "moved", chosen: { date: pick.date, slot: pick.slot }, decided_at: new Date().toISOString() };
+    const upd = await query(
+      "UPDATE bookings SET scheduled_date = $1, scheduled_slot = $2, reschedule = $3 WHERE id = $4 RETURNING *",
+      [pick.date, pick.slot, JSON.stringify(done), b.id]);
+
+    await notify(b.customer_id, "reschedule", "Your visit has been moved",
+      `It is now ${pick.date} at ${pick.slot}. Nothing has been charged again.`, b.id).catch(() => {});
+
+    res.json({ ok: true, booking: upd.rows[0], reschedule: done });
+  } catch (e) {
+    console.error("reschedule decide:", e.message);
+    res.status(500).json({ error: "Could not update that booking" });
+  }
 });
 
 export default router;
