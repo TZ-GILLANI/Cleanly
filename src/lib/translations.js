@@ -6,6 +6,10 @@
 
 export const EXTRA = {
   de: {
+    "All reviews ({0})": "Alle Bewertungen ({0})",
+    "See all {0} reviews": "Alle {0} Bewertungen ansehen",
+    "No commission this month — finished, paid jobs appear here.": "Diesen Monat keine Provision — abgeschlossene, bezahlte Aufträge erscheinen hier.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Was Cleano in dem Monat auf die Buchungen jedes Partners berechnet hat — über Stripe bereits eingezogen. Alles, was du brauchst, um die Rechnung selbst zu schreiben.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Provision",
     "Every booking behind this figure": "Jede Buchung hinter dieser Zahl",
@@ -1213,6 +1217,10 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    "All reviews ({0})": "Toate recenziile ({0})",
+    "See all {0} reviews": "Vezi toate cele {0} recenzii",
+    "No commission this month — finished, paid jobs appear here.": "Nicio comision luna aceasta — lucrările finalizate și plătite apar aici.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Ce a perceput Cleano pe rezervările fiecărui partener în luna respectivă — deja încasat prin Stripe. Tot ce îți trebuie ca să scrii singur factura.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Comision",
     "Every booking behind this figure": "Fiecare rezervare din spatele acestei cifre",
@@ -2420,6 +2428,10 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    "All reviews ({0})": "Všetky recenzie ({0})",
+    "See all {0} reviews": "Zobraziť všetkých {0} recenzií",
+    "No commission this month — finished, paid jobs appear here.": "Tento mesiac žiadna provízia — dokončené a zaplatené práce sa zobrazia tu.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Čo si Cleano v danom mesiaci účtovalo na rezerváciách každého partnera — cez Stripe už vybraté. Všetko, čo potrebuješ na vystavenie faktúry.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Provízia",
     "Every booking behind this figure": "Každá rezervácia za týmto číslom",
@@ -3627,6 +3639,10 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    "All reviews ({0})": "Wszystkie recenzje ({0})",
+    "See all {0} reviews": "Zobacz wszystkie {0} recenzje",
+    "No commission this month — finished, paid jobs appear here.": "Brak prowizji w tym miesiącu — ukończone, opłacone zlecenia pojawią się tutaj.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Ile Cleano naliczyło na rezerwacjach każdego partnera w danym miesiącu — już pobrane przez Stripe. Wszystko, czego potrzebujesz, by samodzielnie wystawić fakturę.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Prowizja",
     "Every booking behind this figure": "Każda rezerwacja stojąca za tą kwotą",
@@ -4834,6 +4850,10 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    "All reviews ({0})": "Усі відгуки ({0})",
+    "See all {0} reviews": "Переглянути всі {0} відгуків",
+    "No commission this month — finished, paid jobs appear here.": "Цього місяця комісії немає — завершені й оплачені роботи з'являться тут.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Скільки Cleano нарахувало на бронюваннях кожного партнера за місяць — уже стягнуто через Stripe. Усе потрібне, щоб самостійно виписати рахунок.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Комісія",
     "Every booking behind this figure": "Кожне бронювання за цією сумою",
@@ -6041,6 +6061,10 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    "All reviews ({0})": "Tous les avis ({0})",
+    "See all {0} reviews": "Voir les {0} avis",
+    "No commission this month — finished, paid jobs appear here.": "Pas de commission ce mois-ci — les travaux terminés et payés apparaissent ici.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Ce que Cleano a prélevé sur les réservations de chaque partenaire ce mois-là — déjà encaissé via Stripe. Tout ce qu'il faut pour rédiger la facture vous-même.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Commission",
     "Every booking behind this figure": "Chaque réservation derrière ce chiffre",
@@ -7248,6 +7272,10 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    "All reviews ({0})": "Todas las reseñas ({0})",
+    "See all {0} reviews": "Ver las {0} reseñas",
+    "No commission this month — finished, paid jobs appear here.": "Sin comisión este mes — los trabajos terminados y pagados aparecen aquí.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Lo que Cleano cobró sobre las reservas de cada socio ese mes — ya cobrado a través de Stripe. Todo lo necesario para escribir la factura tú mismo.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Comisión",
     "Every booking behind this figure": "Cada reserva detrás de esta cifra",
@@ -8455,6 +8483,10 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    "All reviews ({0})": "Tüm değerlendirmeler ({0})",
+    "See all {0} reviews": "{0} değerlendirmenin tümünü gör",
+    "No commission this month — finished, paid jobs appear here.": "Bu ay komisyon yok — tamamlanan ve ödenen işler burada görünür.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Cleano'nun o ay her iş ortağının rezervasyonlarından aldığı tutar — Stripe üzerinden zaten tahsil edildi. Faturayı kendin yazmak için gereken her şey.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Komisyon",
     "Every booking behind this figure": "Bu rakamın arkasındaki her rezervasyon",
@@ -9602,6 +9634,10 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    "All reviews ({0})": "全部评价（{0}）",
+    "See all {0} reviews": "查看全部 {0} 条评价",
+    "No commission this month — finished, paid jobs appear here.": "本月没有佣金——已完成并已付款的工作会显示在这里。",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Cleano 当月对每个合作伙伴预订收取的费用——已通过 Stripe 收取。自行开具发票所需的全部信息。",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "佣金",
     "Every booking behind this figure": "这一数字背后的每笔预订",
@@ -10749,6 +10785,10 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    "All reviews ({0})": "Tutte le recensioni ({0})",
+    "See all {0} reviews": "Vedi tutte le {0} recensioni",
+    "No commission this month — finished, paid jobs appear here.": "Nessuna commissione questo mese — i lavori completati e pagati compaiono qui.",
+    "What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.": "Quanto Cleano ha addebitato sulle prenotazioni di ogni partner quel mese — già incassato tramite Stripe. Tutto il necessario per scrivere la fattura da solo.",
     /* v8.0.0 — commission statement, admin review moderation, manual refunds */
     "Commission": "Commissione",
     "Every booking behind this figure": "Ogni prenotazione dietro questa cifra",

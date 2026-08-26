@@ -159,7 +159,16 @@ console.log("\n── subscribers count live plans, not attempts ──");
   const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   ok("a plan counts only once it exists", /if \(b\.pricing_type !== "subscription" \|\| !b\.subscription_id\) return false;/.test(app));
   ok("and each plan counts once, not once per visit", /if \(seen\.has\(b\.subscription_id\)\) return false;/.test(app));
-  ok("the client list uses the same test", /if \(b\.subscription_id && b\.status < 8\) c\.hasSub = true;/.test(app));
+  /* Tightened after Musa saw "1 active subscriber" survive a cancellation:
+     a cancelled plan keeps its paid visits (status < 8), so open visits were
+     never the honest test. The plan's own status is. */
+  ok("a cancelled plan's leftover visits do not count as a subscriber",
+     /if \(b\.subscription_status && b\.subscription_status !== "active"\) return false;/.test(app));
+  ok("the client list uses the same test",
+     /b\.subscription_id && b\.status < 8 &&\n\s*\(!b\.subscription_status \|\| b\.subscription_status === "active"\)/.test(app));
+  const srv = fs.readFileSync(new URL("../server/routes/bookings.js", import.meta.url), "utf8");
+  ok("and the server actually sends the plan's status with each visit",
+     /s\.status AS subscription_status/.test(srv) && /LEFT JOIN subscriptions s ON s\.id = b\.subscription_id/.test(srv));
   ok("the banner is gone when there are none", /\{subs\.length > 0 && \(/.test(app));
 }
 

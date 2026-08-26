@@ -132,10 +132,12 @@ ok("the email text is translated", tr("hu", "Invoice number") === "Számlaszám"
 ok("including for Turkish and Chinese",
    tr("tr", "Your invoice") !== "Your invoice" && tr("zh", "Your invoice") !== "Your invoice");
 
-console.log("\n── the billing list: what to invoice, and everything needed to do it ──");
+const mOf = (iso) => String(iso).slice(0, 7);   // the statement month a date belongs to
+console.log("\n── the commission statement: one month, everything needed to invoice it ──");
 await query("UPDATE bookings SET platform_net_minor = 33250 WHERE id=$1", [bk.id]);
-let bill = (await j("/api/invoices/admin/billing", { token: adm.token })).data;
-ok("the finished paid job is waiting to be invoiced", bill.companies?.length === 1, JSON.stringify(bill.totals));
+let bill = (await j(`/api/invoices/admin/billing?month=${mOf(dPlus(10))}`, { token: adm.token })).data;
+ok("the finished paid job is on its month's statement", bill.companies?.length === 1, JSON.stringify(bill.totals));
+ok("and the statement says which month it is", bill.month === mOf(dPlus(10)), String(bill.month));
 const g = bill.companies[0];
 ok("it bills what we kept, not the headline commission", g.totalKept === 332.5, String(g.totalKept));
 ok("and still shows the headline figure alongside", g.totalCommission === 500, String(g.totalCommission));
@@ -149,64 +151,61 @@ ok("the individual jobs are listed for the invoice lines", g.jobs.length === 1 &
    rather than letting it through with a blank block. */
 ok("a partner with no billing address is flagged, not hidden", g.billable === false, String(g.billable));
 await query("UPDATE companies SET billing_zip='4025', billing_city='Debrecen', billing_address='Piac u 1.' WHERE id=$1", [cid]);
-bill = (await j("/api/invoices/admin/billing", { token: adm.token })).data;
+bill = (await j(`/api/invoices/admin/billing?month=${mOf(dPlus(10))}`, { token: adm.token })).data;
 ok("and becomes billable once the address is filled in", bill.companies[0].billable === true);
 ok("the address is assembled ready to paste", /4025 Debrecen Piac u 1\./.test(bill.companies[0].address), bill.companies[0].address);
 
 console.log("\n── unpaid and unfinished work stays off the list ──");
-const bk2 = (await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(12), scheduledSlot: "11:00", address: "Kossuth u 1" } })).data.booking;
-await query("UPDATE bookings SET payment_status='paid', status=2 WHERE id=$1", [bk2.id]);
-ok("a job still in progress is not billed", ((await j("/api/invoices/admin/billing", { token: adm.token })).data.companies[0].jobs.length) === 1);
-await query("UPDATE bookings SET status=4, payment_status='unpaid' WHERE id=$1", [bk2.id]);
-ok("a finished but unpaid job is not billed either", ((await j("/api/invoices/admin/billing", { token: adm.token })).data.companies[0].jobs.length) === 1);
-await query("UPDATE bookings SET payment_status='paid' WHERE id=$1", [bk2.id]);
-ok("but a finished, paid job is", ((await j("/api/invoices/admin/billing", { token: adm.token })).data.companies[0].jobs.length) === 2);
+const bk2 = (await j("/api/bookings", { method: "POST", token: cu.token, body: { companyId: cid, serviceId: svc.id, scheduledDate: dPlus(10), scheduledSlot: "14:00", address: "Kossuth u 1" } }));
+if (!bk2.data?.booking) console.log("bk2 refused:", bk2.status, JSON.stringify(bk2.data));
+const bk2b = bk2.data.booking;
+await query("UPDATE bookings SET payment_status='paid', status=2 WHERE id=$1", [bk2b.id]);
+ok("a job still in progress is not billed", ((await j(`/api/invoices/admin/billing?month=${mOf(dPlus(10))}`, { token: adm.token })).data.companies[0].jobs.length) === 1);
+await query("UPDATE bookings SET status=4, payment_status='unpaid' WHERE id=$1", [bk2b.id]);
+ok("a finished but unpaid job is not billed either", ((await j(`/api/invoices/admin/billing?month=${mOf(dPlus(10))}`, { token: adm.token })).data.companies[0].jobs.length) === 1);
+await query("UPDATE bookings SET payment_status='paid' WHERE id=$1", [bk2b.id]);
+ok("but a finished, paid job is", ((await j(`/api/invoices/admin/billing?month=${mOf(dPlus(10))}`, { token: adm.token })).data.companies[0].jobs.length) === 2);
 
-console.log("\n── recording the invoice you raised ──");
-ok("an empty invoice number is refused",
-   (await j("/api/invoices/admin/mark-invoiced", { method: "POST", token: adm.token, body: { bookingIds: [bk.id], invoiceNumber: "  " } })).status === 400);
-ok("marking nothing is refused",
-   (await j("/api/invoices/admin/mark-invoiced", { method: "POST", token: adm.token, body: { bookingIds: [], invoiceNumber: "TZ-1" } })).status === 400);
-const marked = await j("/api/invoices/admin/mark-invoiced", { method: "POST", token: adm.token, body: { bookingIds: [bk.id, bk2.id], invoiceNumber: "TZ-2026-001", issuedAt: dPlus(0) } });
-ok("one invoice can cover several jobs", marked.data.marked === 2, JSON.stringify(marked.data));
-ok("and they leave the to-invoice list", ((await j("/api/invoices/admin/billing", { token: adm.token })).data.companies.length) === 0);
-const done = (await j("/api/invoices/admin/billing?settled=1", { token: adm.token })).data;
-ok("appearing under 'already invoiced' instead", done.companies[0]?.jobs.length === 2, JSON.stringify(done.totals));
-ok("with the number recorded against each job", done.companies[0].jobs.every((x) => x.invoiceNo === "TZ-2026-001"));
-
-/* Re-submitting must not relabel jobs that belong to an earlier invoice. */
-const again = await j("/api/invoices/admin/mark-invoiced", { method: "POST", token: adm.token, body: { bookingIds: [bk.id], invoiceNumber: "TZ-2026-999" } });
-ok("a second attempt cannot overwrite an existing number", again.data.marked === 0 && again.data.skipped === 1, JSON.stringify(again.data));
-ok("the original number survives",
-   (await query("SELECT fee_invoice_no FROM bookings WHERE id=$1", [bk.id])).rows[0].fee_invoice_no === "TZ-2026-001");
-
-const undo = await j("/api/invoices/admin/unmark", { method: "POST", token: adm.token, body: { bookingIds: [bk.id] } });
-ok("a mistyped number can be undone", undo.data.cleared === 1, JSON.stringify(undo.data));
-ok("and the job returns to the to-invoice list", ((await j("/api/invoices/admin/billing", { token: adm.token })).data.companies[0].jobs.length) === 1);
+console.log("\n── the ledger is the month itself ──");
+/* The mark-invoiced bookkeeping is gone at Musa's word. What replaced it:
+   a job appears on exactly one month's statement — the month it happened —
+   and asking for a different month does not show it. */
+{
+  const other = mOf(dPlus(10)) === mOf(dPlus(40)) ? mOf(dPlus(70)) : mOf(dPlus(40));
+  const b2 = (await j(`/api/invoices/admin/billing?month=${other}`, { token: adm.token })).data;
+  ok("a different month's statement does not carry this job", (b2.companies || []).length === 0, JSON.stringify(b2.totals));
+  ok("and names its own month honestly", b2.month === other, String(b2.month));
+  const junk = (await j(`/api/invoices/admin/billing?month=20-13`, { token: adm.token })).data;
+  ok("a malformed month falls back to the current one, not a 500", /^\d{4}-\d{2}$/.test(String(junk.month)), String(junk.month));
+  ok("the mark-invoiced endpoint is gone with the feature",
+     (await j("/api/invoices/admin/mark-invoiced", { method: "POST", token: adm.token, body: { bookingIds: ["x"], invoiceNumber: "TZ-1" } })).status === 404);
+  ok("so is unmark",
+     (await j("/api/invoices/admin/unmark", { method: "POST", token: adm.token, body: { bookingIds: ["x"] } })).status === 404);
+}
 
 console.log("\n── the spreadsheet export ──");
-const csv = await j("/api/invoices/admin/billing.csv", { token: adm.token });
+const csv = await j(`/api/invoices/admin/billing.csv?month=${mOf(dPlus(10))}`, { token: adm.token });
 ok("it downloads as CSV", csv.status === 200 && /csv/.test(csv.ct), csv.ct);
 /* fetch().text() strips a leading BOM per spec, so this has to be checked on
    the raw bytes — otherwise the test passes whether or not we send one. */
-const csvBytes = new Uint8Array(await (await fetch("http://127.0.0.1:4505/api/invoices/admin/billing.csv",
+const csvBytes = new Uint8Array(await (await fetch(`http://127.0.0.1:4505/api/invoices/admin/billing.csv?month=${mOf(dPlus(10))}`,
   { headers: { Authorization: "Bearer " + adm.token } })).arrayBuffer());
 ok("with a BOM so Excel reads the accents",
    csvBytes[0] === 0xEF && csvBytes[1] === 0xBB && csvBytes[2] === 0xBF, [...csvBytes.slice(0, 3)].join(","));
 const rows = String(csv.data).trim().split("\r\n");
-ok("a header and one row per job", rows.length === 2, String(rows.length));
+ok("a header and one row per job — both of the month's jobs", rows.length === 3, String(rows.length));
 ok("the billing address is on the row", /4025/.test(rows[1]) && /Piac u 1\./.test(rows[1]));
 ok("as is the tax number", /12345676-1-02/.test(rows[1]));
 ok("and both the commission and what we kept", /"500"/.test(rows[1]) && /"332\.5"/.test(rows[1]), rows[1]);
 /* A partner picks their own company name. Excel evaluates any cell starting
    with = + - @, and the person opening this file is the operator. */
 await query("UPDATE companies SET billing_name='=HYPERLINK(\"http://evil.example\",\"click\")' WHERE id=$1", [cid]);
-const csvEvil = String((await j("/api/invoices/admin/billing.csv", { token: adm.token })).data);
+const csvEvil = String((await j(`/api/invoices/admin/billing.csv?month=${mOf(dPlus(10))}`, { token: adm.token })).data);
 ok("a formula in a company name cannot execute in Excel",
    /"'=HYPERLINK/.test(csvEvil), csvEvil.split("\r\n")[1]?.slice(0, 60));
 for (const lead of ["+", "-", "@"]) {
   await query("UPDATE companies SET billing_name=$2 WHERE id=$1", [cid, lead + "SUM(A1)"]);
-  const c = String((await j("/api/invoices/admin/billing.csv", { token: adm.token })).data);
+  const c = String((await j(`/api/invoices/admin/billing.csv?month=${mOf(dPlus(10))}`, { token: adm.token })).data);
   if (!c.includes(`"'${lead}SUM(A1)"`)) { fail++; console.log("  ✗ leading", lead, "not neutralised"); }
 }
 ok("and neither can one starting with + - or @", true);
@@ -218,7 +217,7 @@ ok("amounts are still plain numbers, not apostrophe-prefixed", !/"'\d/.test(csvE
 
 /* Hungarian company names are full of commas. */
 await query("UPDATE companies SET billing_name='Teszt, Kft. \"A\"' WHERE id=$1", [cid]);
-const csv2 = await j("/api/invoices/admin/billing.csv", { token: adm.token });
+const csv2 = await j(`/api/invoices/admin/billing.csv?month=${mOf(dPlus(10))}`, { token: adm.token });
 ok("names containing commas and quotes survive the export",
    /"Teszt, Kft\. ""A"""/.test(String(csv2.data)), String(csv2.data).split("\r\n")[1]?.slice(0, 60));
 
@@ -226,7 +225,6 @@ console.log("\n── only the operator sees any of this ──");
 for (const [who, tok] of [["a partner", co.token], ["a customer", cu.token]]) {
   ok(`${who} cannot read the billing list`, (await j("/api/invoices/admin/billing", { token: tok })).status === 403);
   ok(`${who} cannot download the export`, (await j("/api/invoices/admin/billing.csv", { token: tok })).status === 403);
-  ok(`${who} cannot record an invoice`, (await j("/api/invoices/admin/mark-invoiced", { method: "POST", token: tok, body: { bookingIds: [bk.id], invoiceNumber: "X" } })).status === 403);
 }
 ok("and a signed-out stranger cannot either", (await j("/api/invoices/admin/billing")).status === 401);
 
@@ -243,7 +241,7 @@ console.log("\n── chasing partners who have not invoiced their customer ─�
 const health = await j("/api/invoices/admin/health", { token: adm.token });
 ok("the admin can list jobs awaiting the partner's invoice", Array.isArray(health.data.awaitingPartnerInvoice));
 ok("the job that was uploaded is not on it", !health.data.awaitingPartnerInvoice.some((x) => x.id === bk.id));
-ok("the one that was not, is", health.data.awaitingPartnerInvoice.some((x) => x.id === bk2.id));
+ok("the one that was not, is", health.data.awaitingPartnerInvoice.some((x) => x.id === bk2b.id));
 
 console.log(`\n════ INVOICING: ${pass} passed, ${fail} failed ════`);
 process.exit(fail ? 1 : 0);

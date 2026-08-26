@@ -172,7 +172,8 @@ ok("the schema keeps the company rating in step with its reviews",
 ok("recomputing from all reviews rather than incrementing a counter",
    /review_count = \(SELECT COUNT\(\*\) FROM reviews WHERE company_id = NEW\.company_id\)/.test(schemaSrc));
 
-const bill = await j("/api/invoices/admin/billing", { token: ADM.token });
+/* The statement is monthly now — ask for the month the job happened in. */
+const bill = await j(`/api/invoices/admin/billing?month=${dPlus(7).slice(0, 7)}`, { token: ADM.token });
 const line = (bill.data.companies || []).find((c) => c.taxId === "12345676-1-02");
 ok("the finished job appears on the operator's billing list", !!line, JSON.stringify(bill.data).slice(0, 110));
 if (line) {

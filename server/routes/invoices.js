@@ -239,7 +239,16 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
   try {
     const { feeLines, platformVatPct, feeKeptHuf } = await import("../lib/fees.js");
     const vatPct = platformVatPct();
-    const settled = String(req.query.settled || "") === "1";
+    /* A statement is FOR a month, the way a phone bill is. Musa writes one
+       invoice per partner per month; "invoiced yes/no" bookkeeping inside the
+       app is exactly the feature he asked to be rid of — twice. ?month=YYYY-MM,
+       defaulting to the current one. */
+    const m = /^(\d{4})-(\d{2})$/.exec(String(req.query.month || ""));
+    const now = new Date();
+    const y = m ? Number(m[1]) : now.getUTCFullYear();
+    const mo = m ? Number(m[2]) : now.getUTCMonth() + 1;
+    const from = `${y}-${String(mo).padStart(2, "0")}-01`;
+    const to = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
 
     const r = await query(
       `SELECT b.id, b.order_no, b.scheduled_date, b.total_huf, b.service_fee_huf,
@@ -256,10 +265,9 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
          LEFT JOIN users u ON u.id = c.owner_id
          LEFT JOIN users cu ON cu.id = b.customer_id
         WHERE b.status = 4 AND b.payment_status = 'paid' AND b.service_fee_huf > 0
-          AND (($1 = true AND b.fee_invoice_no IS NOT NULL)
-            OR ($1 = false AND b.fee_invoice_no IS NULL))
+          AND b.scheduled_date >= $1 AND b.scheduled_date < $2
         ORDER BY c.name ASC, b.scheduled_date ASC
-        LIMIT 1000`, [settled]);
+        LIMIT 1000`, [from, to]);
 
     /* Grouped in JS rather than SQL: the per-job rows are needed anyway for the
        invoice lines, and one pass is cheaper than a second aggregate query. */
@@ -304,7 +312,7 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
     });
 
     res.json({
-      vatPct, settled,
+      vatPct, month: `${y}-${String(mo).padStart(2, "0")}`,
       companies,
       totals: {
         jobs: r.rows.length,
@@ -318,65 +326,12 @@ router.get("/admin/billing", requireAuth, requireRole("admin"), async (req, res)
   }
 });
 
-/* POST /api/invoices/admin/mark-invoiced — record the invoice you raised.
+/* The mark-invoiced / unmark pair used to live here. Removed at Musa's word:
+   the app no longer keeps "did I invoice this yet" books. The statement is
+   monthly — he writes one invoice per partner per month, outside the app —
+   so the month itself is the ledger. The fee_invoice_no columns stay in the
+   schema untouched; old data is not destroyed, just no longer collected. */
 
-   Takes a list of bookings so one invoice can cover a month of jobs for one
-   partner, which is how anybody actually bills. */
-router.post("/admin/mark-invoiced", requireAuth, requireRole("admin"), async (req, res) => {
-  try {
-    const number = String(req.body?.invoiceNumber || "").trim();
-    const ids = Array.isArray(req.body?.bookingIds) ? req.body.bookingIds.filter(Boolean) : [];
-    if (!number) return res.status(400).json({ error: "Enter the invoice number you issued" });
-    if (number.length > 60) return res.status(400).json({ error: "That number is too long" });
-    if (!ids.length) return res.status(400).json({ error: "No jobs selected" });
-    if (ids.length > 500) return res.status(400).json({ error: "Too many jobs at once" });
-
-    const issuedAt = String(req.body?.issuedAt || "").trim();
-    const when = /^\d{4}-\d{2}-\d{2}$/.test(issuedAt) ? issuedAt : null;
-
-    /* Never overwrite a number already recorded — re-submitting the form must
-       not silently re-label jobs that belong to an earlier invoice. */
-    let n = 0;
-    for (const id of ids) {
-      const r = await query(
-        `UPDATE bookings SET fee_invoice_no = $1, fee_invoice_at = COALESCE($2::date, NOW())
-          WHERE id = $3 AND fee_invoice_no IS NULL RETURNING id`, [number, when, id]);
-      n += r.rows.length;
-    }
-
-    try {
-      const { logAdmin } = await import("../lib/adminlog.js");
-      await logAdmin(req, "fee_invoice.recorded", "invoice", number, `${n} job(s)`);
-    } catch {}
-
-    res.json({ ok: true, marked: n, skipped: ids.length - n });
-  } catch (e) {
-    console.error("mark invoiced:", e.message);
-    res.status(500).json({ error: "Could not record that" });
-  }
-});
-
-/* POST /api/invoices/admin/unmark — undo a mistyped number */
-router.post("/admin/unmark", requireAuth, requireRole("admin"), async (req, res) => {
-  try {
-    const ids = Array.isArray(req.body?.bookingIds) ? req.body.bookingIds.filter(Boolean) : [];
-    if (!ids.length) return res.status(400).json({ error: "No jobs selected" });
-    let n = 0;
-    for (const id of ids) {
-      const r = await query(
-        "UPDATE bookings SET fee_invoice_no = NULL, fee_invoice_at = NULL WHERE id = $1 RETURNING id", [id]);
-      n += r.rows.length;
-    }
-    try {
-      const { logAdmin } = await import("../lib/adminlog.js");
-      await logAdmin(req, "fee_invoice.unrecorded", "invoice", null, `${n} job(s)`);
-    } catch {}
-    res.json({ ok: true, cleared: n });
-  } catch (e) {
-    console.error("unmark invoiced:", e.message);
-    res.status(500).json({ error: "Could not undo that" });
-  }
-});
 
 /* GET /api/invoices/admin/billing.csv — the same list as a spreadsheet.
 
@@ -387,7 +342,16 @@ router.get("/admin/billing.csv", requireAuth, requireRole("admin"), async (req, 
   try {
     const { feeLines, platformVatPct, feeKeptHuf } = await import("../lib/fees.js");
     const vatPct = platformVatPct();
-    const settled = String(req.query.settled || "") === "1";
+    /* A statement is FOR a month, the way a phone bill is. Musa writes one
+       invoice per partner per month; "invoiced yes/no" bookkeeping inside the
+       app is exactly the feature he asked to be rid of — twice. ?month=YYYY-MM,
+       defaulting to the current one. */
+    const m = /^(\d{4})-(\d{2})$/.exec(String(req.query.month || ""));
+    const now = new Date();
+    const y = m ? Number(m[1]) : now.getUTCFullYear();
+    const mo = m ? Number(m[2]) : now.getUTCMonth() + 1;
+    const from = `${y}-${String(mo).padStart(2, "0")}-01`;
+    const to = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
 
     const r = await query(
       `SELECT b.order_no, b.scheduled_date, b.total_huf, b.service_fee_huf,
@@ -401,10 +365,9 @@ router.get("/admin/billing.csv", requireAuth, requireRole("admin"), async (req, 
          JOIN companies c ON c.id = b.company_id
          LEFT JOIN users u ON u.id = c.owner_id
         WHERE b.status = 4 AND b.payment_status = 'paid' AND b.service_fee_huf > 0
-          AND (($1 = true AND b.fee_invoice_no IS NOT NULL)
-            OR ($1 = false AND b.fee_invoice_no IS NULL))
+          AND b.scheduled_date >= $1 AND b.scheduled_date < $2
         ORDER BY c.name ASC, b.scheduled_date ASC
-        LIMIT 5000`, [settled]);
+        LIMIT 5000`, [from, to]);
 
     /* Quote everything and double any quote inside. Hungarian company names
        contain commas ("Kft., Bt.") far too often to risk bare fields.
@@ -446,7 +409,7 @@ router.get("/admin/billing.csv", requireAuth, requireRole("admin"), async (req, 
       ].map(q).join(","));
     }
 
-    const name = `cleano-billing-${settled ? "invoiced" : "to-invoice"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    const name = `cleano-commission-${y}-${String(mo).padStart(2, "0")}.csv`;
     res.set("Content-Type", "text/csv; charset=utf-8");
     res.set("Content-Disposition", `attachment; filename="${name}"`);
     res.set("Cache-Control", "no-store, private");

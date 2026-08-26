@@ -316,8 +316,10 @@ const LIGHT = {
   navy: "#1B2A6B", navyDeep: "#10194A", navyMid: "#27379B", navySoft: "#4A5BBF",
   mint: "#5EE6A8", mintSoft: "#DCFAEC",
   bg: "#F4F6FC", card: "#FFFFFF", ink: "#141C3A", inkSoft: "#69718F", inkFaint: "#9AA2C0",
-  line: "#E7EAF6", gold: "#FFC555", coral: "#FF7A6B",
-  green: "#118A5C", greenDeep: "#0F7A50", coralText: "#B33A2B", coralSoft: "#FFE9E5",
+  /* The red is deliberately matte. #FF7A6B read as a warning flare on every
+     Remove and Cancel; danger should be legible, not loud. */
+  line: "#E7EAF6", gold: "#FFC555", coral: "#DE8B81",
+  green: "#118A5C", greenDeep: "#0F7A50", coralText: "#A65B50", coralSoft: "#F8EDEB",
   amber: "#D96A2B", amberSoft: "#FFF1E8", navyChip: "#EEF1FB",
   shell: "#E7EBF6", navBg: "rgba(255,255,255,.9)",
 };
@@ -326,8 +328,8 @@ const DARK = {
   navy: "#4A5BBF", navyDeep: "#0B1128", navyMid: "#27379B", navySoft: "#8E9CE8",
   mint: "#5EE6A8", mintSoft: "rgba(94,230,168,.16)",
   bg: "#111832", card: "#1B2444", ink: "#EDF0FF", inkSoft: "#A6AFD6", inkFaint: "#7079A6",
-  line: "#2A3560", gold: "#FFC555", coral: "#FF8A7C",
-  green: "#7FEFC0", greenDeep: "#7FEFC0", coralText: "#FF9A8C", coralSoft: "rgba(255,122,107,.14)",
+  line: "#2A3560", gold: "#FFC555", coral: "#DF9A90",
+  green: "#7FEFC0", greenDeep: "#7FEFC0", coralText: "#E8ABA1", coralSoft: "rgba(222,139,129,.15)",
   amber: "#FFB067", amberSoft: "rgba(255,180,90,.14)", navyChip: "#232D52",
   shell: "#0B1023", navBg: "rgba(24,31,60,.9)",
 };
@@ -3302,6 +3304,7 @@ function BookingFlow({ company, close, onBooked }) {
   const revs = reviews.filter((r) => r.company_id === company.id);
   const DAYS = useMemo(nextDays, []);
   const [step, setStep] = useState(0);
+  const [allRevs, setAllRevs] = useState(false);
   const [svc, setSvc] = useState(null);
   const [hours, setHours] = useState(2);
   const [schedSel, setSchedSel] = useState(null); // subscription: chosen weekday index or day-of-month
@@ -3478,8 +3481,13 @@ function BookingFlow({ company, close, onBooked }) {
               )}
               {revs.length > 0 && (
                 <>
-                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "14px 0 8px" }}>{L("Recent reviews", "Friss értékelések")}</div>
-                  {revs.slice(0, 3).map((r) => (
+                  <div style={{ fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, margin: "14px 0 8px" }}>
+                    {allRevs ? fill(L("All reviews ({0})", "Összes értékelés ({0})"), revs.length) : L("Recent reviews", "Friss értékelések")}
+                  </div>
+                  {/* Three by default so the booking stays the point of the screen —
+                      but three was also the CEILING, and a company with forty reviews
+                      showed the same three forever with no way to the rest. */}
+                  {(allRevs ? revs : revs.slice(0, 3)).map((r) => (
                     <div key={r.id} style={{ background: C.card, borderRadius: R.md, padding: 13, marginBottom: 8, boxShadow: "0 1px 6px rgba(20,28,58,.04)" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Avatar name={r.customer_name || "C"} size={28} />
@@ -3489,6 +3497,13 @@ function BookingFlow({ company, close, onBooked }) {
                       {r.body && <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.55, marginTop: 7 }}>{r.body}</div>}
                     </div>
                   ))}
+                  {revs.length > 3 && !allRevs && (
+                    <button onClick={() => setAllRevs(true)}
+                      style={{ width: "100%", border: "none", background: C.navyChip, color: C.navySoft, borderRadius: R.md,
+                               padding: "11px 0", fontFamily: B, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                      {fill(L("See all {0} reviews", "Mind a {0} értékelés megtekintése"), revs.length)}
+                    </button>
+                  )}
                 </>
               )}
             </>
@@ -4415,9 +4430,17 @@ function CompanyJobs({ openProfile }) {
      Distinct ids, so one arrangement counts once however many of its visits
      are on the board. Cancelled and declined are already out of `open`. */
   const subs = (() => {
+    /* And counted as LIVE plans. A cancelled plan keeps its already-paid
+       visits on the board — deliberately, the company still owes that work —
+       so "has an open visit" kept saying 1 subscriber after the customer had
+       cancelled. The plan's own status is the only honest witness; the server
+       now sends it with every visit. Older visits without it (or ones whose
+       plan row predates the column) fall back to the old test rather than
+       vanishing. */
     const seen = new Set();
     return open.filter((b) => {
       if (b.pricing_type !== "subscription" || !b.subscription_id) return false;
+      if (b.subscription_status && b.subscription_status !== "active") return false;
       if (seen.has(b.subscription_id)) return false;
       seen.add(b.subscription_id);
       return true;
@@ -4798,9 +4821,11 @@ function CompanyClients() {
       const c = map.get(key) || { key, name: b.customer_name || L("Customer", "Ügyfél"), phone: b.customer_phone || null, kind: b.customer_kind || b.customer_type, addresses: new Set(), jobs: 0, done: 0, spend: 0, last: "", hasSub: false };
       c.jobs += 1;
       if (b.status === 4) { c.done += 1; c.spend += (b.total_huf || 0) - (b.service_fee_huf || 0); }
-      /* Same test as the counter above: a plan exists only once it has an id.
-         A refused first payment is not a subscriber. */
-      if (b.subscription_id && b.status < 8) c.hasSub = true;
+      /* Same test as the counter above: a plan exists only once it has an id,
+         and it stops being a subscription the moment its own status says so —
+         a cancelled plan's remaining paid visits do not make a subscriber. */
+      if (b.subscription_id && b.status < 8 &&
+          (!b.subscription_status || b.subscription_status === "active")) c.hasSub = true;
       if (b.address) c.addresses.add(b.address);
       if (String(b.scheduled_date) > c.last) c.last = String(b.scheduled_date).slice(0, 10);
       if (b.customer_phone) c.phone = b.customer_phone;
@@ -5762,35 +5787,37 @@ function ReportCustomerBox({ booking }) {
         {L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}
       </button>
       {open && (
-        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(12,16,38,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, borderRadius: R.lg, padding: 22, width: "100%", maxWidth: 380, maxHeight: "88vh", overflowY: "auto" }}>
-            <div style={{ fontFamily: F, fontWeight: 700, fontSize: 16, color: C.ink }}>{L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")}</div>
-            <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
-              {L("This goes to Cleano only — the customer is never told and never sees it. Nobody is suspended automatically; a person reads every report.", "Ez csak a Cleanóhoz jut el — az ügyfél nem értesül róla és nem látja. Senkit nem függesztünk fel automatikusan; minden bejelentést ember olvas el.")}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 13 }}>
-              {CATS.map(([id, lbl]) => (
-                <button key={id} onClick={() => setCat(id)}
-                  style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99,
-                    background: cat === id ? C.accent : C.bg, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
-              ))}
-            </div>
-            <textarea rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={2000}
-              placeholder={L("What happened? Dates, times and what was said or done help us act on it.", "Mi történt? A dátum, az időpont és az elhangzottak segítenek intézkedni.")}
-              style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none", resize: "vertical", marginTop: 12 }} />
-            <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
-              <Btn full ghost onClick={() => setOpen(false)}>{L("Cancel", "Mégse")}</Btn>
-              <Btn full disabled={busy || detail.trim().length < 10} onClick={async () => {
-                setBusy(true);
-                const res = await reportCustomer(booking.id, cat, detail.trim());
-                setBusy(false);
-                if (res?.error) { toast(res.error, "error"); return; }
-                setSent(true); setOpen(false);
-                toast(L("Reported to Cleano — we'll look into it", "Bejelentve a Cleanónak — megvizsgáljuk"));
-              }}>{busy ? "…" : L("Send report", "Bejelentés küldése")}</Btn>
-            </div>
+        /* A Sheet, not a hand-rolled overlay. The overlay lived inside the job
+           card, deep in the scroll container, so the floating nav ended up
+           painted over it on the phone. Sheet renders the way every other
+           dialog does — and hides the nav while it is up. */
+        <Sheet title={L("Report a problem with this customer", "Probléma bejelentése az ügyfélről")} close={() => setOpen(false)}>
+          <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, lineHeight: 1.55 }}>
+            {L("This goes to Cleano only — the customer is never told and never sees it. Nobody is suspended automatically; a person reads every report.",
+               "Ez csak a Cleanóhoz jut el — az ügyfél soha nem értesül róla és nem látja. Senkit nem függesztünk fel automatikusan; minden bejelentést ember olvas el.")}
           </div>
-        </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 13 }}>
+            {CATS.map(([id, lbl]) => (
+              <button key={id} onClick={() => setCat(id)}
+                style={{ border: "none", cursor: "pointer", fontFamily: B, fontWeight: 700, fontSize: 11, padding: "7px 12px", borderRadius: 99,
+                  background: cat === id ? C.accent : C.bg, color: cat === id ? "#fff" : C.inkSoft }}>{lbl}</button>
+            ))}
+          </div>
+          <textarea rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={2000}
+            placeholder={L("What happened? Dates, times and what was said or done help us act on it.", "Mi történt? A dátum, az időpont és az elhangzottak segítenek intézkedni.")}
+            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 12.5, color: C.ink, marginTop: 12, resize: "vertical" }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+            <Btn full ghost onClick={() => setOpen(false)}>{L("Cancel", "Mégse")}</Btn>
+            <Btn full disabled={busy || detail.trim().length < 10} onClick={async () => {
+              setBusy(true);
+              const res = await reportCustomer(booking.id, cat, detail.trim());
+              setBusy(false);
+              if (res?.error) { toast(res.error, "error"); return; }
+              setSent(true); setOpen(false);
+              toast(L("Reported to Cleano — we'll look into it", "Bejelentve a Cleanónak — megvizsgáljuk"));
+            }}>{busy ? "…" : L("Send report", "Bejelentés küldése")}</Btn>
+          </div>
+        </Sheet>
       )}
     </>
   );
@@ -8498,17 +8525,28 @@ function AdminLog() {
    address, which jobs it covers, and the net/VAT/gross split. Record the number
    afterwards and the jobs move out of the list. */
 function BillingList() {
-  const { billingList, markInvoiced, unmarkInvoiced } = useStore();
+  const { billingList } = useStore();
   const toast = useToast();
   const [data, setData] = React.useState(null);
-  const [settled, setSettled] = React.useState(false);
-  const [openCo, setOpenCo] = React.useState(null);
-  const [num, setNum] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
+  /* The last six months, newest first. A commission statement is FOR a month —
+     the invoice bookkeeping that used to live here ("record the number, mark it
+     done") is gone at Musa's word: he writes the invoice outside the app, and
+     the app's whole job is to hand him the figures. */
+  const months = React.useMemo(() => {
+    const out = [];
+    const d = new Date();
+    for (let i = 0; i < 6; i++) {
+      out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+      d.setUTCMonth(d.getUTCMonth() - 1);
+    }
+    return out;
+  }, []);
+  const [month, setMonth] = React.useState(months[0]);
 
-  const load = () => billingList(settled).then(setData);
-  React.useEffect(() => { setData(null); load(); }, [settled]);
+  const load = () => billingList(month).then(setData);
+  React.useEffect(() => { setData(null); load(); }, [month]);
   if (!data) return null;
+  const monthLabel = (m) => new Date(`${m}-01T12:00:00Z`).toLocaleDateString(undefined, { month: "short", year: "numeric" });
 
   const ft = (n) => `${Math.round(Number(n) || 0).toLocaleString("hu-HU")} Ft`;
   const money = (n) => (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("hu-HU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -8536,35 +8574,17 @@ function BillingList() {
     catch { toast(L("Could not copy — select the text instead", "Nem sikerült másolni — jelöld ki a szöveget")); }
   };
 
-  const doMark = async (c) => {
-    if (!num.trim()) return toast(L("Enter the invoice number you issued", "Írd be a kiállított számla számát"));
-    setBusy(true);
-    const r = await markInvoiced(c.jobs.map((jb) => jb.id), num.trim(), new Date().toISOString().slice(0, 10));
-    setBusy(false);
-    if (r?.error) return toast(r.error);
-    toast(fill(L("Recorded on {0} job(s)", "{0} munkán rögzítve"), r.marked));
-    setOpenCo(null); setNum(""); load();
-  };
-
-  const doUnmark = async (c) => {
-    setBusy(true);
-    const r = await unmarkInvoiced(c.jobs.map((jb) => jb.id));
-    setBusy(false);
-    if (r?.error) return toast(r.error);
-    toast(L("Undone", "Visszavonva")); load();
-  };
-
   /* A plain <a href> would arrive without the auth header and bounce off the
      endpoint, so fetch it with the token and hand the browser a blob. */
   const downloadCsv = async () => {
     try {
-      const r = await fetch(`${API_BASE || ""}/api/invoices/admin/billing.csv${settled ? "?settled=1" : ""}`,
+      const r = await fetch(`${API_BASE || ""}/api/invoices/admin/billing.csv?month=${month}`,
         { headers: { Authorization: "Bearer " + getToken() } });
       if (!r.ok) throw new Error(String(r.status));
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a");
       a.href = url;
-      a.download = `cleano-billing-${settled ? "invoiced" : "to-invoice"}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `cleano-commission-${month}.csv`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch { toast(L("Could not build the export", "Az exportot nem sikerült elkészíteni")); }
@@ -8573,20 +8593,18 @@ function BillingList() {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink }}>
-        {settled ? L("Already invoiced", "Már kiszámlázva") : L("To invoice", "Kiszámlázandó")}
+        {L("Commission", "Jutalék")}
       </div>
       <div style={{ fontFamily: B, fontSize: 11.5, color: C.inkSoft, marginTop: 3, lineHeight: 1.55 }}>
-        {settled
-          ? L("Commission you have already billed.", "Az általad már kiszámlázott jutalék.")
-          : L("Commission already collected through Stripe. Raise your invoice, then record the number here.",
-              "A Stripe-on már beszedett jutalék. Állítsd ki a számlát, majd rögzítsd itt a számát.")}
+        {L("What Cleano charged on each partner's bookings that month — already collected through Stripe. Everything you need to write the invoice yourself.",
+           "Amit a Cleano az adott hónapban felszámolt az egyes partnerek foglalásain — a Stripe-on már beszedve. Minden adat, ami a számla megírásához kell.")}
       </div>
 
       <div style={{ display: "flex", gap: 6, margin: "10px 0 12px", flexWrap: "wrap" }}>
-        {[{ id: false, label: L("To invoice", "Kiszámlázandó") }, { id: true, label: L("Done", "Kész") }].map((f) => (
-          <button key={String(f.id)} onClick={() => setSettled(f.id)}
-            style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: settled === f.id ? C.accent : C.card, color: settled === f.id ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
-            {f.label}
+        {months.map((f) => (
+          <button key={f} onClick={() => setMonth(f)}
+            style={{ fontFamily: B, fontWeight: 700, fontSize: 10.5, padding: "6px 11px", borderRadius: 99, border: "none", cursor: "pointer", background: month === f ? C.accent : C.card, color: month === f ? "#fff" : C.navySoft, boxShadow: "0 1px 4px rgba(20,28,58,.07)" }}>
+            {monthLabel(f)}
           </button>
         ))}
         {data.companies.length > 0 && (
@@ -8598,7 +8616,7 @@ function BillingList() {
 
       {data.companies.length === 0 && (
         <div style={{ background: C.card, borderRadius: R.lg, padding: 28, textAlign: "center", fontFamily: B, fontSize: 12.5, color: C.inkSoft, boxShadow: "0 2px 10px rgba(20,28,58,.04)" }}>
-          {settled ? L("Nothing recorded yet.", "Még nincs rögzítve semmi.") : L("Nothing to invoice. Finished, paid jobs appear here.", "Nincs kiszámlázandó. A befejezett, kifizetett munkák itt jelennek meg.")}
+          {L("No commission this month — finished, paid jobs appear here.", "Ebben a hónapban nincs jutalék — a befejezett, kifizetett munkák itt jelennek meg.")}
         </div>
       )}
 
@@ -8660,7 +8678,7 @@ function BillingList() {
             </div>
           </details>
 
-          {!c.billable && !settled && (
+          {!c.billable && (
             <div style={{ background: C.coralSoft, borderRadius: R.sm, padding: "7px 10px", marginTop: 9, fontFamily: B, fontWeight: 700, fontSize: 10.5, color: C.coralText || C.coral }}>
               {L("Ask this partner for their billing address before invoicing.", "Kérd el a partner számlázási címét a számlázás előtt.")}
             </div>
@@ -8668,21 +8686,8 @@ function BillingList() {
 
           <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
             <Btn full ghost onClick={() => copy(c)}>{L("Copy details", "Adatok másolása")}</Btn>
-            {settled
-              ? <Btn full ghost disabled={busy} onClick={() => doUnmark(c)}>{L("Undo", "Visszavonás")}</Btn>
-              : <Btn full onClick={() => { setOpenCo(c.companyId); setNum(""); }}>{L("Record invoice", "Számla rögzítése")}</Btn>}
           </div>
 
-          {openCo === c.companyId && (
-            <div style={{ marginTop: 10 }}>
-              <input value={num} onChange={(e) => setNum(e.target.value)} placeholder={L("Invoice number you issued", "A kiállított számla száma")}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: R.md, border: `1px solid ${C.line}`, fontFamily: B, fontSize: 12.5, background: C.bg, color: C.ink }} />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <Btn full ghost onClick={() => setOpenCo(null)}>{L("Cancel", "Mégse")}</Btn>
-                <Btn full disabled={busy} onClick={() => doMark(c)}>{busy ? L("Saving...", "Mentés...") : L("Save", "Mentés")}</Btn>
-              </div>
-            </div>
-          )}
         </div>
       ))}
     </div>

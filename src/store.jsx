@@ -1122,21 +1122,11 @@ export function StoreProvider({ children }) {
   /* ── Invoices ──
      Nothing is issued from here. These read the list of commission that has
      been collected but not yet invoiced, and record the numbers afterwards. */
-  const billingList = async (settled = false) => {
+  /* One commission statement per month — like a phone bill. */
+  const billingList = async (month = "") => {
     if (!isApiMode) return null;
-    try { return await api(`/invoices/admin/billing${settled ? "?settled=1" : ""}`); } catch { return null; }
+    try { return await api(`/invoices/admin/billing${month ? `?month=${month}` : ""}`); } catch { return null; }
   };
-  const markInvoiced = async (bookingIds, invoiceNumber, issuedAt) => {
-    if (!isApiMode) return { error: "Live mode only" };
-    try { return await api("/invoices/admin/mark-invoiced", { method: "POST", body: { bookingIds, invoiceNumber, issuedAt } }); }
-    catch (e) { return { error: e.message }; }
-  };
-  const unmarkInvoiced = async (bookingIds) => {
-    if (!isApiMode) return { error: "Live mode only" };
-    try { return await api("/invoices/admin/unmark", { method: "POST", body: { bookingIds } }); }
-    catch (e) { return { error: e.message }; }
-  };
-
   const fetchInvoices = async (bookingId) => {
     if (!isApiMode) return null;
     try { return await api(`/invoices/${bookingId}`); } catch { return null; }
@@ -1237,7 +1227,7 @@ export function StoreProvider({ children }) {
     adminUserFull, adminEditCompanyDetails,
     fetchInvoices, uploadPartnerInvoice, fetchOutstandingInvoices,
     reportCustomer, adminCustomerReports, adminHandleCustomerReport,
-    billingList, markInvoiced, unmarkInvoiced,
+    billingList,
     adminFetchRevenue, adminFetchAllCompanies, adminFetchAllBookings, adminFetchLog,
     /* admin views: derived from db in demo, cached from API otherwise */
     adminStats:        isApiMode ? adminApi.stats     : demoAdminStats(db),

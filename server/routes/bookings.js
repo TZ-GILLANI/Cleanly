@@ -92,10 +92,12 @@ router.get("/", requireAuth, async (req, res) => {
                      THEN 'Cleano customer'
                      ELSE cu.full_name END AS customer_name,
                 (cu.deleted_name IS NOT NULL) AS customer_deleted,
-                cu.customer_type AS customer_kind, cu.phone AS customer_phone
+                cu.customer_type AS customer_kind, cu.phone AS customer_phone,
+                s.status AS subscription_status
          FROM bookings b
          LEFT JOIN users u ON u.id = b.assigned_to
          LEFT JOIN users cu ON cu.id = b.customer_id
+         LEFT JOIN subscriptions s ON s.id = b.subscription_id
          WHERE b.company_id = $1
            AND (b.payment_status IN ('paid','scheduled','retry') OR b.status <> 0)
          ORDER BY b.created_at DESC`,
