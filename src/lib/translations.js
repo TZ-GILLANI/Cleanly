@@ -6,6 +6,14 @@
 
 export const EXTRA = {
   de: {
+    "Choose a day": "Tag wählen",
+    "Option {0}": "Option {0}",
+    "They don't work that day — pick another.": "An dem Tag arbeiten sie nicht — wähle einen anderen.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Buchung storniert — wir haben deine Rückerstattung beantragt",
+    "Cancelled — a refund request has been raised for you": "Storniert — eine Rückerstattungsanfrage wurde für dich eröffnet",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Künftige Termine enden sofort. Bereits Bezahltes wird nicht automatisch zurückgebucht — wir eröffnen für dich eine Rückerstattungsanfrage, die jemand prüft.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Deine Buchung bei {0} wird storniert. Deine Zahlung wird nicht automatisch zurückerstattet — wir eröffnen eine Rückerstattungsanfrage, die jemand prüft.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Der ganze Plan wurde gekündigt — mitsamt {0} anstehenden Terminen. Es wird nichts weiter abgebucht.",
     "Apple Maps": "Apple Karten",
     "Checking invoice…": "Rechnung wird geprüft…",
@@ -1182,6 +1190,14 @@ export const EXTRA = {
     "Details": "Angaben",
   },
   ro: {
+    "Choose a day": "Alege o zi",
+    "Option {0}": "Varianta {0}",
+    "They don't work that day — pick another.": "În ziua aceea nu lucrează — alege alta.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Rezervare anulată — am solicitat rambursarea pentru tine",
+    "Cancelled — a refund request has been raised for you": "Anulat — s-a deschis o cerere de rambursare pentru tine",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Vizitele viitoare se opresc imediat. Ce ai plătit deja nu se returnează automat — deschidem o cerere de rambursare, pe care o analizează cineva.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Rezervarea ta la {0} va fi anulată. Plata nu se returnează automat — deschidem o cerere de rambursare, pe care o va analiza cineva.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Întregul abonament a fost anulat — împreună cu {0} vizite viitoare. Nu se va mai debita nimic.",
     "Apple Maps": "Apple Maps",
     "Checking invoice…": "Se verifică factura…",
@@ -2358,6 +2374,14 @@ export const EXTRA = {
     "Details": "Detalii",
   },
   sk: {
+    "Choose a day": "Vyber deň",
+    "Option {0}": "Možnosť {0}",
+    "They don't work that day — pick another.": "V ten deň nepracujú — vyber iný.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Rezervácia zrušená — požiadali sme o vrátenie peňazí",
+    "Cancelled — a refund request has been raised for you": "Zrušené — bola za teba vytvorená žiadosť o vrátenie",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Budúce návštevy sa okamžite zastavia. Už zaplatené sa nevracia automaticky — vytvoríme za teba žiadosť o vrátenie, ktorú niekto posúdi.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Tvoja rezervácia u {0} bude zrušená. Platba sa nevracia automaticky — vytvoríme žiadosť o vrátenie, ktorú niekto posúdi.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Celý plán bol zrušený — spolu s {0} nadchádzajúcimi návštevami. Nič ďalšie sa nestrhne.",
     "Apple Maps": "Apple Mapy",
     "Checking invoice…": "Kontrolujeme faktúru…",
@@ -3534,6 +3558,14 @@ export const EXTRA = {
     "Details": "Údaje",
   },
   pl: {
+    "Choose a day": "Wybierz dzień",
+    "Option {0}": "Opcja {0}",
+    "They don't work that day — pick another.": "Tego dnia nie pracują — wybierz inny.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Rezerwacja anulowana — poprosiliśmy o zwrot",
+    "Cancelled — a refund request has been raised for you": "Anulowano — złożono za Ciebie wniosek o zwrot",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Przyszłe wizyty kończą się od razu. To, co już zapłacono, nie wraca automatycznie — składamy za Ciebie wniosek o zwrot, który ktoś rozpatrzy.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Twoja rezerwacja w {0} zostanie anulowana. Płatność nie wraca automatycznie — złożymy wniosek o zwrot, który ktoś rozpatrzy.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Cały plan został anulowany — razem z {0} nadchodzącymi wizytami. Nic więcej nie zostanie pobrane.",
     "Apple Maps": "Mapy Apple",
     "Checking invoice…": "Sprawdzanie faktury…",
@@ -4710,6 +4742,14 @@ export const EXTRA = {
     "Details": "Dane",
   },
   uk: {
+    "Choose a day": "Оберіть день",
+    "Option {0}": "Варіант {0}",
+    "They don't work that day — pick another.": "Того дня вони не працюють — оберіть інший.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Бронювання скасовано — ми подали запит на повернення",
+    "Cancelled — a refund request has been raised for you": "Скасовано — для вас створено запит на повернення",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Майбутні візити припиняються одразу. Уже сплачене не повертається автоматично — ми створюємо запит на повернення, який хтось розгляне.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Ваше бронювання в {0} буде скасовано. Платіж не повертається автоматично — ми створимо запит на повернення, який хтось розгляне.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Весь план скасовано — разом із {0} майбутніми візитами. Більше нічого не списуватиметься.",
     "Apple Maps": "Apple Карти",
     "Checking invoice…": "Перевіряємо рахунок…",
@@ -5886,6 +5926,14 @@ export const EXTRA = {
     "Details": "Дані",
   },
   fr: {
+    "Choose a day": "Choisir un jour",
+    "Option {0}": "Option {0}",
+    "They don't work that day — pick another.": "Ils ne travaillent pas ce jour-là — choisissez-en un autre.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Réservation annulée — nous avons demandé votre remboursement",
+    "Cancelled — a refund request has been raised for you": "Annulé — une demande de remboursement a été ouverte pour vous",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Les interventions à venir s'arrêtent immédiatement. Ce qui est déjà payé n'est pas rendu automatiquement — nous ouvrons une demande de remboursement qu'une personne examine.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Votre réservation chez {0} sera annulée. Votre paiement n'est pas rendu automatiquement — nous ouvrirons une demande de remboursement qu'une personne examinera.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "L'abonnement entier a été résilié — avec {0} interventions à venir. Plus rien ne sera prélevé.",
     "Apple Maps": "Plans",
     "Checking invoice…": "Vérification de la facture…",
@@ -7062,6 +7110,14 @@ export const EXTRA = {
     "Details": "Informations",
   },
   es: {
+    "Choose a day": "Elige un día",
+    "Option {0}": "Opción {0}",
+    "They don't work that day — pick another.": "Ese día no trabajan — elige otro.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Reserva cancelada — hemos solicitado tu reembolso",
+    "Cancelled — a refund request has been raised for you": "Cancelado — se ha abierto una solicitud de reembolso para ti",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Las visitas futuras se detienen de inmediato. Lo ya pagado no se devuelve automáticamente — abrimos una solicitud de reembolso que alguien revisa.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "Tu reserva con {0} se cancelará. El pago no se devuelve automáticamente — abriremos una solicitud de reembolso que alguien revisará.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Se ha cancelado todo el plan — junto con {0} visitas próximas. No se cobrará nada más.",
     "Apple Maps": "Mapas de Apple",
     "Checking invoice…": "Comprobando la factura…",
@@ -8238,6 +8294,14 @@ export const EXTRA = {
     "Details": "Datos",
   },
   tr: {
+    "Choose a day": "Bir gün seç",
+    "Option {0}": "Seçenek {0}",
+    "They don't work that day — pick another.": "O gün çalışmıyorlar — başka bir gün seç.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Rezervasyon iptal edildi — iadeni talep ettik",
+    "Cancelled — a refund request has been raised for you": "İptal edildi — senin için bir iade talebi açıldı",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Gelecek ziyaretler hemen durur. Ödediklerin otomatik olarak geri alınmaz — senin için bir iade talebi açarız ve biri inceler.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "{0} ile rezervasyonun iptal edilecek. Ödemen otomatik olarak iade edilmez — bir iade talebi açacağız ve biri inceleyecek.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "Planın tamamı iptal edildi — beraberinde {0} yaklaşan ziyaret. Başka ücret alınmayacak.",
     "Apple Maps": "Apple Haritalar",
     "Checking invoice…": "Fatura kontrol ediliyor…",
@@ -9354,6 +9418,14 @@ export const EXTRA = {
     "Details": "Bilgiler",
   },
   zh: {
+    "Choose a day": "选择日期",
+    "Option {0}": "选项 {0}",
+    "They don't work that day — pick another.": "他们那天不工作 — 请另选一天。",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "预约已取消 — 我们已为你申请退款",
+    "Cancelled — a refund request has been raised for you": "已取消 — 已为你提交退款申请",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "后续上门立即停止。已支付的费用不会自动退回 — 我们会为你提交退款申请，由人工审核。",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "你在 {0} 的预约将被取消。款项不会自动退回 — 我们会提交退款申请，由人工审核。",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "整个套餐已取消 — 连同 {0} 次即将上门的服务。不会再有扣款。",
     "Apple Maps": "苹果地图",
     "Checking invoice…": "正在检查发票…",
@@ -10470,6 +10542,14 @@ export const EXTRA = {
     "Details": "信息",
   },
   it: {
+    "Choose a day": "Scegli un giorno",
+    "Option {0}": "Opzione {0}",
+    "They don't work that day — pick another.": "Quel giorno non lavorano — scegline un altro.",
+    /* v7.9.0 — refunds are requested, not automatic */
+    "Booking cancelled — we've asked for your refund": "Prenotazione annullata — abbiamo richiesto il tuo rimborso",
+    "Cancelled — a refund request has been raised for you": "Annullato — è stata aperta una richiesta di rimborso per te",
+    "Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.": "Gli interventi futuri si fermano subito. Quanto già pagato non viene restituito automaticamente — apriamo una richiesta di rimborso che qualcuno esamina.",
+    "Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.": "La tua prenotazione con {0} sarà annullata. Il pagamento non viene restituito automaticamente — apriremo una richiesta di rimborso che qualcuno esaminerà.",
     "The whole plan was cancelled — {0} upcoming visits with it. Nothing further will be charged.": "L'intero piano è stato annullato — insieme a {0} interventi in arrivo. Non verrà addebitato altro.",
     "Apple Maps": "Mappe di Apple",
     "Checking invoice…": "Verifica della fattura…",

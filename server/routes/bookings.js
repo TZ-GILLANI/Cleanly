@@ -465,8 +465,34 @@ router.put("/:id/status", requireAuth, async (req, res) => {
           error: `Bookings can only be cancelled more than ${freeH} hours before the visit. Please contact the company directly.`,
         });
       }
-      // Cancelling in time refunds the whole amount.
-      if (b.payment_status === "paid") await refundBookingPayment(b, cancellationRefundPct());
+      /* Cancelling does NOT move money on its own.
+
+         It used to refund the moment the customer pressed cancel. That is one
+         irreversible act triggered by another, with nobody looking: a mistaken
+         tap, a change of mind two minutes later, a customer who cancels the
+         wrong booking — all of it money already gone, and gone through Stripe,
+         where getting it back is not a matter of pressing undo.
+
+         So the booking is cancelled and the payment stays put. If they paid, a
+         refund REQUEST is raised for them in the report system, where a person
+         reads it and decides. The customer does not have to know to ask; the
+         request appears on its own, attached to the booking, with the amount
+         already on it. */
+      if (b.payment_status === "paid") {
+        try {
+          const amount = Number(b.total_huf) || 0;
+          await query(
+            `INSERT INTO complaints (user_id, booking_id, subject, body)
+             VALUES ($1, $2, $3, $4)`,
+            [req.user.id, b.id, "Refund request — booking cancelled",
+             `The customer cancelled this booking in time and has asked for the ${amount} Ft they paid to be returned. `
+             + `Nothing has been refunded automatically. Approve or decline it here.`]);
+          const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [b.company_id]);
+          if (oc.rows[0]) await notify(oc.rows[0].owner_id, "complaint",
+            "A cancelled booking is waiting on a refund decision",
+            "A customer cancelled in time and asked for their money back. Nothing has been refunded yet.", b.id).catch(() => {});
+        } catch (e) { console.error("refund request on cancel:", e.message); }
+      }
     } else if (req.user.role === "employee") {
       if (b.assigned_to !== req.user.id) return res.status(403).json({ error: "Forbidden" });
       /* A cleaner advances their own job, but the two kinds of job have different

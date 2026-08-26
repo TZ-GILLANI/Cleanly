@@ -290,7 +290,7 @@ function PhoneRow({ label, value, verified, onChange }) {
    The server publishes a minimum supported version. Below it, the app
    blocks with an update screen — this is what lets us change payment
    flows later without silently breaking people on old builds. */
-const APP_VERSION = "7.8.0";
+const APP_VERSION = "7.9.0";
 const verLt = (a, b) => {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) < (pb[i] || 0)) return true; if ((pa[i] || 0) > (pb[i] || 0)) return false; }
@@ -1299,16 +1299,18 @@ function GoThere({ address, phone, compact }) {
 }
 
 function MoveVisitSheet({ booking, close }) {
-  const { requestReschedule } = useStore();
+  const { requestReschedule, companies } = useStore();
+  const company = companies.find((c) => c.id === booking.company_id);
   const toast = useToast();
-  const [rows, setRows] = React.useState([{ date: "", slot: "10:00" }, { date: "", slot: "10:00" }]);
+  const [rows, setRows] = React.useState([{ date: "", slot: "" }, { date: "", slot: "" }]);
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
 
   const minIso = localISO(new Date());
   const set = (i, patch) => setRows((r) => r.map((x, k) => (k === i ? { ...x, ...patch } : x)));
-  const filled = rows.filter((r) => r.date);
+  /* An option is only real once it has BOTH a day and an hour. */
+  const filled = rows.filter((r) => r.date && r.slot);
   const enough = new Set(filled.map((r) => r.date + r.slot)).size >= 2;
 
   return (
@@ -1325,24 +1327,62 @@ function MoveVisitSheet({ booking, close }) {
           </div>
         </div>
 
-        {rows.map((r, i) => (
-          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 9, alignItems: "center" }}>
-            <input type="date" min={minIso} value={r.date} onChange={(e) => set(i, { date: e.target.value })}
-              style={{ flex: 1, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }} />
-            <select value={r.slot} onChange={(e) => set(i, { slot: e.target.value })}
-              style={{ flex: 1, minWidth: 0, background: C.bg, border: "none", borderRadius: R.md, padding: "12px 14px", fontFamily: B, fontSize: 13, color: C.ink, outline: "none" }}>
-              {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
-            </select>
-            {rows.length > 2 && (
-              <button onClick={() => setRows((x) => x.filter((_, k) => k !== i))}
-                style={{ border: "none", background: "none", color: C.coral, fontWeight: 700, cursor: "pointer", fontSize: 15 }}>✕</button>
+        {rows.map((r, i) => {
+          /* Only the hours this company actually works, on the day chosen —
+             the same openSlots() the booking screen uses. Offering every hour
+             from six in the morning invites the customer to pick times the
+             company will simply have to refuse. */
+          const free = r.date ? openSlots(availOf(company), r.date, booking.service_id) : [];
+          return (
+          <div key={i} style={{ background: C.bg, borderRadius: R.md, padding: "11px 12px", marginBottom: 9 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontFamily: F, fontWeight: 700, fontSize: 11.5, color: C.inkSoft }}>
+                {fill(L("Option {0}", "{0}. lehetőség"), i + 1)}
+              </span>
+              {rows.length > 2 && (
+                <button onClick={() => setRows((x) => x.filter((_, k) => k !== i))}
+                  style={{ border: "none", background: "none", color: C.coral, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>✕</button>
+              )}
+            </div>
+            {/* A date input styled like plain text is invisible as a control —
+                nobody could tell it was tappable. It looks like a button now,
+                and says what it is when it is empty. */}
+            <label style={{ display: "block", position: "relative", cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                            background: C.card, border: `1.5px solid ${r.date ? C.navy : C.line}`, borderRadius: R.md,
+                            padding: "12px 14px", fontFamily: F, fontWeight: 700, fontSize: 13.5,
+                            color: r.date ? C.ink : C.inkFaint }}>
+                <span>{r.date ? dayLabel(r.date) : L("Choose a day", "Válassz napot")}</span>
+                <Ic name="calendar" size={17} color={C.navySoft} />
+              </div>
+              <input type="date" min={minIso} value={r.date} onChange={(e) => set(i, { date: e.target.value, slot: "" })}
+                style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+            </label>
+
+            {r.date && (
+              free.length === 0 ? (
+                <div style={{ fontFamily: B, fontSize: 11.5, color: C.coral, marginTop: 8, lineHeight: 1.5 }}>
+                  {L("They don't work that day — pick another.", "Aznap nem dolgoznak — válassz másik napot.")}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginTop: 8 }}>
+                  {free.map((h) => (
+                    <button key={h} onClick={() => set(i, { slot: h })}
+                      style={{ padding: "9px 0", borderRadius: R.sm, border: "none", cursor: "pointer",
+                               fontFamily: F, fontWeight: 700, fontSize: 12.5,
+                               background: r.slot === h ? C.accent : C.card,
+                               color: r.slot === h ? "#fff" : C.ink }}>{h}</button>
+                  ))}
+                </div>
+              )
             )}
           </div>
-        ))}
+          );
+        })}
         {rows.length < 3 && (
           <button onClick={() => setRows((r) => [...r, { date: "", slot: "10:00" }])}
             style={{ width: "100%", background: "none", border: `1.5px dashed ${C.line}`, borderRadius: R.md, padding: "10px 14px", fontFamily: F, fontWeight: 700, fontSize: 12.5, color: C.navySoft, cursor: "pointer", marginBottom: 12 }}>
-            {L("Add a third option", "Harmadik lehetőség hozzáadása")}
+            + {L("Add a third option", "Harmadik lehetőség hozzáadása")}
           </button>
         )}
 
@@ -3629,7 +3669,12 @@ function BookingFlow({ company, close, onBooked }) {
             }}
             onCancel={async () => {
               const r = await cancelBooking(payWait.row.id);
-              if (!r?.error) toast(L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés"));
+              /* Only true when nothing had been paid. Saying "nothing was
+                 charged" to someone who HAD paid, at the moment we stop
+                 refunding automatically, would be a straight lie. */
+              if (!r?.error) toast(payWait?.row?.payment_status === "paid"
+                ? L("Booking cancelled — we've asked for your refund", "Foglalás lemondva — visszatérítést kértünk neked")
+                : L("Booking cancelled — nothing was charged", "Foglalás lemondva — nem történt terhelés"));
               close();
             }}
           />
@@ -3761,7 +3806,8 @@ function CustomerBookings({ openBooking }) {
       {cancelPlan && (
         <ConfirmDialog
           title={L("Cancel this plan?", "Lemondod a csomagot?")}
-          body={L("Future visits will be cancelled and anything already paid for them refunded in full.", "A jövőbeli alkalmakat lemondjuk, és a már kifizetett összeget teljes egészében visszatérítjük.")}
+          body={L("Future visits stop straight away. Anything you have already paid for is not taken back automatically — we raise a refund request for you and someone reviews it.",
+                  "A jövőbeli alkalmak azonnal leállnak. A már kifizetett összeget nem vonjuk vissza automatikusan — visszatérítési kérelmet nyitunk helyetted, amit valaki elbírál.")}
           confirmLabel={L("Cancel plan", "Csomag lemondása")}
           onCancel={() => setCancelPlan(null)}
           onConfirm={async () => {
@@ -3986,14 +4032,22 @@ function CustomerBookings({ openBooking }) {
       {confirmCancel && (
         <ConfirmDialog
           title={L("Cancel this booking?", "Lemondod a foglalást?")}
-          body={fill(L("Your booking with {0} will be cancelled. This can't be undone.", "A(z) {0} felé leadott foglalásod törlésre kerül. Ez nem vonható vissza."), companies.find((c) => c.id === confirmCancel.company_id)?.name || L("the company", "cég"))}
+          body={fill(confirmCancel.payment_status === "paid"
+            ? L("Your booking with {0} will be cancelled. Your payment is not returned automatically — we'll raise a refund request for you and someone will review it.",
+                "A(z) {0} felé leadott foglalásod törlésre kerül. A fizetést nem küldjük vissza automatikusan — visszatérítési kérelmet nyitunk helyetted, amit valaki elbírál.")
+            : L("Your booking with {0} will be cancelled. This can't be undone.",
+                "A(z) {0} felé leadott foglalásod törlésre kerül. Ez nem vonható vissza."),
+            companies.find((c) => c.id === confirmCancel.company_id)?.name || L("the company", "cég"))}
           confirmLabel={L("Yes, cancel", "Igen, lemondom")}
           onConfirm={async () => {
             const id = confirmCancel.id;
             setConfirmCancel(null);
+            const paid = confirmCancel.payment_status === "paid";
             const r = await cancelBooking(id);
             // Only say it worked if it worked. setError already surfaced the why.
-            if (!r?.error) toast(L("Booking cancelled", "Foglalás lemondva"));
+            if (!r?.error) toast(paid
+              ? L("Cancelled — a refund request has been raised for you", "Lemondva — visszatérítési kérelmet nyitottunk neked")
+              : L("Booking cancelled", "Foglalás lemondva"));
           }}
           onCancel={() => setConfirmCancel(null)}
         />
@@ -4236,21 +4290,15 @@ function EmployeeJobs({ openProfile }) {
                 </div>
                 <Pill>{L("Done", "Kész")}</Pill>
                 </div>
-                {/* The invoice uploader belongs HERE, in the list of FINISHED
-                    jobs. It used to sit in the open-jobs list, whose filter is
-                    status < 4, while the box itself returns null unless status
-                    IS 4 — two conditions that can never both hold. It had never
-                    rendered once, for any job, for anybody. */}
-                <PartnerInvoiceBox booking={b} />
-                {/* Reporting a customer belongs here too.
+                {/* Nothing else here.
 
-                    It was only on the open-jobs card, so it disappeared the
-                    moment the job was marked complete — which is precisely
-                    when a company decides to report someone. Nobody stops
-                    mid-clean, standing in a stranger's kitchen, to file a
-                    complaint about them. The server never had a status rule
-                    here; only the screen did. */}
-                <ReportCustomerBox booking={b} />
+                    The invoice uploader and the report-a-customer box were put
+                    on THIS list by mistake — it is the cleaner's finished
+                    jobs, not the company's. A cleaner does not issue invoices
+                    and does not decide who gets reported; both belong to the
+                    business, and both now sit on the company's own completed
+                    list. The server would have refused a cleaner anyway, so
+                    what they had was a button that could only ever fail. */}
               </div>
             ))}
           </>
@@ -4655,17 +4703,18 @@ function CompanyJobs({ openProfile }) {
                 </div>
                 <Pill>{L("Done", "Kész")}</Pill>
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
-                {/* The real uploader is <PartnerInvoiceBox> above: it posts to
-                    /api/invoices/:id/partner and records a number and a date,
-                    which is what the partner actually owes.
 
-                    What stood here was the version from before that existed —
-                    it called upsertBooking(), a store function that no longer
-                    exists. It rendered perfectly and threw a ReferenceError the
-                    moment a partner chose a file, which is the worst place for
-                    a crash to hide: invisible until someone does the one thing
-                    the button is for. */}
+              {/* The invoice, and reporting the customer — both belong to the
+                  BUSINESS, on the business's own list of finished jobs.
+
+                  They spent a version sitting on the cleaner's completed list
+                  by mistake. A cleaner does not issue invoices and does not
+                  decide who gets reported; the server would have refused them
+                  anyway, so what they had was a button that could only fail. */}
+              <PartnerInvoiceBox booking={b} />
+              <ReportCustomerBox booking={b} />
+
+              <div style={{ display: "flex", gap: 8, marginTop: 9, alignItems: "center" }}>
                 <button onClick={async () => { const r = await archiveBooking(b.id); if (r?.error) toast(r.error, "error"); else toast(L("Moved to history (Settings)", "Áthelyezve az előzményekbe (Beállítások)")); }}
                   style={{ marginLeft: "auto", border: "none", background: C.bg, color: C.inkFaint, borderRadius: R.sm, padding: "6px 11px", fontFamily: B, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{L("Clear", "Törlés")}</button>
               </div>

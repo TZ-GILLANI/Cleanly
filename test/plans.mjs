@@ -298,8 +298,15 @@ console.log("\n── cancelling a plan refunds what was charged ahead ──");
 {
   const fs = await import("fs");
   const subs = fs.readFileSync(new URL("../server/routes/subscriptions.js", import.meta.url), "utf8");
-  ok("paid future visits are refunded in full, not treated as a late cancellation",
-     /refundBookingPayment\(b, 100\)/.test(subs));
+  /* This asserted the old behaviour: cancelling a plan handed the money back
+     by itself. Money no longer moves without a person — the paid visits are
+     cancelled and ONE refund request is raised covering them, with the amount
+     on it. See test/refundrequest.mjs. */
+  ok("paid future visits are cancelled, not silently refunded",
+     !/refundBookingPayment\(b, 100\)/.test(subs));
+  ok("and a single refund request is raised for them",
+     /Refund request — plan cancelled/.test(subs));
+  ok("carrying how many visits and how much", /totalling \$\{owed\} Ft/.test(subs));
   ok("uncharged ones are simply cancelled",
      /payment_status IN \('scheduled','retry'\) AND scheduled_date >= CURRENT_DATE/.test(subs));
   const r = await j(`/api/subscriptions/${subId}/cancel`, { method: "POST", token: cuTok });

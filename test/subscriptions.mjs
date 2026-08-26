@@ -150,8 +150,15 @@ console.log("\n── cancelling: one rule, no sliding scale ──");
      /Number\(process\.env\.SUB_CHARGE_DAYS \|\| 5\)/.test(code));
   ok("and no longer borrows the cancellation window", !/CANCEL_FREE_H/.test(code));
   const subsRoute = (await import("fs")).readFileSync("server/routes/subscriptions.js", "utf8");
-  ok("so a charge taken ahead of a cancellation is refunded in full",
-     /refundBookingPayment\(b, 100\)/.test(subsRoute));
+  /* Charging five days ahead is safe because a cancellation cannot leave the
+     customer both without the visit AND without a way to get the money back.
+     It is no longer refunded automatically — the visits are cancelled and one
+     refund request is raised for a person to decide, which is the same
+     protection with a human in it. */
+  ok("so a charge taken ahead of a cancellation becomes a refund request",
+     /Refund request — plan cancelled/.test(subsRoute));
+  ok("and nothing is handed back without someone deciding",
+     !/refundBookingPayment\(b, 100\)/.test(subsRoute));
   ok("and the visits never charged are simply dropped",
      /payment_status IN \('scheduled','retry'\)/.test(subsRoute));
 }

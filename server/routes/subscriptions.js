@@ -92,19 +92,42 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
     const s = await ownPlan(req, res); if (!s) return;
     if (s.status === "cancelled") return res.json({ ok: true });
     await query("UPDATE subscriptions SET status = 'cancelled', cancelled_at = NOW() WHERE id = $1", [s.id]);
-    // uncharged future occurrences: cancel outright (nothing was taken)
+    /* Ending a plan stops what has not been charged. It does not claw back
+       what has.
+
+       Everything still owing simply goes away — no money was taken for it, so
+       there is nothing to argue about. The month ALREADY PAID FOR is a
+       different thing: those visits were bought, and handing the money back
+       automatically is a decision nobody made. The visits are cancelled so the
+       company is not left holding work, and a single refund request is raised
+       covering them, with the amount on it, for a person to decide. */
     await query("UPDATE bookings SET status = 9 WHERE subscription_id = $1 AND payment_status IN ('scheduled','retry') AND scheduled_date >= CURRENT_DATE", [s.id]);
-    // charged future occurrences: cancel + full refund (plan cancellation ≠ late cancel)
+
     const paid = await query(
       "SELECT * FROM bookings WHERE subscription_id = $1 AND payment_status = 'paid' AND scheduled_date >= CURRENT_DATE AND status IN (0,1)", [s.id]);
+    let owed = 0;
     for (const b of paid.rows) {
-      await refundBookingPayment(b, 100);
+      owed += Number(b.total_huf) || 0;
       await query("UPDATE bookings SET status = 9 WHERE id = $1", [b.id]);
     }
+    if (paid.rows.length) {
+      try {
+        await query(
+          `INSERT INTO complaints (user_id, booking_id, subject, body)
+           VALUES ($1, $2, $3, $4)`,
+          [req.user.id, paid.rows[0].id, "Refund request — plan cancelled",
+           `The customer ended their recurring plan with ${paid.rows.length} visit(s) already paid for, `
+           + `totalling ${owed} Ft. Those visits have been cancelled. Nothing has been refunded automatically — `
+           + `approve or decline the refund here.`]);
+      } catch (e) { console.error("refund request on plan cancel:", e.message); }
+    }
+
     const oc = await query("SELECT owner_id FROM companies WHERE id = $1", [s.company_id]);
     if (oc.rows[0]) await notify(oc.rows[0].owner_id, "cancelled", "Recurring plan cancelled",
-      "A customer ended their recurring cleaning plan.", null).catch(() => {});
-    res.json({ ok: true, refunded: paid.rows.length });
+      paid.rows.length
+        ? `A customer ended their plan. ${paid.rows.length} paid visit(s) were cancelled and a refund request is waiting on you.`
+        : "A customer ended their recurring cleaning plan. Nothing was owing.", null).catch(() => {});
+    res.json({ ok: true, cancelled: paid.rows.length, refundRequested: paid.rows.length > 0, owedHuf: owed });
   } catch (e) { res.status(500).json({ error: "Cancel failed" }); }
 });
 
