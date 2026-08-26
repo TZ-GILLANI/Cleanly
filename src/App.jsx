@@ -8867,7 +8867,7 @@ function Shell() {
               { id: "schedule", label: L("Schedule", "Naptár"), icon: "calendar" },
               { id: "clients", label: L("Clients", "Ügyfelek"), icon: "users" },
               { id: "__manage", label: L("Manage", "Kezelés"), icon: "settings" }],
-    admin: [{ id: "home", label: L("Dashboard", "Irányítópult"), icon: "grid" }, { id: "companies", label: L("Companies", "Cégek"), icon: "building" }, { id: "users", label: L("Users", "Felhasználók"), icon: "user" }, { id: "bookings", label: L("Orders", "Megrendelések"), icon: "calendar" }, { id: "complaints", label: L("Complaints", "Panaszok"), icon: "lifebuoy" }, { id: "log", label: L("Log", "Napló"), icon: "scroll" }],
+    admin: [{ id: "home", label: L("Dashboard", "Irányítópult"), icon: "grid" }, { id: "companies", label: L("Companies", "Cégek"), icon: "building" }, { id: "users", label: L("Users", "Felhasználók"), icon: "user" }, { id: "bookings", label: L("Orders", "Megrendelések"), icon: "calendar" }, { id: "complaints", label: L("Complaints", "Panaszok"), icon: "lifebuoy" }, { id: "reviews", label: L("Reviews", "Értékelések"), icon: "sparkle" }, { id: "log", label: L("Log", "Napló"), icon: "scroll" }],
   };
 
   return (

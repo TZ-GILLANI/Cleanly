@@ -193,6 +193,26 @@ console.log("\n── 5. today's work is actually reachable ──");
   ]) ok(`${name} — ${what}`, count(src, name) >= 2, `only ${count(src, name)} mention(s)`);
 }
 
+console.log("\n── 5b. every admin screen has a button, every button a screen ──");
+{
+  /* AdminReviews taught us the mention-count above is not enough: the
+     component existed, the render branch existed — two mentions, check
+     passed — and no nav item could ever select the tab. A screen is only
+     real if something on the nav reaches it, and a nav button is only
+     honest if a screen answers it. So: the two lists must match exactly. */
+  const navM = appCode.match(/admin: \[(.+?)\],\n/s);
+  ok("the admin nav list is where we think it is", !!navM);
+  const navIds = [...(navM ? navM[1] : "").matchAll(/id: "(\w+)"/g)].map((m) => m[1]);
+  const branchIds = [...appCode.matchAll(/tab === "(\w+)"[^?\n]*&& </g)].map((m) => m[1]);
+  const screens = new Set(branchIds);
+  screens.delete("dashboard");                       // alias of home
+  for (const id of navIds)
+    ok(`the "${id}" button opens a screen`, screens.has(id), `no {tab === "${id}"} branch renders anything`);
+  for (const id of screens)
+    ok(`the "${id}" screen has a button`, navIds.includes(id), "unreachable — no nav item selects it");
+  ok("Reviews specifically is on the nav", navIds.includes("reviews"), navIds.join(","));
+}
+
 console.log("\n── 6. a company can still be reported after the job ends ──");
 {
   ok("the report box is offered on finished jobs, not only mid-clean",
